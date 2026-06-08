@@ -3,9 +3,10 @@ import pytz
 import logging
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command, StateFilter
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp, MenuButtonDefault
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
+from config.config import settings
 from database.db_helper import db_helper
 from database.models import User
 from keyboards.inline import get_settings_keyboard
@@ -25,7 +26,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
             [
                 InlineKeyboardButton(
                     text="🚀 Открыть Mini App",
-                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={message.from_user.id}")
+                    url=settings.mini_app_link
                 )
             ]
         ]
@@ -74,14 +75,11 @@ async def cmd_start(message: Message):
                 "💪 Оставайся сильным и помни, ради чего ты начал этот путь!"
             )
             
-    # Установка постоянной кнопки меню чата на WebApp
+    # Установка постоянной кнопки меню чата на WebApp (дефолтной из BotFather)
     try:
         await message.bot.set_chat_menu_button(
             chat_id=user_id,
-            menu_button=MenuButtonWebApp(
-                text="📊 Mini App",
-                web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}")
-            )
+            menu_button=MenuButtonDefault()
         )
     except Exception as e:
         logger.error(f"Не удалось установить кнопку меню: {e}")
@@ -94,7 +92,7 @@ async def cmd_start(message: Message):
             [
                 InlineKeyboardButton(
                     text="🚀 Открыть Mini App",
-                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}")
+                    url=settings.mini_app_link
                 )
             ]
         ]

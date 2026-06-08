@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite+aiosqlite:///bot.db")
     gemini_api_key: str = Field(default="")
     mistral_api_key: str = Field(default="")
+    mini_app_link: str = Field(default="https://t.me/XXXhabitTracker_bot/xxxhabit")
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

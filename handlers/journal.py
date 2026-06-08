@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, desc
+from config.config import settings
 from database.db_helper import db_helper
 from database.models import User, JournalEntry
 
@@ -37,7 +38,7 @@ async def cmd_journal_menu(message: Message, state: FSMContext):
             [
                 InlineKeyboardButton(
                     text="📝 Открыть дневник в Mini App",
-                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}&tab=journal")
+                    url=f"{settings.mini_app_link}?startapp=journal"
                 )
             ]
         ]

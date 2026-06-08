@@ -10,6 +10,7 @@ from services.ai_service import ai_service
 from services.userbot_client import userbot
 from datetime import date
 from utils.states import Form
+from config.config import settings
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -38,13 +39,12 @@ async def cmd_panic(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
     
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
     inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🆘 Открыть SOS / Срыв в Mini App",
-                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}&tab=sos")
+                    url=f"{settings.mini_app_link}?startapp=sos"
                 )
             ]
         ]

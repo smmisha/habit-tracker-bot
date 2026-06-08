@@ -7,6 +7,7 @@ from sqlalchemy import select
 from database.db_helper import db_helper
 from database.models import User, RelapseLog
 from keyboards.inline import get_relapse_confirm_keyboard
+from config.config import settings
 from services.userbot_client import userbot
 from services.ai_service import ai_service
 
@@ -67,7 +68,7 @@ async def cmd_my_streak(message: Message):
             [
                 InlineKeyboardButton(
                     text="📊 Открыть дашборд в Mini App",
-                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}&tab=dashboard")
+                    url=f"{settings.mini_app_link}?startapp=dashboard"
                 )
             ]
         ]

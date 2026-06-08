@@ -78,10 +78,21 @@ document.querySelectorAll('.nav-item').forEach(button => {
     });
 });
 
-// Проверяем GET-параметр tab для автоматического перехода
+// Проверяем GET-параметр tab или start_param для автоматического перехода
 function checkDefaultTab() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const tabParam = urlParams.get('tab');
+    let tabParam = null;
+    
+    // Сначала пробуем получить из initDataUnsafe.start_param (для нативных ссылок t.me/bot/app?startapp=xxx)
+    if (tg?.initDataUnsafe?.start_param) {
+        tabParam = tg.initDataUnsafe.start_param;
+    }
+    
+    // Если нет, пробуем получить из GET-параметра URL
+    if (!tabParam) {
+        const urlParams = new URLSearchParams(window.location.search);
+        tabParam = urlParams.get('tab');
+    }
+    
     if (tabParam && ['dashboard', 'journal', 'sos'].includes(tabParam)) {
         switchTab(tabParam);
     } else {
