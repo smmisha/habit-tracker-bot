@@ -107,6 +107,11 @@ async function loadAllData() {
         renderCalendar(data.calendar_days);
         renderChart(data.triggers);
         
+        // 2.5. Рендер цитаты
+        if (data.quote) {
+            document.getElementById('daily-quote').textContent = data.quote;
+        }
+        
         // 3. Рендер истории дневника
         renderJournalHistory(data.journal_history);
         

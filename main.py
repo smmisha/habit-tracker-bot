@@ -317,6 +317,9 @@ async def handle_api_stats(request):
             "timezone": user.timezone,
             "notify_partner_achievements": user.notify_partner_achievements
         }
+        
+        from services.ai_service import ai_service
+        ai_quote = await ai_service.generate_daily_motivational_quote(days)
             
         return web.json_response({
             "streak_str": streak_str,
@@ -324,7 +327,8 @@ async def handle_api_stats(request):
             "calendar_days": calendar_days,
             "triggers": triggers,
             "settings": settings_data,
-            "journal_history": journal_history
+            "journal_history": journal_history,
+            "quote": ai_quote
         })
 
 async def handle_api_save_journal(request):

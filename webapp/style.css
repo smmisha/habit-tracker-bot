@@ -154,6 +154,33 @@ body {
     border-color: rgba(255, 59, 48, 0.15);
 }
 
+.glow-blue {
+    box-shadow: 0 8px 32px 0 var(--glow-blue);
+    border-color: rgba(96, 239, 255, 0.15);
+}
+
+/* Карточка мотивации */
+.quote-card {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    gap: 14px;
+    margin-bottom: 4px;
+}
+
+.quote-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.quote-text {
+    font-size: 13.5px;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+
 /* Секции */
 .dashboard-section {
     padding: 20px;
