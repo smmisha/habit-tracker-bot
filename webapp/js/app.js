@@ -475,8 +475,46 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
     }
 });
 
+// 7. Функция добавления на главный экран (Shortcut)
+function initHomeScreenShortcut() {
+    if (tg && typeof tg.checkHomeScreenStatus === 'function') {
+        try {
+            tg.checkHomeScreenStatus(function(status) {
+                console.log("Home screen status:", status);
+                const container = document.getElementById('add-to-home-container');
+                if (container) {
+                    if (status === 'missed') {
+                        container.classList.remove('hidden');
+                    } else {
+                        container.classList.add('hidden');
+                    }
+                }
+            });
+        } catch (e) {
+            console.error("Ошибка проверки статуса домашнего экрана:", e);
+        }
+    }
+    
+    const btn = document.getElementById('btn-add-to-home');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            if (tg && typeof tg.addToHomeScreen === 'function') {
+                try {
+                    tg.addToHomeScreen();
+                } catch (e) {
+                    console.error("Ошибка при добавлении на главный экран:", e);
+                    showToast("Не удалось добавить на главный экран", "error");
+                }
+            } else {
+                showToast("Эта функция не поддерживается вашим устройством", "info");
+            }
+        });
+    }
+}
+
 // Запуск при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     checkDefaultTab();
     loadAllData();
+    initHomeScreenShortcut();
 });

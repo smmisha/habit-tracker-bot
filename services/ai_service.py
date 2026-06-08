@@ -29,7 +29,7 @@ class GeminiAIService:
         messages.append({"role": "user", "content": prompt})
         
         payload = {
-            "model": "open-mixtral-8b",
+            "model": "open-mistral-nemo",
             "messages": messages
         }
         
@@ -80,7 +80,7 @@ class GeminiAIService:
             messages.append({"role": role, "content": text})
             
         payload = {
-            "model": "open-mixtral-8b",
+            "model": "open-mistral-nemo",
             "messages": messages
         }
         
