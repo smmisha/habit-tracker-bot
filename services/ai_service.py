@@ -11,34 +11,125 @@ class GeminiAIService:
         self.model = "gemini-3.5-flash"
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
 
-    async def _call_gemini(self, prompt: str, fallback_text: str) -> str:
-        """Вспомогательный метод для выполнения запросов к Gemini API"""
-        if not self.api_key or self.api_key.strip() in ("", "your_gemini_api_key_here"):
-            logger.warning("Gemini API key is not configured or invalid. Using fallback.")
-            return fallback_text
-
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt}
-                    ]
-                }
-            ]
+    async def _call_mistral(self, prompt: str, system_instruction: str = None) -> str:
+        """Вспомогательный метод для выполнения запросов к Mistral API"""
+        api_key = settings.mistral_api_key
+        if not api_key or api_key.strip() in ("", "your_mistral_api_key_here"):
+            return None
+            
+        url = "https://api.mistral.ai/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
         }
-
+        
+        messages = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        messages.append({"role": "user", "content": prompt})
+        
+        payload = {
+            "model": "open-mixtral-8b",
+            "messages": messages
+        }
+        
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.url, json=payload, headers={"Content-Type": "application/json"}) as response:
+                async with session.post(url, json=payload, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        text = data['candidates'][0]['content']['parts'][0]['text']
+                        text = data['choices'][0]['message']['content']
                         return text.strip()
                     else:
                         error_text = await response.text()
-                        logger.error(f"Gemini API returned status {response.status}: {error_text}")
+                        logger.error(f"Mistral API returned status {response.status}: {error_text}")
         except Exception as e:
-            logger.error(f"Error calling Gemini API: {e}")
+            logger.error(f"Error calling Mistral API: {e}")
+            
+        return None
+
+    async def _call_mistral_chat(self, contents: list) -> str:
+        """Интерактивный диалог через Mistral API с конвертацией контекста"""
+        api_key = settings.mistral_api_key
+        if not api_key or api_key.strip() in ("", "your_mistral_api_key_here"):
+            return None
+            
+        url = "https://api.mistral.ai/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        system_instruction = (
+            "Ты — эмпатичный, но твердый психолог-коуч по преодолению зависимостей (особенно PMO). "
+            "Пользователь находится в состоянии тяги и общается с тобой в чате экстренной помощи SOS. "
+            "Внимание: пользователь может пытаться оправдать себя, торговаться или искать лазейки для срыва. "
+            "Твоя задача — тепло, но твердо возвращать его к реальности, разоблачать уловки ума и помогать ему "
+            "закрыть мессенджер и переключиться на другое занятие (спорт, прогулка, молитва). "
+            "Не поддерживай его оправдания. Отвечай кратко (2-3 предложения), дружелюбно и практично."
+        )
+        
+        messages = [{"role": "system", "content": system_instruction}]
+        
+        for msg in contents:
+            role = msg.get("role", "user")
+            if role == "model":
+                role = "assistant"
+            parts = msg.get("parts", [{}])
+            text = parts[0].get("text", "") if parts else ""
+            messages.append({"role": role, "content": text})
+            
+        payload = {
+            "model": "open-mixtral-8b",
+            "messages": messages
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        text = data['choices'][0]['message']['content']
+                        return text.strip()
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Mistral chat API returned status {response.status}: {error_text}")
+        except Exception as e:
+            logger.error(f"Error calling Mistral chat API: {e}")
+            
+        return None
+
+    async def _call_gemini(self, prompt: str, fallback_text: str) -> str:
+        """Вспомогательный метод для выполнения запросов к Gemini API с фоллбеком на Mistral"""
+        if self.api_key and self.api_key.strip() not in ("", "your_gemini_api_key_here"):
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": prompt}
+                        ]
+                    }
+                ]
+            }
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.url, json=payload, headers={"Content-Type": "application/json"}) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            text = data['candidates'][0]['content']['parts'][0]['text']
+                            return text.strip()
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"Gemini API returned status {response.status}: {error_text}")
+            except Exception as e:
+                logger.error(f"Error calling Gemini API: {e}")
+
+        # Если Gemini не ответил/не настроен, пробуем Mistral
+        mistral_res = await self._call_mistral(prompt)
+        if mistral_res:
+            logger.info("Gemini failed/unconfigured. Successfully fell back to Mistral API.")
+            return mistral_res
 
         return fallback_text
 
@@ -101,39 +192,43 @@ class GeminiAIService:
         """
         Генерирует ответ ИИ в рамках диалога поддержки с учетом контекста беседы.
         """
-        if not self.api_key or self.api_key.strip() in ("", "your_gemini_api_key_here"):
-            return "Я рядом и поддерживаю тебя. Пожалуйста, держись."
-
-        system_instruction = (
-            "Ты — эмпатичный, но твердый психолог-коуч по преодолению зависимостей (особенно PMO). "
-            "Пользователь находится в состоянии тяги и общается с тобой в чате экстренной помощи SOS. "
-            "Внимание: пользователь может пытаться оправдать себя, торговаться или искать лазейки для срыва. "
-            "Твоя задача — тепло, но твердо возвращать его к реальности, разоблачать уловки ума и помогать ему "
-            "закрыть мессенджер и переключиться на другое занятие (спорт, прогулка, молитва). "
-            "Не поддерживай его оправдания. Отвечай кратко (2-3 предложения), дружелюбно и практично."
-        )
-        
-        payload = {
-            "contents": contents,
-            "systemInstruction": {
-                "parts": [
-                    {"text": system_instruction}
-                ]
+        if self.api_key and self.api_key.strip() not in ("", "your_gemini_api_key_here"):
+            system_instruction = (
+                "Ты — эмпатичный, но твердый психолог-коуч по преодолению зависимостей (особенно PMO). "
+                "Пользователь находится в состоянии тяги и общается с тобой в чате экстренной помощи SOS. "
+                "Внимание: пользователь может пытаться оправдать себя, торговаться или искать лазейки для срыва. "
+                "Твоя задача — тепло, но твердо возвращать его к реальности, разоблачать уловки ума и помогать ему "
+                "закрыть мессенджер и переключиться на другое занятие (спорт, прогулка, молитва). "
+                "Не поддерживай его оправдания. Отвечай кратко (2-3 предложения), дружелюбно и практично."
+            )
+            
+            payload = {
+                "contents": contents,
+                "systemInstruction": {
+                    "parts": [
+                        {"text": system_instruction}
+                    ]
+                }
             }
-        }
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.url, json=payload, headers={"Content-Type": "application/json"}) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        text = data['candidates'][0]['content']['parts'][0]['text']
-                        return text.strip()
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Gemini API returned status {response.status}: {error_text}")
-        except Exception as e:
-            logger.error(f"Error calling Gemini API in chat mode: {e}")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(self.url, json=payload, headers={"Content-Type": "application/json"}) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            text = data['candidates'][0]['content']['parts'][0]['text']
+                            return text.strip()
+                        else:
+                            error_text = await response.text()
+                            logger.error(f"Gemini API returned status {response.status}: {error_text}")
+            except Exception as e:
+                logger.error(f"Error calling Gemini API in chat mode: {e}")
+
+        # Если Gemini не ответил/не настроен, пробуем Mistral
+        mistral_res = await self._call_mistral_chat(contents)
+        if mistral_res:
+            logger.info("Gemini chat failed. Successfully fell back to Mistral API.")
+            return mistral_res
 
         return "Я понимаю, что тебе сейчас тяжело. Но помни: это просто импульс, который пройдет. Не веди внутренний диалог, займи себя делом прямо сейчас."
 
@@ -197,5 +292,57 @@ class GeminiAIService:
         
         fallback = "Продолжайте вести дневник! ИИ проанализирует ваши записи, когда их накопится достаточно."
         return await self._call_gemini(prompt, fallback)
+
+    async def generate_dynamic_sos_steps(self, total_relapses: int, triggers: list, journal_notes: list) -> list:
+        """
+        Генерирует 3 персонализированных шага первой помощи на основе истории пользователя.
+        Возвращает список словарей [{'title': '...', 'description': '...'}, ...]
+        """
+        import json
+        
+        triggers_summary = ", ".join(triggers) if triggers else "нет зафиксированных триггеров"
+        journal_summary = "\n".join([f"- {n}" for n in journal_notes]) if journal_notes else "нет записей за неделю"
+        
+        prompt = (
+            "Ты — эмпатичный, профессиональный психотерапевт и коуч по борьбе с зависимостями.\n"
+            "Пользователь нажал кнопку экстренной помощи (SOS), так как чувствует сильную тягу.\n\n"
+            f"Статистика пользователя:\n"
+            f"- Всего срывов: {total_relapses}\n"
+            f"- Основные триггеры прошлых срывов: {triggers_summary}\n"
+            f"- Последние записи в его дневнике:\n{journal_summary}\n\n"
+            "Составь ровно 3 персонализированных, кратких, практических шага первой помощи, чтобы помочь ему справиться с тягой прямо сейчас. "
+            "Каждый шаг должен быть коротким (1-2 предложения), четким и бить точно в его уязвимые места (например, если в дневнике стресс — "
+            "дать дыхательную практику; если скука — простое физическое действие; если искушение в сети — убрать девайсы).\n\n"
+            "Ответ должен быть строго в формате JSON, содержащим список из 3 объектов, каждый из которых имеет поля 'title' и 'description'. "
+            "Не используй Markdown разметку ```json в ответе, пиши только сырой JSON. Пример формата:\n"
+            '[\n  {"title": "Шаг 1: ...", "description": "..."},\n  {"title": "Шаг 2: ...", "description": "..."},\n  {"title": "Шаг 3: ...", "description": "..."}\n]'
+        )
+        
+        fallback_list = [
+            {
+                "title": "Шаг 1: Искренняя молитва",
+                "description": "Обратитесь к Богу в молитве о силе и самообладании. Это поможет переключить фокус мыслей."
+            },
+            {
+                "title": "Шаг 2: Полезное чтение",
+                "description": "Откройте сегодняшний стих дня или прочтите ободряющие мысли, чтобы наполнить разум правильными образами."
+            },
+            {
+                "title": "Шаг 3: Физическое упражнение",
+                "description": "Сделайте 20 отжиманий/приседаний или умойтесь ледяной водой. Физическое действие снимет импульс."
+            }
+        ]
+        
+        try:
+            res_text = await self._call_gemini(prompt, "")
+            if res_text:
+                res_text_clean = res_text.strip().replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(res_text_clean)
+                if isinstance(parsed, list) and len(parsed) == 3:
+                    return parsed
+        except Exception as e:
+            logger.error(f"Ошибка генерации или парсинга динамических SOS-шагов: {e}")
+            
+        return fallback_list
 
 ai_service = GeminiAIService()

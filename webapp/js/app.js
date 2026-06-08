@@ -291,6 +291,62 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
 
 // --- SOS И СРЫВ ЛОГИКА ---
 
+// 0. Запуск динамического ИИ-SOS
+document.getElementById('btn-start-sos').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-start-sos');
+    const startScreen = document.getElementById('sos-start-screen');
+    const dynamicContent = document.getElementById('sos-dynamic-content');
+    const listContainer = document.getElementById('sos-guidelines-list');
+    
+    btn.disabled = true;
+    btn.querySelector('.spinner').classList.remove('hidden');
+    btn.querySelector('.btn-text').textContent = 'Подключение ИИ-ассистента...';
+    
+    try {
+        const response = await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'start' })
+        });
+        const resData = await response.json();
+        
+        if (response.ok && resData.success && resData.guidelines) {
+            // Отрисовываем шаги
+            listContainer.innerHTML = '';
+            resData.guidelines.forEach((step, idx) => {
+                const card = document.createElement('div');
+                card.className = 'guideline-card glass';
+                card.style.display = 'flex';
+                card.style.gap = '16px';
+                card.style.alignItems = 'center';
+                
+                card.innerHTML = `
+                    <span class="num">${idx + 1}</span>
+                    <div class="text">
+                        <h3>${step.title}</h3>
+                        <p>${step.description}</p>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+            
+            // Переключаем экраны
+            startScreen.classList.add('hidden');
+            dynamicContent.classList.remove('hidden');
+            showToast('Индивидуальные шаги сгенерированы!');
+        } else {
+            showToast(resData.error || 'Ошибка при загрузке SOS-шагов', 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Ошибка сети при запуске SOS', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.querySelector('.spinner').classList.add('hidden');
+        btn.querySelector('.btn-text').textContent = '🆘 Мне тяжело / Нужна помощь';
+    }
+});
+
 // 1. SOS - Справился (Helped)
 document.getElementById('btn-panic-helped').addEventListener('click', async () => {
     const btn = document.getElementById('btn-panic-helped');
@@ -305,6 +361,9 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
         const resData = await response.json();
         if (response.ok && resData.success) {
             showToast(resData.message || 'Отлично! Уведомление отправлено в чат.');
+            // Сбрасываем экран SOS
+            document.getElementById('sos-dynamic-content').classList.add('hidden');
+            document.getElementById('sos-start-screen').classList.remove('hidden');
             switchTab('dashboard');
         } else {
             showToast(resData.error || 'Ошибка при сохранении статуса', 'error');
@@ -389,6 +448,8 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
             
             // Очищаем форму и возвращаем исходное состояние
             document.getElementById('relapse-form').classList.add('hidden');
+            document.getElementById('sos-dynamic-content').classList.add('hidden');
+            document.getElementById('sos-start-screen').classList.remove('hidden');
             document.getElementById('sos-guidelines-box').classList.remove('hidden');
             otherInput.value = '';
             triggerSelect.value = 'Скука / Безделье';

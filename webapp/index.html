@@ -104,31 +104,31 @@
             <!-- Рекомендации SOS -->
             <section class="dashboard-section glass" id="sos-guidelines-box">
                 <h2 class="section-title">🆘 Скорая помощь при тяге (SOS)</h2>
-                <p class="sos-text">Вы чувствуете сильный импульс? Отложите мысли о срыве и обязательно выполните эти 3 шага первой помощи:</p>
-                <div class="guideline-card">
-                    <span class="num">1</span>
-                    <div class="text">
-                        <h3>Молитва</h3>
-                        <p>Обратитесь к Богу в искренней молитве о силе и самообладании.</p>
-                    </div>
+                
+                <!-- Начальный экран SOS -->
+                <div id="sos-start-screen" class="sos-start-screen">
+                    <p class="sos-text" style="margin-bottom: 15px;">
+                        Чувствуешь сильный импульс? Не сдавайся! Нажми кнопку ниже, чтобы запустить персонализированную ИИ-помощь, 
+                        которая подберет 3 шага первой помощи специально под твое текущее состояние.
+                    </p>
+                    <button class="btn btn-danger" id="btn-start-sos">
+                        <span class="btn-text">🆘 Мне тяжело / Нужна помощь</span>
+                        <span class="spinner hidden"></span>
+                    </button>
                 </div>
-                <div class="guideline-card">
-                    <span class="num">2</span>
-                    <div class="text">
-                        <h3>Чтение</h3>
-                        <p>Откройте утренний библейский стих или почитайте ободряющие мысли.</p>
+                
+                <!-- Динамический блок советов (заполняется через JS) -->
+                <div id="sos-dynamic-content" class="sos-dynamic-content hidden">
+                    <p class="sos-text" style="margin-bottom: 12px; font-weight: 500; color: var(--accent-blue);">
+                        🧠 ИИ-ассистент подобрал 3 индивидуальных действия для тебя:
+                    </p>
+                    <div id="sos-guidelines-list" class="sos-guidelines-list" style="display: flex; flex-direction: column; gap: 12px;">
+                        <!-- Сюда вставляются карточки -->
                     </div>
-                </div>
-                <div class="guideline-card">
-                    <span class="num">3</span>
-                    <div class="text">
-                        <h3>Движение</h3>
-                        <p>Сделайте 20 отжиманий/приседаний или умойтесь ледяной водой.</p>
+                    <div class="sos-actions" style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
+                        <button class="btn btn-success" id="btn-panic-helped">✅ Мне помогло / Тяга ушла</button>
+                        <button class="btn btn-danger" id="btn-panic-failed">❌ Не помогло / Нужна помощь</button>
                     </div>
-                </div>
-                <div class="sos-actions">
-                    <button class="btn btn-success" id="btn-panic-helped">✅ Мне помогло / Тяга ушла</button>
-                    <button class="btn btn-danger" id="btn-panic-failed">❌ Не помогло / Нужна помощь</button>
                 </div>
             </section>
 

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_hash: str = Field(default="your_api_hash_here")
     database_url: str = Field(default="sqlite+aiosqlite:///bot.db")
     gemini_api_key: str = Field(default="")
+    mistral_api_key: str = Field(default="")
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

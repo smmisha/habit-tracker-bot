@@ -438,12 +438,12 @@ async def handle_api_manage_panic(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
-        action = data.get("action")  # "helped" or "failed"
+        action = data.get("action")  # "start", "helped" or "failed"
         trigger_reason = data.get("trigger_reason", "Тяга во время паники").strip()
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
-    from database.models import User, RelapseLog
+    from database.models import User, RelapseLog, JournalEntry
     from services.ai_service import ai_service
     from services.userbot_client import userbot
     from utils.states import Form
@@ -457,6 +457,35 @@ async def handle_api_manage_panic(request):
             
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id
+        
+        if action == "start":
+            # 1. Загружаем историю триггеров срывов
+            relapses_result = await session.execute(
+                select(RelapseLog.trigger_reason)
+                .where(RelapseLog.user_id == user_id)
+                .order_by(RelapseLog.timestamp.desc())
+                .limit(5)
+            )
+            triggers = [r for r in relapses_result.scalars().all() if r]
+            
+            # 2. Загружаем заметки дневника за последнюю неделю
+            from datetime import timedelta
+            one_week_ago = datetime.now() - timedelta(days=7)
+            journal_result = await session.execute(
+                select(JournalEntry.content)
+                .where(
+                    and_(
+                        JournalEntry.user_id == user_id,
+                        JournalEntry.entry_date >= one_week_ago.date()
+                    )
+                )
+                .order_by(JournalEntry.entry_date.desc())
+            )
+            journal_notes = journal_result.scalars().all()
+            
+            # 3. Генерируем персонализированные ИИ-шаги
+            guidelines = await ai_service.generate_dynamic_sos_steps(user.total_relapses, triggers, journal_notes)
+            return web.json_response({"success": True, "guidelines": guidelines})
         
     if action == "helped":
         async def send_help_ok():
