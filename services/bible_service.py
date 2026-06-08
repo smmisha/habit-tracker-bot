@@ -76,49 +76,48 @@ class BibleService:
         tz = pytz.timezone("Europe/Kyiv")
         now = datetime.now(tz)
         
-        # Формируем URL для парсинга дня
-        url = f"https://wol.jw.org/ru/wol/dt/r2/lp-ru/{now.year}/{now.month}/{now.day}"
+        # Пробуем несколько возможных форматов ссылок (с lp-u, так как для русского языка на wol используется u)
+        urls_to_try = [
+            f"https://wol.jw.org/ru/wol/h/r2/lp-u/{now.year}/{now.month}/{now.day}",
+            f"https://wol.jw.org/ru/wol/dt/r2/lp-u/{now.year}/{now.month}/{now.day}"
+        ]
         
-        try:
-            req = urllib.request.Request(
-                url, 
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            )
-            # Открываем с таймаутом 4 секунды, чтобы бот не зависал при проблемах с сетью
-            with urllib.request.urlopen(req, timeout=4) as response:
-                html = response.read().decode('utf-8')
-                
-                # Парсим стих дня (класс themeScrp)
-                # Пример: <p class="themeScrp">...текст стиха...</p>
-                scripture_match = re.search(r'<p[^>]*class="[^"]*themeScrp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
-                
-                # Парсим комментарий дня (класс sb)
-                commentary_match = re.search(r'<p[^>]*class="[^"]*sb[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
-                
-                if scripture_match:
-                    # Чистим HTML-теги из спарсенного текста
-                    clean_scripture = re.sub(r'<[^>]+>', '', scripture_match.group(1)).strip()
-                    # Убираем лишние пробелы и переносы
-                    clean_scripture = " ".join(clean_scripture.split())
+        for url in urls_to_try:
+            try:
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+                )
+                # Открываем с таймаутом 5 секунд
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    html = response.read().decode('utf-8')
                     
-                    # Пытаемся вычленить цитату (ссылку на Библию), обычно она в конце стиха или выделена тегом
-                    # Для простоты сохраним весь очищенный стих
+                    # Парсим стих дня (класс themeScrp)
+                    scripture_match = re.search(r'<p[^>]*class="[^"]*themeScrp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
                     
-                    clean_commentary = ""
-                    if commentary_match:
-                        clean_commentary = re.sub(r'<[^>]+>', '', commentary_match.group(1)).strip()
-                        clean_commentary = " ".join(clean_commentary.split())
+                    # Парсим комментарий дня (класс sb)
+                    commentary_match = re.search(r'<p[^>]*class="[^"]*sb[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
                     
-                    logger.info("Successfully parsed daily text from wol.jw.org")
-                    return {
-                        "citation": f"Стих дня ({now.strftime('%d.%m.%Y')})",
-                        "text": clean_scripture,
-                        "commentary": clean_commentary if clean_commentary else "Ободряющие размышления на сегодня."
-                    }
-        except Exception as e:
-            logger.warning(f"Failed to fetch daily text from wol.jw.org ({e}). Using local backup.")
-            
-        # Возвращаем локальный стих
+                    if scripture_match:
+                        clean_scripture = re.sub(r'<[^>]+>', '', scripture_match.group(1)).strip()
+                        clean_scripture = " ".join(clean_scripture.split())
+                        
+                        clean_commentary = ""
+                        if commentary_match:
+                            clean_commentary = re.sub(r'<[^>]+>', '', commentary_match.group(1)).strip()
+                            clean_commentary = " ".join(clean_commentary.split())
+                        
+                        logger.info(f"Successfully parsed daily text from {url}")
+                        return {
+                            "citation": f"Стих дня ({now.strftime('%d.%m.%Y')})",
+                            "text": clean_scripture,
+                            "commentary": clean_commentary if clean_commentary else "Ободряющие размышления на сегодня."
+                        }
+            except Exception as e:
+                logger.warning(f"Failed to fetch daily text from {url}: {e}")
+                
+        # Возвращаем локальный стих, если все попытки не удались
+        logger.warning("All online daily text attempts failed. Using local backup.")
         return self.get_local_verse()
 
 bible_service = BibleService()
