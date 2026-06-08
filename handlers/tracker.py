@@ -42,23 +42,42 @@ async def cmd_my_streak(message: Message):
             await message.answer("❌ Пользователь не найден. Введите /start.")
             return
             
-        # Вычисляем разницу времени (streak_start хранит локальное время)
-        delta = datetime.now() - user.streak_start
+        # Вычисляем разницу времени (в БД хранится наивный UTC)
+        import pytz
+        try:
+            user_tz = pytz.timezone(user.timezone)
+            now_local = datetime.now(user_tz)
+            
+            # Локализируем время начала стрика из БД как UTC и переводим в таймзону пользователя
+            streak_start_utc = pytz.utc.localize(user.streak_start)
+            streak_start_local = streak_start_utc.astimezone(user_tz)
+            
+            delta = now_local - streak_start_local
+            display_start = streak_start_local.strftime('%d.%m.%Y %H:%M:%S')
+        except Exception as e:
+            logger.error(f"Ошибка конвертации таймзоны: {e}")
+            delta = datetime.now() - user.streak_start
+            display_start = user.streak_start.strftime('%d.%m.%Y %H:%M:%S')
+            
         formatted_streak = format_timedelta(delta)
         
         partner_display = "не указан ⚠️"
         if user.partner_username:
             partner_display = user.partner_username if user.partner_username.isdigit() else f"@{user.partner_username}"
             
+        # Генерируем мотивационную цитату с помощью ИИ
+        streak_days = max(0, delta.days)
+        ai_quote = await ai_service.generate_daily_motivational_quote(streak_days)
+            
         stats_text = (
             "📊 <b>СТАТИСТИКА ЧИСТОТЫ</b>\n"
             "──────────────────────────\n"
             f"⏳ <b>Текущий стрик:</b> {formatted_streak}\n"
-            f"📅 <b>Начало стрика:</b> <code>{user.streak_start.strftime('%d.%m.%Y %H:%M:%S')}</code>\n"
+            f"📅 <b>Начало стрика:</b> <code>{display_start}</code>\n"
             f"⚠️ <b>Всего срывов:</b> <code>{user.total_relapses}</code>\n"
             f"👥 <b>Ваш напарник:</b> <code>{partner_display}</code>\n"
             "──────────────────────────\n"
-            "💪 <i>Каждая секунда чистоты делает тебя сильнее! Держись!</i>"
+            f"💪 <i>{ai_quote}</i>"
         )
     await message.answer(stats_text)
 
