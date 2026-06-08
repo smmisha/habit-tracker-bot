@@ -302,6 +302,23 @@ async def send_weekly_reports():
                 # Подсчет причин 'Забыл'
                 forgot_count = sum(1 for log in logs if log.excuse_reason and "Забыл" in log.excuse_reason)
                 
+                # Собираем заметки дневника за последние 7 дней
+                from database.models import JournalEntry
+                journal_result = await session.execute(
+                    select(JournalEntry)
+                    .where(
+                        and_(
+                            JournalEntry.user_id == user.id,
+                            JournalEntry.entry_date >= one_week_ago.date()
+                        )
+                    )
+                    .order_by(JournalEntry.entry_date)
+                )
+                journal_entries = journal_result.scalars().all()
+                
+                # Генерируем ИИ-анализ дневника
+                ai_journal_analysis = await ai_service.generate_weekly_journal_analysis(journal_entries)
+
                 # 1. Отправляем отчет самому пользователю
                 user_report = (
                     "📊 <b>ТВОЙ ЕЖЕНЕДЕЛЬНЫЙ ОТЧЕТ</b>\n"
@@ -314,6 +331,14 @@ async def send_weekly_reports():
                 )
                 try:
                     await bot.send_message(chat_id=user.id, text=user_report)
+                    
+                    # Отправляем ИИ-анализ дневника отдельным сообщением
+                    analysis_msg = (
+                        "🧠 <b>ПСИХОЛОГИЧЕСКИЙ АНАЛИЗ НЕДЕЛИ</b>\n"
+                        "──────────────────────────\n"
+                        f"{ai_journal_analysis}"
+                    )
+                    await bot.send_message(chat_id=user.id, text=analysis_msg)
                 except Exception as e:
                     logger.error(f"Не удалось отправить недельный отчет пользователю {user.id}: {e}")
                     

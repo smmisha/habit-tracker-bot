@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker Dashboard</title>
+    <!-- Подключение шрифтов -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Стили -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Telegram WebApp JS SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Заголовок -->
+        <header class="app-header">
+            <h1 class="glow-text">DASHBOARD</h1>
+            <p class="subtitle">Ваш прогресс и аналитика чистоты</p>
+        </header>
+
+        <!-- Карточки ключевой статистики -->
+        <div class="stats-grid">
+            <div class="stat-card glass glow-green">
+                <div class="stat-icon">⏳</div>
+                <div class="stat-info">
+                    <span class="stat-label">Текущий стрик</span>
+                    <span class="stat-value" id="current-streak">0 дней</span>
+                </div>
+            </div>
+            <div class="stat-card glass glow-red">
+                <div class="stat-icon">⚠️</div>
+                <div class="stat-info">
+                    <span class="stat-label">Всего срывов</span>
+                    <span class="stat-value" id="total-relapses">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Сетка календаря (GitHub style) -->
+        <section class="dashboard-section glass">
+            <h2 class="section-title">📅 Календарь за последние 30 дней</h2>
+            <div class="calendar-wrapper">
+                <div class="calendar-grid" id="calendar-grid">
+                    <!-- Заполняется динамически через JS -->
+                </div>
+            </div>
+            <div class="calendar-legend">
+                <div class="legend-item"><span class="legend-color clean"></span> Чистый день</div>
+                <div class="legend-item"><span class="legend-color relapse"></span> Срыв</div>
+                <div class="legend-item"><span class="legend-color no-data"></span> Нет данных</div>
+            </div>
+        </section>
+
+        <!-- График триггеров срывов -->
+        <section class="dashboard-section glass">
+            <h2 class="section-title">📊 Аналитика триггеров срывов</h2>
+            <div class="chart-container">
+                <canvas id="triggers-chart"></canvas>
+                <div id="no-chart-data" class="no-data-msg hidden">
+                    🎉 Нет данных о срывах! Вы отлично держитесь!
+                </div>
+            </div>
+        </section>
+        
+        <footer class="app-footer">
+            <p>Каждая секунда делает тебя сильнее</p>
+        </footer>
+    </div>
+
+    <!-- Логика работы приложения -->
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -8,3 +8,4 @@ class Form(StatesGroup):
     waiting_for_panic_reason = State()
     waiting_for_relapse_trigger_other = State()
     panic_chat = State()
+    waiting_for_journal_entry = State()

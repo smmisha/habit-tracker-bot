@@ -51,7 +51,7 @@ async def cmd_start(message: Message):
                 "💪 Оставайся сильным и помни, ради чего ты начал этот путь!"
             )
             
-    await message.answer(welcome_text, reply_markup=get_main_keyboard())
+    await message.answer(welcome_text, reply_markup=get_main_keyboard(user_id))
 
 @router.message(Command("settings"))
 @router.message(F.text == "⚙️ Настройки")
@@ -215,8 +215,8 @@ async def process_time_input(message: Message, state: FSMContext):
 async def cmd_cancel(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is None:
-        await message.answer("Нечего отменять. Вы находитесь в главном меню.", reply_markup=get_main_keyboard())
+        await message.answer("Нечего отменять. Вы находитесь в главном меню.", reply_markup=get_main_keyboard(message.from_user.id))
         return
         
     await state.clear()
-    await message.answer("❌ Действие отменено.", reply_markup=get_main_keyboard())
+    await message.answer("❌ Действие отменено.", reply_markup=get_main_keyboard(message.from_user.id))

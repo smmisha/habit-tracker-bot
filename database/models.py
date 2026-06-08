@@ -47,6 +47,7 @@ class User(Base):
     # Связи с логами
     relapses: Mapped[List["RelapseLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     checkins: Mapped[List["CheckInLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    journal_entries: Mapped[List["JournalEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class RelapseLog(Base):
@@ -75,3 +76,15 @@ class CheckInLog(Base):
     excuse_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="checkins")
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    entry_date: Mapped[date] = mapped_column(Date, default=date.today)
+    content: Mapped[str] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="journal_entries")

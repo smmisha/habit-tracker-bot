@@ -32,6 +32,7 @@ from handlers.common import router as common_router
 from handlers.tracker import router as tracker_router
 from handlers.checkin import router as checkin_router
 from handlers.panic import router as panic_router
+from handlers.journal import router as journal_router
 from services.userbot_client import userbot
 from services.scheduler import setup_scheduler, scheduler
 
@@ -171,20 +172,152 @@ async def handle_business_message(message: Message):
                         )
                         await userbot.send_message_to_partner(connection_id, partner_username, alert_text)
 
-# --- ВЕБ-СЕРВЕР ДЛЯ ПОДДЕРЖАНИЯ АКТИВНОСТИ НА RENDER ---
+# --- ВЕБ-СЕРВЕР И API ДЛЯ DASHBOARD (WEBAPP) ---
+
+from datetime import datetime, date, timedelta
+from database.models import User, CheckInLog, RelapseLog
 
 async def handle_ping(request):
     return web.Response(text="OK")
 
+async def handle_webapp(request):
+    """Служба отдачи HTML-страницы дашборда"""
+    index_path = os.path.join(os.path.dirname(__file__), "webapp", "index.html")
+    if os.path.exists(index_path):
+        return web.FileResponse(index_path)
+    return web.Response(text="Dashboard files not found", status=404)
+
+async def handle_api_stats(request):
+    """API получения статистики пользователя для WebApp"""
+    try:
+        user_id_str = request.query.get('user_id')
+        if not user_id_str:
+            return web.json_response({"error": "Missing user_id"}, status=400)
+        user_id = int(user_id_str)
+    except ValueError:
+        return web.json_response({"error": "Invalid user_id"}, status=400)
+
+    async with db_helper.session_factory() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            return web.json_response({"error": "User not found"}, status=404)
+            
+        # 1. Вычисляем текущий стрик
+        delta = datetime.now() - user.streak_start
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        if days > 0:
+            streak_str = f"{days} дн. {hours} ч."
+        elif hours > 0:
+            streak_str = f"{hours} ч. {minutes} мин."
+        else:
+            streak_str = f"{minutes} мин."
+            
+        # 2. Получаем историю чек-инов за последние 30 дней
+        today = date.today()
+        start_date = today - timedelta(days=29)
+        
+        checkins_result = await session.execute(
+            select(CheckInLog)
+            .where(
+                and_(
+                    CheckInLog.user_id == user_id,
+                    CheckInLog.checkin_date >= start_date
+                )
+            )
+        )
+        checkins = {c.checkin_date: c.status for c in checkins_result.scalars().all()}
+        
+        # 3. Получаем срывы за последние 30 дней
+        relapses_result = await session.execute(
+            select(RelapseLog)
+            .where(
+                and_(
+                    RelapseLog.user_id == user_id,
+                    RelapseLog.timestamp >= datetime.combine(start_date, datetime.min.time())
+                )
+            )
+        )
+        relapses = relapses_result.scalars().all()
+        
+        # Считаем срывы по дням
+        relapse_by_day = {}
+        for r in relapses:
+            r_date = r.timestamp.date()
+            relapse_by_day[r_date] = relapse_by_day.get(r_date, 0) + 1
+            
+        # 4. Составляем список дней для календаря (30 дней)
+        calendar_days = []
+        for i in range(30):
+            day_date = start_date + timedelta(days=i)
+            status = "no-data"
+            relapse_count = relapse_by_day.get(day_date, 0)
+            
+            if relapse_count > 0:
+                status = "relapsed"
+            elif day_date in checkins:
+                ch_status = checkins[day_date]
+                if ch_status == "clean":
+                    status = "clean"
+                elif ch_status == "relapsed":
+                    status = "relapsed"
+                    
+            calendar_days.append({
+                "date": day_date.isoformat(),
+                "status": status,
+                "relapse_count": relapse_count
+            })
+            
+        # 5. Группируем триггеры срывов (всего за все время)
+        all_relapses_result = await session.execute(
+            select(RelapseLog.trigger_reason)
+            .where(RelapseLog.user_id == user_id)
+        )
+        reasons = all_relapses_result.scalars().all()
+        
+        triggers = {}
+        for r in reasons:
+            if not r:
+                continue
+            clean_reason = r
+            if r.startswith("Другое:") or r.startswith("Текстовое описание:"):
+                clean_reason = "Другая причина"
+            elif r == "Ручной сброс через меню бота":
+                clean_reason = "Без указания причины"
+            triggers[clean_reason] = triggers.get(clean_reason, 0) + 1
+            
+        return web.json_response({
+            "streak_str": streak_str,
+            "total_relapses": user.total_relapses,
+            "calendar_days": calendar_days,
+            "triggers": triggers
+        })
+
 async def start_web_server():
     app = web.Application()
-    app.add_routes([web.get("/", handle_ping)])
+    app.add_routes([
+        web.get("/", handle_ping),
+        web.get("/dashboard", handle_webapp),
+        web.get("/api/stats", handle_api_stats)
+    ])
+    
+    # Раздача статики стилей и скриптов WebApp
+    webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
+    app.router.add_static('/css', path=os.path.join(webapp_path, 'css'), name='css', show_index=True)
+    app.router.add_static('/js', path=os.path.join(webapp_path, 'js'), name='js', show_index=True)
+    # Также раздаем файлы в корне webapp (style.css, index.html)
+    app.router.add_static('/webapp', path=webapp_path, name='webapp', show_index=True)
+    
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info(f"Встроенный веб-сервер запущен на порту {port}")
+    logger.info(f"Встроенный веб-сервер и API запущены на порту {port}")
 
 # --- ОСНОВНОЙ ЗАПУСК ---
 
@@ -194,6 +327,7 @@ async def main():
     dp.include_router(tracker_router)
     dp.include_router(checkin_router)
     dp.include_router(panic_router)
+    dp.include_router(journal_router)
     
     # Регистрируем события запуска и остановки
     dp.startup.register(on_startup)
