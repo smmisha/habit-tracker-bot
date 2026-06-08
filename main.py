@@ -181,11 +181,12 @@ async def handle_ping(request):
     return web.Response(text="OK")
 
 async def handle_webapp(request):
-    """Служба отдачи HTML-страницы дашборда"""
-    index_path = os.path.join(os.path.dirname(__file__), "webapp", "index.html")
-    if os.path.exists(index_path):
-        return web.FileResponse(index_path)
-    return web.Response(text="Dashboard files not found", status=404)
+    """Служба отдачи HTML-страницы дашборда с перенаправлением на статический путь"""
+    user_id = request.query.get('user_id', '')
+    target_url = "/webapp/index.html"
+    if user_id:
+        target_url += f"?user_id={user_id}"
+    raise web.HTTPFound(target_url)
 
 async def handle_api_stats(request):
     """API получения статистики пользователя для WebApp"""
@@ -307,9 +308,7 @@ async def start_web_server():
     
     # Раздача статики стилей и скриптов WebApp
     webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
-    app.router.add_static('/css', path=os.path.join(webapp_path, 'css'), name='css', show_index=True)
-    app.router.add_static('/js', path=os.path.join(webapp_path, 'js'), name='js', show_index=True)
-    # Также раздаем файлы в корне webapp (style.css, index.html)
+    # Раздаем файлы в корне webapp (style.css, index.html) и вложенные папки js/
     app.router.add_static('/webapp', path=webapp_path, name='webapp', show_index=True)
     
     runner = web.AppRunner(app)

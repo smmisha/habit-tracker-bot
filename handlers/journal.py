@@ -83,7 +83,7 @@ async def save_journal_entry(message: Message, state: FSMContext):
     await message.answer(
         f"✅ <b>Заметка успешно {action_text}!</b>\n\n"
         "Вы сделали важный шаг для анализа своей тяги. Данные будут учтены при составлении отчета в воскресенье.",
-        reply_markup=get_main_keyboard()
+        reply_markup=get_main_keyboard(user_id)
     )
 
 @router.message(F.text == "📖 Последние записи")

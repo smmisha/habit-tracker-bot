@@ -2,7 +2,7 @@ import re
 import pytz
 import logging
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
@@ -14,6 +14,18 @@ from utils.states import Form
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+@router.message(Command("cancel"), StateFilter("*"))
+@router.message(F.text.casefold() == "отмена", StateFilter("*"))
+async def cmd_cancel(message: Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer("Нечего отменять. Вы находитесь в главном меню.", reply_markup=get_main_keyboard(message.from_user.id))
+        return
+        
+    await state.clear()
+    await message.answer("❌ Действие отменено.", reply_markup=get_main_keyboard(message.from_user.id))
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
@@ -210,13 +222,3 @@ async def process_time_input(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(f"✅ Время чек-ина установлено на: {time_input}")
 
-@router.message(Command("cancel"))
-@router.message(F.text.casefold() == "отмена")
-async def cmd_cancel(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state is None:
-        await message.answer("Нечего отменять. Вы находитесь в главном меню.", reply_markup=get_main_keyboard(message.from_user.id))
-        return
-        
-    await state.clear()
-    await message.answer("❌ Действие отменено.", reply_markup=get_main_keyboard(message.from_user.id))
