@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Habit Tracker Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Habit Tracker</title>
     <!-- Подключение шрифтов -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,60 +17,168 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Заголовок -->
+        <!-- Заголовок (плавающий или статичный) -->
         <header class="app-header">
-            <h1 class="glow-text">DASHBOARD</h1>
-            <p class="subtitle">Ваш прогресс и аналитика чистоты</p>
+            <h1 class="glow-text" id="header-title">HABIT TRACKER</h1>
+            <p class="subtitle" id="header-subtitle">Загрузка аналитики...</p>
         </header>
 
-        <!-- Карточки ключевой статистики -->
-        <div class="stats-grid">
-            <div class="stat-card glass glow-green">
-                <div class="stat-icon">⏳</div>
-                <div class="stat-info">
-                    <span class="stat-label">Текущий стрик</span>
-                    <span class="stat-value" id="current-streak">0 дней</span>
+        <!-- ВКЛАДКА 1: ДАШБОРД -->
+        <div id="tab-dashboard" class="tab-content active">
+            <!-- Карточки ключевой статистики -->
+            <div class="stats-grid">
+                <div class="stat-card glass glow-green">
+                    <div class="stat-icon">⏳</div>
+                    <div class="stat-info">
+                        <span class="stat-label">Текущий стрик</span>
+                        <span class="stat-value" id="current-streak">0 дн.</span>
+                    </div>
+                </div>
+                <div class="stat-card glass glow-red">
+                    <div class="stat-icon">⚠️</div>
+                    <div class="stat-info">
+                        <span class="stat-label">Всего срывов</span>
+                        <span class="stat-value" id="total-relapses">0</span>
+                    </div>
                 </div>
             </div>
-            <div class="stat-card glass glow-red">
-                <div class="stat-icon">⚠️</div>
-                <div class="stat-info">
-                    <span class="stat-label">Всего срывов</span>
-                    <span class="stat-value" id="total-relapses">0</span>
+
+            <!-- Сетка календаря (GitHub style) -->
+            <section class="dashboard-section glass">
+                <h2 class="section-title">📅 Календарь за последние 30 дней</h2>
+                <div class="calendar-wrapper">
+                    <div class="calendar-grid" id="calendar-grid">
+                        <!-- Заполняется динамически -->
+                    </div>
                 </div>
-            </div>
+                <div class="calendar-legend">
+                    <div class="legend-item"><span class="legend-color clean"></span> Чисто</div>
+                    <div class="legend-item"><span class="legend-color relapse"></span> Срыв</div>
+                    <div class="legend-item"><span class="legend-color no-data"></span> Пропуск</div>
+                </div>
+            </section>
+
+            <!-- График триггеров срывов -->
+            <section class="dashboard-section glass">
+                <h2 class="section-title">📊 Аналитика триггеров срывов</h2>
+                <div class="chart-container">
+                    <canvas id="triggers-chart"></canvas>
+                    <div id="no-chart-data" class="no-data-msg hidden">
+                        🎉 Нет срывов! Вы отлично справляетесь!
+                    </div>
+                </div>
+            </section>
         </div>
 
-        <!-- Сетка календаря (GitHub style) -->
-        <section class="dashboard-section glass">
-            <h2 class="section-title">📅 Календарь за последние 30 дней</h2>
-            <div class="calendar-wrapper">
-                <div class="calendar-grid" id="calendar-grid">
-                    <!-- Заполняется динамически через JS -->
+        <!-- ВКЛАДКА 2: ДНЕВНИК -->
+        <div id="tab-journal" class="tab-content">
+            <!-- Форма новой заметки -->
+            <section class="dashboard-section glass">
+                <h2 class="section-title">✍️ Заметка за сегодня</h2>
+                <div class="form-group">
+                    <textarea id="journal-input" placeholder="Как проходит твой сегодняшний день? Опиши мысли, уровень стресса, тяги, или что помогло остаться чистым..." rows="4"></textarea>
                 </div>
-            </div>
-            <div class="calendar-legend">
-                <div class="legend-item"><span class="legend-color clean"></span> Чистый день</div>
-                <div class="legend-item"><span class="legend-color relapse"></span> Срыв</div>
-                <div class="legend-item"><span class="legend-color no-data"></span> Нет данных</div>
-            </div>
-        </section>
+                <button class="btn btn-primary" id="btn-save-journal">
+                    <span class="btn-text">Сохранить запись</span>
+                    <span class="spinner hidden"></span>
+                </button>
+            </section>
 
-        <!-- График триггеров срывов -->
-        <section class="dashboard-section glass">
-            <h2 class="section-title">📊 Аналитика триггеров срывов</h2>
-            <div class="chart-container">
-                <canvas id="triggers-chart"></canvas>
-                <div id="no-chart-data" class="no-data-msg hidden">
-                    🎉 Нет данных о срывах! Вы отлично держитесь!
+            <!-- История дневника -->
+            <section class="dashboard-section glass">
+                <h2 class="section-title">📖 Последние записи</h2>
+                <div class="journal-history" id="journal-history">
+                    <!-- Заполняется динамически -->
                 </div>
-            </div>
-        </section>
-        
+            </section>
+        </div>
+
+        <!-- ВКЛАДКА 3: SOS / СРЫВ -->
+        <div id="tab-sos" class="tab-content">
+            <!-- Рекомендации SOS -->
+            <section class="dashboard-section glass" id="sos-guidelines-box">
+                <h2 class="section-title">🆘 Скорая помощь при тяге (SOS)</h2>
+                <p class="sos-text">Вы чувствуете сильный импульс? Отложите мысли о срыве и обязательно выполните эти 3 шага первой помощи:</p>
+                <div class="guideline-card">
+                    <span class="num">1</span>
+                    <div class="text">
+                        <h3>Молитва</h3>
+                        <p>Обратитесь к Богу в искренней молитве о силе и самообладании.</p>
+                    </div>
+                </div>
+                <div class="guideline-card">
+                    <span class="num">2</span>
+                    <div class="text">
+                        <h3>Чтение</h3>
+                        <p>Откройте утренний библейский стих или почитайте ободряющие мысли.</p>
+                    </div>
+                </div>
+                <div class="guideline-card">
+                    <span class="num">3</span>
+                    <div class="text">
+                        <h3>Движение</h3>
+                        <p>Сделайте 20 отжиманий/приседаний или умойтесь ледяной водой.</p>
+                    </div>
+                </div>
+                <div class="sos-actions">
+                    <button class="btn btn-success" id="btn-panic-helped">✅ Мне помогло / Тяга ушла</button>
+                    <button class="btn btn-danger" id="btn-panic-failed">❌ Не помогло / Нужна помощь</button>
+                </div>
+            </section>
+
+            <!-- Блок фиксации срыва -->
+            <section class="dashboard-section glass">
+                <h2 class="section-title">⚠️ Зафиксировать срыв</h2>
+                <p class="sos-text">Если срыв все-таки произошел, будьте честны с собой. Это не конец пути, а повод сделать выводы и начать заново.</p>
+                <button class="btn btn-secondary" id="btn-show-relapse-form">Записать срыв и сбросить счетчик</button>
+                
+                <!-- Форма записи срыва (скрыта по умолчанию) -->
+                <div id="relapse-form" class="relapse-form-container hidden">
+                    <div class="form-group">
+                        <label for="relapse-trigger">Что послужило главным триггером?</label>
+                        <select id="relapse-trigger" class="form-select">
+                            <option value="Скука / Безделье">🥱 Скука / Безделье</option>
+                            <option value="Стресс / Усталость">😫 Стресс / Усталость</option>
+                            <option value="Одиночество / Грусть">😔 Одиночество / Грусть</option>
+                            <option value="Искушение в интернете">🔞 Искушение в интернете</option>
+                            <option value="Другое">📝 Другое (указать ниже)</option>
+                        </select>
+                    </div>
+                    <div class="form-group hidden" id="other-trigger-group">
+                        <label for="other-trigger-input">Опишите причину:</label>
+                        <input type="text" id="other-trigger-input" placeholder="Введите причину..." class="form-input">
+                    </div>
+                    <div class="relapse-confirm-actions">
+                        <button class="btn btn-danger" id="btn-submit-relapse">Подтвердить срыв</button>
+                        <button class="btn btn-gray" id="btn-cancel-relapse">Отмена</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
         <footer class="app-footer">
             <p>Каждая секунда делает тебя сильнее</p>
         </footer>
+
+        <!-- Нижняя панель навигации (Bottom Nav) -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-tab="dashboard">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">Дашборд</span>
+            </button>
+            <button class="nav-item" data-tab="journal">
+                <span class="nav-icon">📝</span>
+                <span class="nav-label">Дневник</span>
+            </button>
+            <button class="nav-item" data-tab="sos">
+                <span class="nav-icon">🆘</span>
+                <span class="nav-label">SOS / Срыв</span>
+            </button>
+        </nav>
     </div>
+
+    <!-- Компонент всплывающих уведомлений (Toast) -->
+    <div id="toast-container" class="toast-container"></div>
 
     <!-- Логика работы приложения -->
     <script src="js/app.js"></script>

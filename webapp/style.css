@@ -1,15 +1,20 @@
 /* Базовые стили и переменные */
 :root {
-    --bg-color: #0d0d11;
+    --bg-color: #0b0c10;
     --card-bg: rgba(255, 255, 255, 0.03);
     --card-border: rgba(255, 255, 255, 0.08);
     --text-primary: #ffffff;
-    --text-secondary: #8f92a1;
+    --text-secondary: #85899e;
     --accent-green: #00ff87;
     --accent-red: #ff3b30;
-    --accent-gray: #2c2c35;
+    --accent-blue: #60efff;
+    --accent-gray: #1f2026;
+    
     --glow-green: rgba(0, 255, 135, 0.15);
     --glow-red: rgba(255, 59, 48, 0.15);
+    --glow-blue: rgba(96, 239, 255, 0.15);
+    
+    --nav-height: 64px;
 }
 
 * {
@@ -23,7 +28,7 @@ body {
     background-color: var(--bg-color);
     color: var(--text-primary);
     min-height: 100vh;
-    padding: 16px;
+    padding: 16px 16px calc(16px + var(--nav-height) + 12px) 16px;
     display: flex;
     justify-content: center;
     overflow-x: hidden;
@@ -58,6 +63,7 @@ body {
     font-size: 13px;
     color: var(--text-secondary);
     margin-top: 5px;
+    transition: all 0.3s ease;
 }
 
 /* Элементы Glassmorphism */
@@ -68,6 +74,29 @@ body {
     border: 1px solid var(--card-border);
     border-radius: 16px;
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Вкладки (Tabs) */
+.tab-content {
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+    animation: fadeIn 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+.tab-content.active {
+    display: flex;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Карточки статистики */
@@ -86,7 +115,7 @@ body {
 
 .stat-icon {
     font-size: 24px;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
     width: 44px;
     height: 44px;
     display: flex;
@@ -102,27 +131,27 @@ body {
 }
 
 .stat-label {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .stat-value {
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 600;
     margin-top: 2px;
 }
 
 /* Свечение для карточек */
-.glow-green:hover, .glow-green {
+.glow-green {
     box-shadow: 0 8px 32px 0 var(--glow-green);
-    border-color: rgba(0, 255, 135, 0.2);
+    border-color: rgba(0, 255, 135, 0.15);
 }
 
-.glow-red:hover, .glow-red {
+.glow-red {
     box-shadow: 0 8px 32px 0 var(--glow-red);
-    border-color: rgba(255, 59, 48, 0.2);
+    border-color: rgba(255, 59, 48, 0.15);
 }
 
 /* Секции */
@@ -130,7 +159,7 @@ body {
     padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 16px;
 }
 
 .section-title {
@@ -175,28 +204,26 @@ body {
     z-index: 2;
 }
 
-/* Цвета дней календаря */
 .day-clean {
-    background: linear-gradient(135deg, rgba(0, 255, 135, 0.15) 0%, rgba(0, 255, 135, 0.3) 100%);
+    background: linear-gradient(135deg, rgba(0, 255, 135, 0.1) 0%, rgba(0, 255, 135, 0.25) 100%);
     color: var(--accent-green);
-    border: 1px solid rgba(0, 255, 135, 0.3);
-    box-shadow: 0 0 10px rgba(0, 255, 135, 0.1);
+    border: 1px solid rgba(0, 255, 135, 0.25);
+    box-shadow: 0 0 10px rgba(0, 255, 135, 0.08);
 }
 
 .day-relapse {
-    background: linear-gradient(135deg, rgba(255, 59, 48, 0.15) 0%, rgba(255, 59, 48, 0.3) 100%);
+    background: linear-gradient(135deg, rgba(255, 59, 48, 0.1) 0%, rgba(255, 59, 48, 0.25) 100%);
     color: var(--accent-red);
-    border: 1px solid rgba(255, 59, 48, 0.3);
-    box-shadow: 0 0 10px rgba(255, 59, 48, 0.1);
+    border: 1px solid rgba(255, 59, 48, 0.25);
+    box-shadow: 0 0 10px rgba(255, 59, 48, 0.08);
 }
 
 .day-no-data {
     background: var(--accent-gray);
     color: var(--text-secondary);
-    border: 1px solid rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.02);
 }
 
-/* Медалька внутри дня (если стрик сбросился или достижение) */
 .day-label-sub {
     font-size: 8px;
     margin-top: 1px;
@@ -228,12 +255,12 @@ body {
 }
 
 .legend-color.clean {
-    background: rgba(0, 255, 135, 0.3);
+    background: rgba(0, 255, 135, 0.2);
     border: 1px solid var(--accent-green);
 }
 
 .legend-color.relapse {
-    background: rgba(255, 59, 48, 0.3);
+    background: rgba(255, 59, 48, 0.2);
     border: 1px solid var(--accent-red);
 }
 
@@ -258,16 +285,333 @@ body {
     font-weight: 500;
 }
 
+/* Формы и кнопки */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.form-group label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+textarea, .form-input, .form-select {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    outline: none;
+}
+
+textarea:focus, .form-input:focus, .form-select:focus {
+    border-color: rgba(96, 239, 255, 0.5);
+    box-shadow: 0 0 15px rgba(96, 239, 255, 0.15);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.btn {
+    width: 100%;
+    height: 48px;
+    border-radius: 12px;
+    border: none;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #00ff87 0%, #60efff 100%);
+    color: #0b0c10;
+    box-shadow: 0 4px 20px rgba(0, 255, 135, 0.2);
+}
+
+.btn-primary:hover {
+    box-shadow: 0 4px 25px rgba(0, 255, 135, 0.35);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid var(--card-border);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, #ff3b30 0%, #ff9500 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 20px rgba(255, 59, 48, 0.2);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #00ff87 0%, #007aff 100%);
+    color: #0b0c10;
+    box-shadow: 0 4px 20px rgba(0, 255, 135, 0.2);
+}
+
+.btn-gray {
+    background: #1f2026;
+    color: var(--text-secondary);
+}
+
+/* Дневник история */
+.journal-history {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.journal-card {
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.015);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.journal-date {
+    font-size: 11px;
+    color: var(--accent-blue);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.journal-content {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+/* SOS секция */
+.sos-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.guideline-card {
+    display: flex;
+    gap: 16px;
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 14px 16px;
+    align-items: center;
+}
+
+.guideline-card .num {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    width: 36px;
+    height: 36px;
+    background: rgba(96, 239, 255, 0.08);
+    border: 1px solid rgba(96, 239, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.guideline-card .text h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--text-primary);
+}
+
+.guideline-card .text p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.sos-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 5px;
+}
+
+.relapse-form-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.relapse-confirm-actions {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 10px;
+}
+
+/* Нижняя панель */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--nav-height);
+    background: rgba(13, 13, 17, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--card-border);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 100;
+    padding: 0 10px;
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    gap: 4px;
+    padding: 8px 16px;
+    border-radius: 12px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    flex: 1;
+    max-width: 100px;
+}
+
+.nav-icon {
+    font-size: 20px;
+    transition: all 0.2s ease;
+}
+
+.nav-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.nav-item.active {
+    color: var(--accent-green);
+    transform: translateY(-2px);
+}
+
+.nav-item.active .nav-icon {
+    transform: scale(1.15);
+    text-shadow: 0 0 10px var(--glow-green);
+}
+
+/* Toast уведомления */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1000;
+    width: calc(100% - 32px);
+    max-width: 380px;
+    pointer-events: none;
+}
+
+.toast {
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(31, 32, 38, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(10px);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+    animation: slideDown 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.toast.success {
+    border-color: rgba(0, 255, 135, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 255, 135, 0.1);
+}
+
+.toast.error {
+    border-color: rgba(255, 59, 48, 0.3);
+    box-shadow: 0 4px 20px rgba(255, 59, 48, 0.1);
+}
+
+/* Спиннер */
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .hidden {
     display: none !important;
 }
 
-/* Подвал */
-.app-footer {
-    text-align: center;
-    padding: 15px 0 25px 0;
-    color: var(--text-secondary);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
+/* Адаптивность */
+@media (max-width: 360px) {
+    .glow-text {
+        font-size: 24px;
+    }
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    .nav-label {
+        font-size: 9px;
+    }
+    .nav-item {
+        padding: 6px 10px;
+    }
 }

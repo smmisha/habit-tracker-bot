@@ -34,33 +34,27 @@ def get_panic_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 @router.message(Command("panic"))
-@router.message(F.text == "🆘 SOS / Паника")
 async def cmd_panic(message: Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     
-    async with db_helper.session_factory() as session:
-        result = await session.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            await message.answer("❌ Пользователь не найден. Введите /start.")
-            return
-            
-    # Шаг 1: Первичная помощь (инструкции)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🏁 Я выполнил рекомендации", callback_data="panic_guidelines_done")
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🆘 Открыть SOS / Срыв в Mini App",
+                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}&tab=sos")
+                )
+            ]
         ]
-    ])
+    )
     
     await message.answer(
-        "🆘 <b>РЕЖИМ ПАНИКИ (SOS)</b>\n\n"
-        "Не поддавайся импульсу! Прежде чем делать выбор, обязательно выполни эти шаги первой помощи:\n\n"
-        "1. 🧘‍♂️ <b>Молитва:</b> Обратись к Богу в искренней молитве о силе и самообладании.\n"
-        "2. 📖 <b>Чтение:</b> Открой утренний библейский стих в боте или начни читать вдохновляющие мысли.\n"
-        "3. 🏃‍♂️ <b>Физические упражнения:</b> Отложи телефон, сделай 20 отжиманий/приседаний или умойся ледяной водой.\n\n"
-        "Как только закончишь, нажми кнопку ниже:",
-        reply_markup=keyboard
+        "🆘 <b>РЕЖИМ SOS / ПАНИКА</b>\n\n"
+        "Не поддавайтесь импульсу! Каждая секунда борьбы делает вас сильнее. "
+        "Перейдите в SOS-раздел Mini App для прохождения инструкций помощи и фиксации состояния.",
+        reply_markup=inline_kb
     )
 
 @router.callback_query(F.data == "panic_guidelines_done")

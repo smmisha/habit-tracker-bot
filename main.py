@@ -40,9 +40,7 @@ async def set_commands(bot: Bot):
     """Настройка команд меню бота"""
     commands = [
         BotCommand(command="start", description="🏠 Главное меню"),
-        BotCommand(command="streak", description="📊 Мой счетчик"),
         BotCommand(command="settings", description="⚙️ Настройки"),
-        BotCommand(command="panic", description="🆘 SOS / Паника"),
         BotCommand(command="cancel", description="❌ Отменить операцию")
     ]
     await bot.set_my_commands(commands)
@@ -291,19 +289,243 @@ async def handle_api_stats(request):
                 clean_reason = "Без указания причины"
             triggers[clean_reason] = triggers.get(clean_reason, 0) + 1
             
+        # 6. Получаем историю дневника и настройки
+        from database.models import JournalEntry
+        from sqlalchemy import desc
+        
+        journal_result = await session.execute(
+            select(JournalEntry)
+            .where(JournalEntry.user_id == user_id)
+            .order_by(desc(JournalEntry.entry_date))
+            .limit(5)
+        )
+        journal_history = [
+            {
+                "date": entry.entry_date.isoformat(),
+                "content": entry.content
+            }
+            for entry in journal_result.scalars().all()
+        ]
+        
+        partner_display = "НЕ УКАЗАН ⚠️"
+        if user.partner_username:
+            partner_display = user.partner_username if user.partner_username.isdigit() else f"@{user.partner_username}"
+            
+        settings_data = {
+            "partner_display": partner_display,
+            "checkin_time": user.checkin_time,
+            "timezone": user.timezone,
+            "notify_partner_achievements": user.notify_partner_achievements
+        }
+            
         return web.json_response({
             "streak_str": streak_str,
             "total_relapses": user.total_relapses,
             "calendar_days": calendar_days,
-            "triggers": triggers
+            "triggers": triggers,
+            "settings": settings_data,
+            "journal_history": journal_history
         })
+
+async def handle_api_save_journal(request):
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id"))
+        content = data.get("content", "").strip()
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+        
+    if not content or len(content) < 5:
+        return web.json_response({"error": "Заметка слишком короткая"}, status=400)
+        
+    from database.models import JournalEntry
+    from datetime import date
+    
+    today_date = date.today()
+    
+    async with db_helper.session_factory() as session:
+        result = await session.execute(
+            select(JournalEntry).where(
+                and_(JournalEntry.user_id == user_id, JournalEntry.entry_date == today_date)
+            )
+        )
+        entry = result.scalar_one_or_none()
+        
+        if entry:
+            entry.content = content
+            entry.created_at = datetime.now()
+            action_text = "обновлена"
+        else:
+            entry = JournalEntry(
+                user_id=user_id,
+                entry_date=today_date,
+                content=content
+            )
+            session.add(entry)
+            action_text = "сохранена"
+            
+        await session.commit()
+        
+    return web.json_response({"success": True, "message": f"Заметка успешно {action_text}!"})
+
+async def handle_api_log_relapse(request):
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id"))
+        trigger_reason = data.get("trigger_reason", "Срыв зафиксирован через Mini App").strip()
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+        
+    from database.models import User, RelapseLog
+    from services.ai_service import ai_service
+    from services.userbot_client import userbot
+    
+    now = datetime.now()
+    
+    async with db_helper.session_factory() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            return web.json_response({"error": "User not found"}, status=404)
+            
+        # Логируем срыв и сбрасываем счетчик
+        user.streak_start = now
+        user.total_relapses += 1
+        
+        log = RelapseLog(
+            user_id=user_id,
+            timestamp=now,
+            trigger_reason=trigger_reason
+        )
+        session.add(log)
+        await session.commit()
+        
+        partner_username = user.partner_username
+        business_connection_id = user.business_connection_id
+        
+    # Запускаем ИИ-ассистента в фоне
+    async def send_bot_alert():
+        try:
+            ai_response = await ai_service.generate_relapse_response(trigger_reason)
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"😔 <b>Счетчик сброшен. Начинаем стрик заново!</b>\n\n{ai_response}"
+            )
+            
+            if partner_username and business_connection_id:
+                alert_text = (
+                    f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв "
+                    f"(триггер: {trigger_reason}), и я сбросил счетчик чистоты. Мне очень нужны твои поддержка и контроль сейчас."
+                )
+                sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                if sent:
+                    await bot.send_message(chat_id=user_id, text=f"✅ Сообщение напарнику @{partner_username} успешно отправлено от вашего имени.")
+                else:
+                    await bot.send_message(chat_id=user_id, text=f"⚠️ Не удалось автоматически отправить сообщение напарнику @{partner_username}.")
+        except Exception as e:
+            logger.error(f"Ошибка отправки уведомлений после срыва по API: {e}")
+            
+    asyncio.create_task(send_bot_alert())
+    
+    return web.json_response({"success": True, "message": "Срыв зафиксирован. Поддерживающее сообщение отправлено вам в чат."})
+
+async def handle_api_manage_panic(request):
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id"))
+        action = data.get("action")  # "helped" or "failed"
+        trigger_reason = data.get("trigger_reason", "Тяга во время паники").strip()
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+        
+    from database.models import User, RelapseLog
+    from services.ai_service import ai_service
+    from services.userbot_client import userbot
+    from utils.states import Form
+    
+    async with db_helper.session_factory() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            return web.json_response({"error": "User not found"}, status=404)
+            
+        partner_username = user.partner_username
+        business_connection_id = user.business_connection_id
+        
+    if action == "helped":
+        async def send_help_ok():
+            try:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text="🎉 <b>Отлично! Ты справился с тягой и защитил свой стрик!</b>\n\nКаждая такая победа делает тебя сильнее."
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки сообщения: {e}")
+        asyncio.create_task(send_help_ok())
+        return web.json_response({"success": True, "message": "Поздравляем с победой над тягой!"})
+        
+    elif action == "failed":
+        now = datetime.now()
+        async with db_helper.session_factory() as session:
+            user_db = await session.get(User, user_id)
+            user_db.streak_start = now
+            user_db.total_relapses += 1
+            
+            log = RelapseLog(
+                user_id=user_id,
+                timestamp=now,
+                trigger_reason=f"Паника: {trigger_reason}"
+            )
+            session.add(log)
+            await session.commit()
+            
+        async def send_help_failed():
+            try:
+                ai_response = await ai_service.generate_relapse_response(trigger_reason)
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=f"😔 <b>Счетчик сброшен. Попробуем снова!</b>\n\n{ai_response}"
+                )
+                
+                state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
+                await state_ctx.set_state(Form.panic_chat)
+                await state_ctx.update_data(ai_questions_today=0)
+                
+                await bot.send_message(
+                    chat_id=user_id,
+                    text="💬 <b>Я подключил ИИ-ассистента для поддержки.</b>\n"
+                         "Вы можете написать сюда ваши мысли или чувства, чтобы обсудить их с ИИ (введите ответ в чат):"
+                )
+                
+                if partner_username and business_connection_id:
+                    alert_text = (
+                        f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв "
+                        f"(я нажал кнопку SOS, но не справился; триггер: {trigger_reason}). Мне очень нужны твои поддержка и контроль сейчас."
+                    )
+                    sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                    if sent:
+                        await bot.send_message(chat_id=user_id, text=f"✅ Сообщение напарнику @{partner_username} успешно отправлено от вашего имени.")
+                    else:
+                        await bot.send_message(chat_id=user_id, text=f"⚠️ Не удалось автоматически отправить сообщение напарнику @{partner_username}.")
+            except Exception as e:
+                logger.error(f"Ошибка отправки сообщений при срыве в панике по API: {e}")
+                
+        asyncio.create_task(send_help_failed())
+        return web.json_response({"success": True, "message": "Срыв зафиксирован. Алерт напарнику отправлен."})
+        
+    return web.json_response({"error": "Unknown action"}, status=400)
 
 async def start_web_server():
     app = web.Application()
     app.add_routes([
         web.get("/", handle_ping),
         web.get("/dashboard", handle_webapp),
-        web.get("/api/stats", handle_api_stats)
+        web.get("/api/stats", handle_api_stats),
+        web.post("/api/journal", handle_api_save_journal),
+        web.post("/api/relapse", handle_api_log_relapse),
+        web.post("/api/panic", handle_api_manage_panic)
     ])
     
     # Раздача статики стилей и скриптов WebApp

@@ -31,7 +31,6 @@ def format_timedelta(td) -> str:
     return " ".join(parts)
 
 @router.message(Command("streak"))
-@router.message(F.text == "📊 Мой счетчик")
 async def cmd_my_streak(message: Message):
     user_id = message.from_user.id
     async with db_helper.session_factory() as session:
@@ -42,46 +41,41 @@ async def cmd_my_streak(message: Message):
             await message.answer("❌ Пользователь не найден. Введите /start.")
             return
             
-        # Вычисляем разницу времени (в БД хранится наивный UTC)
         import pytz
         try:
             user_tz = pytz.timezone(user.timezone)
             now_local = datetime.now(user_tz)
-            
-            # Локализируем время начала стрика из БД как UTC и переводим в таймзону пользователя
             streak_start_utc = pytz.utc.localize(user.streak_start)
             streak_start_local = streak_start_utc.astimezone(user_tz)
-            
             delta = now_local - streak_start_local
-            display_start = streak_start_local.strftime('%d.%m.%Y %H:%M:%S')
-        except Exception as e:
-            logger.error(f"Ошибка конвертации таймзоны: {e}")
+        except Exception:
             delta = datetime.now() - user.streak_start
-            display_start = user.streak_start.strftime('%d.%m.%Y %H:%M:%S')
             
         formatted_streak = format_timedelta(delta)
         
-        partner_display = "не указан ⚠️"
-        if user.partner_username:
-            partner_display = user.partner_username if user.partner_username.isdigit() else f"@{user.partner_username}"
-            
-        # Генерируем мотивационную цитату с помощью ИИ
-        streak_days = max(0, delta.days)
-        ai_quote = await ai_service.generate_daily_motivational_quote(streak_days)
-            
-        stats_text = (
-            "📊 <b>СТАТИСТИКА ЧИСТОТЫ</b>\n"
-            "──────────────────────────\n"
-            f"⏳ <b>Текущий стрик:</b> {formatted_streak}\n"
-            f"📅 <b>Начало стрика:</b> <code>{display_start}</code>\n"
-            f"⚠️ <b>Всего срывов:</b> <code>{user.total_relapses}</code>\n"
-            f"👥 <b>Ваш напарник:</b> <code>{partner_display}</code>\n"
-            "──────────────────────────\n"
-            f"💪 <i>{ai_quote}</i>"
-        )
-    await message.answer(stats_text)
+    stats_text = (
+        "📊 <b>СТАТИСТИКА ЧИСТОТЫ</b>\n"
+        "──────────────────────────\n"
+        f"⏳ <b>Текущий стрик:</b> {formatted_streak}\n"
+        f"⚠️ <b>Всего срывов:</b> <code>{user.total_relapses}</code>\n"
+        "──────────────────────────"
+    )
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📊 Открыть дашборд в Mini App",
+                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}&tab=dashboard")
+                )
+            ]
+        ]
+    )
+    await message.answer(stats_text, reply_markup=inline_kb)
 
-@router.message(F.text == "⚠️ Срыв")
+# Оставляем хэндлеры срывов для вызова по API / команд (если нужно), но убираем текстовый матчинг кнопок
+
 async def cmd_relapse(message: Message):
     await message.answer(
         "⚠️ <b>Вы уверены, что произошел срыв?</b>\n\n"

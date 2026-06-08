@@ -3,12 +3,11 @@ import pytz
 import logging
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command, StateFilter
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
 from database.db_helper import db_helper
 from database.models import User
-from keyboards.reply import get_main_keyboard
 from keyboards.inline import get_settings_keyboard
 from utils.states import Form
 
@@ -20,12 +19,24 @@ router = Router()
 @router.message(F.text.casefold() == "отмена", StateFilter("*"))
 async def cmd_cancel(message: Message, state: FSMContext):
     current_state = await state.get_state()
+    
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Открыть Mini App",
+                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={message.from_user.id}")
+                )
+            ]
+        ]
+    )
+    
     if current_state is None:
-        await message.answer("Нечего отменять. Вы находитесь в главном меню.", reply_markup=get_main_keyboard(message.from_user.id))
+        await message.answer("Нечего отменять. Вы находитесь в главном меню.", reply_markup=inline_kb)
         return
         
     await state.clear()
-    await message.answer("❌ Действие отменено.", reply_markup=get_main_keyboard(message.from_user.id))
+    await message.answer("❌ Действие отменено.", reply_markup=inline_kb)
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
@@ -63,10 +74,34 @@ async def cmd_start(message: Message):
                 "💪 Оставайся сильным и помни, ради чего ты начал этот путь!"
             )
             
-    await message.answer(welcome_text, reply_markup=get_main_keyboard(user_id))
+    # Установка постоянной кнопки меню чата на WebApp
+    try:
+        await message.bot.set_chat_menu_button(
+            chat_id=user_id,
+            menu_button=MenuButtonWebApp(
+                text="📊 Mini App",
+                web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}")
+            )
+        )
+    except Exception as e:
+        logger.error(f"Не удалось установить кнопку меню: {e}")
+        
+    # Убираем старое reply-меню
+    await message.answer("🔄 Загружаю интерфейс...", reply_markup=ReplyKeyboardRemove())
+    
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Открыть Mini App",
+                    web_app=WebAppInfo(url=f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}")
+                )
+            ]
+        ]
+    )
+    await message.answer(welcome_text, reply_markup=inline_kb)
 
 @router.message(Command("settings"))
-@router.message(F.text == "⚙️ Настройки")
 async def cmd_settings(message: Message):
     user_id = message.from_user.id
     async with db_helper.session_factory() as session:
