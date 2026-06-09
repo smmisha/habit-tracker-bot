@@ -10,7 +10,7 @@ from services.userbot_client import userbot
 from services.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(timezone=pytz.timezone("Europe/Kyiv"))
 
 async def check_and_send_checkins():
     """Каждую минуту проверяет, кому пора отправить чек-ин"""
