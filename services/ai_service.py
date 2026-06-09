@@ -345,4 +345,41 @@ class GeminiAIService:
             
         return fallback_list
 
+    async def generate_daily_bible_verse(self) -> dict:
+        """
+        Генерирует библейский стих и размышление на основе ИИ в формате JSON.
+        Возвращает словарь {'citation': '...', 'text': '...', 'commentary': '...'}
+        """
+        import json
+        prompt = (
+            "Выбери один ободряющий и сильный библейский стих на русском языке, помогающий человеку "
+            "в борьбе с искушениями, тягой к вредным привычкам (PMO) или в развитии самообладания и стойкости.\n\n"
+            "Ответ должен быть строго в формате JSON без разметки markdown (пиши только сырой JSON). "
+            "Словарь должен содержать три строковых поля:\n"
+            "1. 'citation' — Книга, глава и стих (например, '1 Коринфянам 10:13').\n"
+            "2. 'text' — Точный синодальный текст этого стиха на русском языке.\n"
+            "3. 'commentary' — Краткое, глубокое, поддерживающее размышление к этому стиху (2-3 предложения), "
+            "ориентированное на укрепление духа и преодоление тяги.\n\n"
+            "Пример формата:\n"
+            '{\n  "citation": "Притчи 4:23",\n  "text": "Больше всего хранимого храни сердце твое...",\n  "commentary": "..." \n}'
+        )
+        
+        fallback = {
+            "citation": "1 Коринфянам 10:13",
+            "text": "Вас постигло искушение не иное, как человеческое; и верен Бог, Который не попустит вам быть искушаемыми сверх сил...",
+            "commentary": "Бог всегда дает выход из любого испытания. Когда наступает тяга, помни: это состояние временно, и у тебя есть силы перенести его."
+        }
+        
+        try:
+            res_text = await self._call_gemini(prompt, "")
+            if res_text:
+                res_text_clean = res_text.strip().replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(res_text_clean)
+                if isinstance(parsed, dict) and "citation" in parsed and "text" in parsed and "commentary" in parsed:
+                    return parsed
+        except Exception as e:
+            logger.error(f"Ошибка генерации стиха дня через ИИ: {e}")
+            
+        return fallback
+
 ai_service = GeminiAIService()

@@ -116,8 +116,19 @@ class BibleService:
             except Exception as e:
                 logger.warning(f"Failed to fetch daily text from {url}: {e}")
                 
-        # Возвращаем локальный стих, если все попытки не удались
-        logger.warning("All online daily text attempts failed. Using local backup.")
+        # Если онлайн-запрос заблокирован/упал, пробуем ИИ
+        logger.warning("All online daily text attempts failed. Trying AI fallback...")
+        try:
+            from services.ai_service import ai_service
+            ai_verse = await ai_service.generate_daily_bible_verse()
+            if ai_verse and "citation" in ai_verse:
+                logger.info("Successfully generated daily verse using AI fallback.")
+                return ai_verse
+        except Exception as e:
+            logger.error(f"Failed to generate daily verse via AI: {e}")
+
+        # Возвращаем локальный стих, если ИИ тоже не ответил
+        logger.warning("All online daily text and AI fallback attempts failed. Using local backup.")
         return self.get_local_verse()
 
 bible_service = BibleService()
