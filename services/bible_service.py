@@ -67,14 +67,121 @@ class BibleService:
         idx = day_of_year % len(LOCAL_VERSES)
         return LOCAL_VERSES[idx]
 
+    def parse_citation(self, citation_str: str):
+        """
+        Парсит главу и стихи из строки цитаты (например, "2 Кор. 7:11", "Иона 1:1—4").
+        Возвращает кортеж (глава, список_стихов).
+        """
+        try:
+            # Очищаем от HTML и лишних пробелов
+            citation_str = re.sub(r'<[^>]+>', '', citation_str).strip()
+            citation_str = " ".join(citation_str.split())
+            
+            if ":" not in citation_str:
+                return None, None
+                
+            before_colon, after_colon = citation_str.rsplit(":", 1)
+            
+            # Находим главу (число непосредственно перед двоеточием)
+            chapter_match = re.search(r'(\d+)\s*$', before_colon)
+            if not chapter_match:
+                return None, None
+            chapter = int(chapter_match.group(1))
+            
+            # Находим стихи
+            # Проверяем диапазон (через дефис или длинное тире)
+            range_match = re.search(r'(\d+)\s*[\-——–]\s*(\d+)', after_colon)
+            if range_match:
+                start_v = int(range_match.group(1))
+                end_v = int(range_match.group(2))
+                verses = list(range(start_v, end_v + 1))
+            else:
+                # Перечисление через запятую или одиночный стих
+                parts = re.findall(r'\d+', after_colon)
+                if parts:
+                    verses = [int(p) for p in parts]
+                else:
+                    return None, None
+            return chapter, verses
+        except Exception as e:
+            logger.error(f"Error parsing citation '{citation_str}': {e}")
+            return None, None
+
+    async def fetch_full_verse(self, citation_link: str, citation_text: str) -> str:
+        """
+        Переходит по ссылке цитаты на wol.jw.org и извлекает полный текст стиха/стихов.
+        """
+        import aiohttp
+        
+        chapter, verses = self.parse_citation(citation_text)
+        if not chapter or not verses:
+            logger.warning(f"Could not parse chapter/verses from citation '{citation_text}'")
+            return None
+            
+        url = citation_link
+        if not url.startswith("http"):
+            url = f"https://wol.jw.org{url}"
+            
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3"
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=10) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        
+                        full_text_parts = []
+                        for v in verses:
+                            # Ищем тег span с id="v{любая_книга}-{chapter}-{v}-{часть}"
+                            pattern = rf'<span[^>]*id="v\d+-{chapter}-{v}-[^"]*"[^>]*>(.*?)</span>'
+                            matches = re.findall(pattern, html, re.DOTALL)
+                            
+                            v_text_parts = []
+                            for match in matches:
+                                # Удаляем ссылки на сноски (класс fn) и перекрестные ссылки (класс b)
+                                cleaned = re.sub(r'<a[^>]*class="[^"]*(?:fn|b)[^"]*"[^>]*>.*?</a>', '', match)
+                                # Удаляем номер стиха (класс vl или vp)
+                                cleaned = re.sub(r'<a[^>]*class="[^"]*(?:vl|vp)[^"]*"[^>]*>.*?</a>', '', cleaned)
+                                # Удаляем оставшиеся HTML-теги
+                                cleaned = re.sub(r'<[^>]+>', '', cleaned)
+                                # Убираем неразрывные пробелы
+                                cleaned = cleaned.replace('\xa0', ' ').replace('\u202f', ' ').strip()
+                                v_text_parts.append(cleaned)
+                                
+                            if v_text_parts:
+                                joined_v_text = " ".join(" ".join(v_text_parts).split())
+                                if len(verses) > 1:
+                                    full_text_parts.append(f"[{v}] {joined_v_text}")
+                                else:
+                                    full_text_parts.append(joined_v_text)
+                                    
+                        if full_text_parts:
+                            return " ".join(full_text_parts)
+        except Exception as e:
+            logger.error(f"Error fetching full verse from {url}: {e}")
+            
+        return None
+
     async def fetch_daily_text(self) -> dict:
         """
         Пытается спарсить стих дня с сайта wol.jw.org на русском языке.
-        При неудаче возвращает стих из локального списка.
+        Использует aiohttp и точечную изоляцию контейнера даты во избежание сдвига на день назад/вперед.
+        Затем переходит по ссылке цитаты для извлечения полного текста стиха.
+        При неудаче пробует Gemini API с Google Search, при критических ошибках/лимитах — локальный список.
         """
+        import aiohttp
+        import json
+        
         # Определяем текущую дату по часовому поясу Киева
         tz = pytz.timezone("Europe/Kyiv")
         now = datetime.now(tz)
+        
+        # Строка даты в формате data-date="2026-06-09T00:00:00.000Z"
+        date_str = f"{now.year:04d}-{now.month:02d}-{now.day:02d}T00:00:00.000Z"
         
         # Пробуем несколько возможных форматов ссылок (с lp-u, так как для русского языка на wol используется u)
         urls_to_try = [
@@ -82,53 +189,142 @@ class BibleService:
             f"https://wol.jw.org/ru/wol/dt/r2/lp-u/{now.year}/{now.month}/{now.day}"
         ]
         
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
+            "Connection": "keep-alive"
+        }
+        
         for url in urls_to_try:
             try:
-                req = urllib.request.Request(
-                    url, 
-                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
-                )
-                # Открываем с таймаутом 5 секунд
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    html = response.read().decode('utf-8')
-                    
-                    # Парсим стих дня (класс themeScrp)
-                    scripture_match = re.search(r'<p[^>]*class="[^"]*themeScrp[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
-                    
-                    # Парсим комментарий дня (класс sb)
-                    commentary_match = re.search(r'<p[^>]*class="[^"]*sb[^"]*"[^>]*>(.*?)</p>', html, re.DOTALL)
-                    
-                    if scripture_match:
-                        clean_scripture = re.sub(r'<[^>]+>', '', scripture_match.group(1)).strip()
-                        clean_scripture = " ".join(clean_scripture.split())
-                        
-                        clean_commentary = ""
-                        if commentary_match:
-                            clean_commentary = re.sub(r'<[^>]+>', '', commentary_match.group(1)).strip()
-                            clean_commentary = " ".join(clean_commentary.split())
-                        
-                        logger.info(f"Successfully parsed daily text from {url}")
-                        return {
-                            "citation": f"Стих дня ({now.strftime('%d.%m.%Y')})",
-                            "text": clean_scripture,
-                            "commentary": clean_commentary if clean_commentary else "Ободряющие размышления на сегодня."
-                        }
+                logger.info(f"Attempting to fetch daily text directly from {url} using robust parsing...")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers, timeout=10) as response:
+                        if response.status == 200:
+                            html = await response.text()
+                            
+                            # Ищем блок для конкретной целевой даты
+                            start_pattern = f'data-date="{date_str}"'
+                            start_match = re.search(start_pattern, html)
+                            if not start_match:
+                                logger.warning(f"Date block {date_str} not found in HTML from {url}")
+                                continue
+                                
+                            start_idx = start_match.start()
+                            # Находим конец блока (следующий контейнер tabContent или конец текста)
+                            next_tab_match = re.search(r'class="tabContent"', html[start_idx + len(start_pattern):])
+                            if next_tab_match:
+                                end_idx = start_idx + len(start_pattern) + next_tab_match.start()
+                            else:
+                                end_idx = len(html)
+                                
+                            day_html = html[start_idx:end_idx]
+                            
+                            # Парсим стих дня (класс themeScrp) внутри блока этого дня
+                            scripture_match = re.search(r'<p[^>]*class="[^"]*themeScrp[^"]*"[^>]*>(.*?)</p>', day_html, re.DOTALL)
+                            # Парсим комментарий дня (класс sb) внутри блока этого дня
+                            commentary_match = re.search(r'<p[^>]*class="[^"]*sb[^"]*"[^>]*>(.*?)</p>', day_html, re.DOTALL)
+                            
+                            if scripture_match:
+                                clean_scripture = re.sub(r'<[^>]+>', '', scripture_match.group(1)).strip()
+                                clean_scripture = " ".join(clean_scripture.split())
+                                
+                                # Пробуем извлечь ссылку на цитату и вытащить полный стих
+                                clean_verse_content = clean_scripture
+                                display_citation = f"Стих дня ({now.strftime('%d.%m.%Y')})"
+                                
+                                link_match = re.search(r'<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', scripture_match.group(1), re.DOTALL)
+                                if link_match:
+                                    citation_link = link_match.group(1)
+                                    citation_text = re.sub(r'<[^>]+>', '', link_match.group(2)).strip()
+                                    citation_text = " ".join(citation_text.split())
+                                    
+                                    logger.info(f"Parsed citation link: {citation_link}, text: {citation_text}")
+                                    display_citation = f"{citation_text} ({now.strftime('%d.%m.%Y')})"
+                                    
+                                    full_text = await self.fetch_full_verse(citation_link, citation_text)
+                                    if full_text:
+                                        logger.info("Successfully fetched full verse text!")
+                                        clean_verse_content = full_text
+                                
+                                clean_commentary = ""
+                                if commentary_match:
+                                    clean_commentary = re.sub(r'<[^>]+>', '', commentary_match.group(1)).strip()
+                                    clean_commentary = " ".join(clean_commentary.split())
+                                
+                                logger.info(f"Successfully scraped and isolated daily text for {date_str}")
+                                return {
+                                    "citation": display_citation,
+                                    "text": clean_verse_content,
+                                    "commentary": clean_commentary if clean_commentary else "Ободряющие размышления на сегодня."
+                                }
             except Exception as e:
-                logger.warning(f"Failed to fetch daily text from {url}: {e}")
+                logger.warning(f"Failed to directly fetch daily text from {url}: {e}")
                 
-        # Если онлайн-запрос заблокирован/упал, пробуем ИИ
-        logger.warning("All online daily text attempts failed. Trying AI fallback...")
+        # Если прямой парсинг не удался (например, из-за блокировки IP на Render),
+        # пробуем запросить у Gemini API с включенным поиском (Google Search Grounding).
+        logger.warning("Direct fetch failed. Trying Gemini API with Google Search grounding...")
         try:
-            from services.ai_service import ai_service
-            ai_verse = await ai_service.generate_daily_bible_verse()
-            if ai_verse and "citation" in ai_verse:
-                logger.info("Successfully generated daily verse using AI fallback.")
-                return ai_verse
+            from config.config import settings
+            
+            api_key = settings.gemini_api_key
+            if api_key and api_key.strip() not in ("", "your_gemini_api_key_here"):
+                model = "gemini-3.1-flash-lite"  # Используем основную модель проекта
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                
+                months_ru = {
+                    1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+                    5: "мая", 6: "июня", 7: "июля", 8: "августа",
+                    9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
+                }
+                month_name = months_ru.get(now.month, "января")
+                
+                prompt = (
+                    f"Найди через Google Поиск стих дня на сегодня ({now.day} {month_name} {now.year} года) "
+                    "с сайта wol.jw.org на русском языке. "
+                    "Тебе нужно найти точную цитату (например, '2 Коринфянам 7:11'), текст этого стиха и абзац размышления/комментария под ним.\n"
+                    "Верни ответ строго в формате JSON со следующими полями:\n"
+                    "- 'citation': цитата стиха\n"
+                    "- 'text': текст стиха на русском\n"
+                    "- 'commentary': размышление под стихом\n"
+                    "Пиши только чистый JSON, без markdown разметки (не используй ```json)."
+                )
+                
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {"text": prompt}
+                            ]
+                        }
+                    ],
+                    "tools": [
+                        {"googleSearch": {}}
+                    ]
+                }
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(gemini_url, json=payload, headers={"Content-Type": "application/json"}, timeout=15) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            res_text = data['candidates'][0]['content']['parts'][0]['text']
+                            res_clean = res_text.strip().replace("```json", "").replace("```", "").strip()
+                            parsed = json.loads(res_clean)
+                            if parsed.get("citation") and parsed.get("text"):
+                                logger.info("Successfully fetched daily text via Gemini Google Search!")
+                                return {
+                                    "citation": parsed["citation"],
+                                    "text": parsed["text"],
+                                    "commentary": parsed.get("commentary", "Ободряющие размышления на сегодня.")
+                                }
+                        else:
+                            logger.error(f"Gemini Search API returned status {response.status}: {await response.text()}")
         except Exception as e:
-            logger.error(f"Failed to generate daily verse via AI: {e}")
-
-        # Возвращаем локальный стих, если ИИ тоже не ответил
-        logger.warning("All online daily text and AI fallback attempts failed. Using local backup.")
+            logger.error(f"Failed to fetch daily text via Gemini Google Search: {e}")
+                
+        # Возвращаем локальный стих, если все попытки не удались
+        logger.warning("All online daily text attempts failed. Using local backup.")
         return self.get_local_verse()
 
 bible_service = BibleService()

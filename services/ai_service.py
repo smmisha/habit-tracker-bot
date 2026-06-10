@@ -7,100 +7,13 @@ logger = logging.getLogger(__name__)
 class GeminiAIService:
     def __init__(self):
         self.api_key = settings.gemini_api_key
-        # Используем современную и быструю модель gemini-3.5-flash
-        self.model = "gemini-3.5-flash"
+        # Используем современную и быструю модель gemini-3.1-flash-lite
+        self.model = "gemini-3.1-flash-lite"
         self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-
-    async def _call_mistral(self, prompt: str, system_instruction: str = None) -> str:
-        """Вспомогательный метод для выполнения запросов к Mistral API"""
-        api_key = settings.mistral_api_key
-        if not api_key or api_key.strip() in ("", "your_mistral_api_key_here"):
-            return None
-            
-        url = "https://api.mistral.ai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        messages = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-        messages.append({"role": "user", "content": prompt})
-        
-        payload = {
-            "model": "open-mistral-nemo",
-            "messages": messages
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        text = data['choices'][0]['message']['content']
-                        return text.strip()
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Mistral API returned status {response.status}: {error_text}")
-        except Exception as e:
-            logger.error(f"Error calling Mistral API: {e}")
-            
-        return None
-
-    async def _call_mistral_chat(self, contents: list) -> str:
-        """Интерактивный диалог через Mistral API с конвертацией контекста"""
-        api_key = settings.mistral_api_key
-        if not api_key or api_key.strip() in ("", "your_mistral_api_key_here"):
-            return None
-            
-        url = "https://api.mistral.ai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        system_instruction = (
-            "Ты — эмпатичный, но твердый психолог-коуч по преодолению зависимостей (особенно PMO). "
-            "Пользователь находится в состоянии тяги и общается с тобой в чате экстренной помощи SOS. "
-            "Внимание: пользователь может пытаться оправдать себя, торговаться или искать лазейки для срыва. "
-            "Твоя задача — тепло, но твердо возвращать его к реальности, разоблачать уловки ума и помогать ему "
-            "закрыть мессенджер и переключиться на другое занятие (спорт, прогулка, молитва). "
-            "Не поддерживай его оправдания. Отвечай кратко (2-3 предложения), дружелюбно и практично."
-        )
-        
-        messages = [{"role": "system", "content": system_instruction}]
-        
-        for msg in contents:
-            role = msg.get("role", "user")
-            if role == "model":
-                role = "assistant"
-            parts = msg.get("parts", [{}])
-            text = parts[0].get("text", "") if parts else ""
-            messages.append({"role": role, "content": text})
-            
-        payload = {
-            "model": "open-mistral-nemo",
-            "messages": messages
-        }
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        text = data['choices'][0]['message']['content']
-                        return text.strip()
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Mistral chat API returned status {response.status}: {error_text}")
-        except Exception as e:
-            logger.error(f"Error calling Mistral chat API: {e}")
-            
-        return None
+        self._quote_cache = {}
 
     async def _call_gemini(self, prompt: str, fallback_text: str) -> str:
-        """Вспомогательный метод для выполнения запросов к Gemini API с фоллбеком на Mistral"""
+        """Вспомогательный метод для выполнения запросов к Gemini API"""
         if self.api_key and self.api_key.strip() not in ("", "your_gemini_api_key_here"):
             payload = {
                 "contents": [
@@ -124,12 +37,6 @@ class GeminiAIService:
                             logger.error(f"Gemini API returned status {response.status}: {error_text}")
             except Exception as e:
                 logger.error(f"Error calling Gemini API: {e}")
-
-        # Если Gemini не ответил/не настроен, пробуем Mistral
-        mistral_res = await self._call_mistral(prompt)
-        if mistral_res:
-            logger.info("Gemini failed/unconfigured. Successfully fell back to Mistral API.")
-            return mistral_res
 
         return fallback_text
 
@@ -224,12 +131,6 @@ class GeminiAIService:
             except Exception as e:
                 logger.error(f"Error calling Gemini API in chat mode: {e}")
 
-        # Если Gemini не ответил/не настроен, пробуем Mistral
-        mistral_res = await self._call_mistral_chat(contents)
-        if mistral_res:
-            logger.info("Gemini chat failed. Successfully fell back to Mistral API.")
-            return mistral_res
-
         return "Я понимаю, что тебе сейчас тяжело. Но помни: это просто импульс, который пройдет. Не веди внутренний диалог, займи себя делом прямо сейчас."
 
     async def generate_milestone_reward_suggestion(self, milestone_days: int) -> str:
@@ -251,6 +152,13 @@ class GeminiAIService:
         """
         Генерирует короткую ежедневную мотивационную цитату (для отображения на карточке статуса).
         """
+        from datetime import date
+        today = date.today()
+        cache_key = (streak_days, today)
+        
+        if hasattr(self, "_quote_cache") and cache_key in self._quote_cache:
+            return self._quote_cache[cache_key]
+            
         prompt = (
             "Напиши одну очень короткую, емкую и сильную мотивационную фразу на русском языке для поддержки "
             "человека, который борется с зависимостью (PMO) и сохраняет чистоту. "
@@ -260,8 +168,18 @@ class GeminiAIService:
             "или \"Твоя сила растет в моменты, когда ты говоришь себе нет\". "
             "Не используй избитые клише."
         )
+        
         fallback = "Каждая секунда чистоты делает тебя сильнее! Держись!"
-        return await self._call_gemini(prompt, fallback)
+        result = await self._call_gemini(prompt, fallback)
+        
+        if hasattr(self, "_quote_cache"):
+            # Prune older cache entries to free memory
+            keys_to_delete = [k for k in self._quote_cache.keys() if k[1] != today]
+            for k in keys_to_delete:
+                self._quote_cache.pop(k, None)
+            self._quote_cache[cache_key] = result
+            
+        return result
 
     async def generate_weekly_journal_analysis(self, entries: list) -> str:
         """

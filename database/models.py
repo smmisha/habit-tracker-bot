@@ -40,6 +40,9 @@ class User(Base):
     # ID бизнес-подключения для автоматизации чатов
     business_connection_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
+    # ID последнего отправленного сообщения со стихом дня для последующего удаления
+    last_verse_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
     # ИИ-помощник: учет заданных вопросов
     ai_questions_used_today: Mapped[int] = mapped_column(default=0)
     last_ai_query_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

@@ -251,12 +251,12 @@ async def send_daily_bible_verses():
     # Получаем стих дня
     verse = await bible_service.fetch_daily_text()
     
+    # Сообщение БЕЗ комментария (только цитата и сам стих)
     message_text = (
         "📖 <b>ЕЖЕДНЕВНОЕ ИССЛЕДОВАНИЕ ПИСАНИЙ</b>\n"
         "──────────────────────────\n"
         f"<b>{verse['citation']}</b>\n\n"
-        f"<i>«{verse['text']}»</i>\n\n"
-        f"<b>Размышление:</b>\n{verse['commentary']}\n"
+        f"<i>«{verse['text']}»</i>\n"
         "──────────────────────────\n"
         "👋 <i>Пусть эти слова поддержат тебя и дадут сил на сегодня! Хорошего дня!</i>"
     )
@@ -266,12 +266,30 @@ async def send_daily_bible_verses():
         users = result.scalars().all()
         
         for user in users:
+            # 1. Пытаемся удалить вчерашний стих
+            if user.last_verse_message_id:
+                try:
+                    await bot.delete_message(chat_id=user.id, message_id=user.last_verse_message_id)
+                    logger.info(f"Успешно удален вчерашний стих дня (ID: {user.last_verse_message_id}) у пользователя {user.id}")
+                except Exception as delete_error:
+                    logger.warning(f"Не удалось удалить вчерашний стих дня у пользователя {user.id}: {delete_error}")
+            
             try:
-                # Определяем локальное время 09:00 для пользователя (позже это запустится cron-ом в 9 утра по его таймзоне)
-                await bot.send_message(chat_id=user.id, text=message_text)
-                logger.info(f"Отправлен стих дня пользователю {user.id}")
+                # 2. Отправляем сегодняшний стих
+                sent_msg = await bot.send_message(chat_id=user.id, text=message_text)
+                logger.info(f"Отправлен стих дня пользователю {user.id}, message_id: {sent_msg.message_id}")
+                
+                # 3. Запоминаем ID сообщения
+                user.last_verse_message_id = sent_msg.message_id
             except Exception as e:
                 logger.error(f"Не удалось отправить стих дня пользователю {user.id}: {e}")
+                
+        try:
+            await session.commit()
+            logger.info("Состояния last_verse_message_id успешно сохранены в БД")
+        except Exception as commit_error:
+            logger.error(f"Ошибка сохранения ID сообщений стихов в БД: {commit_error}")
+            await session.rollback()
 
 async def send_weekly_reports():
     """Еженедельный воскресный отчет для напарника и пользователя"""

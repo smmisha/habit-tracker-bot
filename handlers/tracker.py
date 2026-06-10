@@ -153,6 +153,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         reasons = relapses_result.scalars().all()
         total_relapses = len(reasons)
         
+    import html
     stats_list = []
     if total_relapses > 0:
         counts = {}
@@ -171,43 +172,72 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
         for reason, count in sorted_counts:
             pct = int((count / total_relapses) * 100)
-            stats_list.append(f"• <b>{reason}</b>: {pct}% ({count} раз)")
+            escaped_reason = html.escape(reason)
+            stats_list.append(f"• <b>{escaped_reason}</b>: {pct}% ({count} раз)")
             
     stats_text = "\n".join(stats_list) if stats_list else "Нет данных."
     
-    if callback:
-        await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
-    elif message:
-        await message.answer("⏳ <i>Подключаю ИИ-ассистента...</i>")
+    try:
+        if callback:
+            await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
+        elif message:
+            await message.answer("⏳ <i>Подключаю ИИ-ассистента...</i>")
+    except Exception as e:
+        logger.warning(f"Failed to send 'Connecting AI' status: {e}")
+ 
+    try:
+        ai_response = await ai_service.generate_relapse_response(trigger_reason)
+    except Exception as e:
+        logger.error(f"Error calling AI service in execute_relapse_reset: {e}")
+        ai_response = (
+            "Очень жаль, что это произошло. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
+            "Не сдавайся, твой стрик чистоты начат заново! Ты справишься."
+        )
 
-    ai_response = await ai_service.generate_relapse_response(trigger_reason)
-
+    ai_response_escaped = html.escape(ai_response)
     confirm_text = (
         "😔 <b>Счетчик сброшен. Стрик чистоты начат заново!</b>\n\n"
-        f"{ai_response}\n\n"
+        f"{ai_response_escaped}\n\n"
         "📊 <b>Статистика твоих триггеров срывов:</b>\n"
         f"{stats_text}"
     )
     
-    if callback:
-        await callback.message.edit_text(confirm_text)
-    elif message:
-        await message.answer(confirm_text)
+    try:
+        if callback:
+            await callback.message.edit_text(confirm_text)
+        elif message:
+            await message.answer(confirm_text)
+    except Exception as e:
+        logger.error(f"Failed to send confirmation text to user: {e}")
+        if callback:
+            try:
+                await callback.message.answer(confirm_text)
+            except Exception as e2:
+                logger.error(f"Failed to send confirmation fallback: {e2}")
         
     # 4. Оповещение напарника
     if partner_username and business_connection_id:
+        escaped_trigger = html.escape(trigger_reason)
         alert_text = (
             f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв, "
-            f"и я сбросил счетчик чистоты. (Причина: {trigger_reason}). Мне очень нужны твои поддержка и контроль сейчас."
+            f"и я сбросил счетчик чистоты. (Причина: {escaped_trigger}). Мне очень нужны твои поддержка и контроль сейчас."
         )
-        sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+        
+        try:
+            sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+        except Exception as e:
+            logger.error(f"Error sending message to partner: {e}")
+            sent = False
         
         notify_msg = f"✅ Сообщение напарнику <code>@{partner_username}</code> успешно отправлено автоматически." if sent else f"⚠️ Не удалось автоматически отправить сообщение напарнику <code>@{partner_username}</code>."
         
-        if callback:
-            await callback.message.answer(notify_msg)
-        elif message:
-            await message.answer(notify_msg)
+        try:
+            if callback:
+                await callback.message.answer(notify_msg)
+            elif message:
+                await message.answer(notify_msg)
+        except Exception as e:
+            logger.error(f"Failed to send partner notification status to user: {e}")
 
 @router.callback_query(F.data.startswith("relapse_trigger_"))
 async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):

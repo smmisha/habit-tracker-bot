@@ -28,6 +28,27 @@ class DatabaseHelper:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             
+        # Добавляем колонку last_verse_message_id, если её нет в БД
+        try:
+            from sqlalchemy import text
+            async with self.session_factory() as session:
+                bind = self.engine
+                if "sqlite" in str(bind.url):
+                    # Для SQLite
+                    res = await session.execute(text("PRAGMA table_info(users)"))
+                    columns = [row[1] for row in res.fetchall()]
+                    if "last_verse_message_id" not in columns:
+                        await session.execute(text("ALTER TABLE users ADD COLUMN last_verse_message_id INTEGER"))
+                        await session.commit()
+                else:
+                    # Для PostgreSQL / Neon
+                    await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS last_verse_message_id BIGINT"))
+                    await session.commit()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to add last_verse_message_id column dynamically: {e}")
+            
     async def dispose(self):
         """Закрытие соединений"""
         await self.engine.dispose()

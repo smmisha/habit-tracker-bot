@@ -86,14 +86,35 @@ async def process_checkin_clean(callback: CallbackQuery):
             
             await session.commit()
             
-            await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
-            ai_response = await ai_service.generate_clean_checkin_response(streak_days)
-            
-            await callback.message.edit_text(
+            import html
+            try:
+                await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
+            except Exception as e:
+                logger.warning(f"Failed to send 'Connecting AI' status in checkin_clean: {e}")
+                
+            try:
+                ai_response = await ai_service.generate_clean_checkin_response(streak_days)
+            except Exception as e:
+                logger.error(f"Error calling AI service in checkin_clean: {e}")
+                ai_response = f"Отлично! Твой день прошел чисто. Текущий стрик: {streak_days} дн. Продолжай в том же духе!"
+                
+            ai_response_escaped = html.escape(ai_response)
+            clean_text = (
                 "☀️ <b>Отметка выполнена! Твой день прошел чисто!</b>\n\n"
-                f"{ai_response}"
+                f"{ai_response_escaped}"
             )
-            await callback.answer()
+            try:
+                await callback.message.edit_text(clean_text)
+            except Exception as e:
+                logger.error(f"Failed to edit message in checkin_clean: {e}")
+                try:
+                    await callback.message.answer(clean_text)
+                except Exception as e2:
+                    logger.error(f"Failed to send clean checkin answer fallback: {e2}")
+            try:
+                await callback.answer()
+            except Exception:
+                pass
         else:
             # ОПОЗДАНИЕ (запускается опрос о причинах)
             forgot_left = 3 - user.forgot_count
@@ -143,28 +164,62 @@ async def process_checkin_relapsed(callback: CallbackQuery):
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id
         
-    await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
-    ai_response = await ai_service.generate_relapse_response("Срыв зафиксирован при чек-ине")
-    
-    await callback.message.edit_text(
+    import html
+    try:
+        await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
+    except Exception as e:
+        logger.warning(f"Failed to send 'Connecting AI' status in checkin_relapsed: {e}")
+        
+    try:
+        ai_response = await ai_service.generate_relapse_response("Срыв зафиксирован при чек-ине")
+    except Exception as e:
+        logger.error(f"Error calling AI service in checkin_relapsed: {e}")
+        ai_response = (
+            "Очень жаль, что это произошло. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
+            "Не сдавайся, твой стрик чистоты начат заново! Ты справишься."
+        )
+        
+    ai_response_escaped = html.escape(ai_response)
+    confirm_text = (
         "😔 <b>Счетчик сброшен. Начинаем стрик заново!</b>\n\n"
-        f"{ai_response}"
+        f"{ai_response_escaped}"
     )
+    
+    try:
+        await callback.message.edit_text(confirm_text)
+    except Exception as e:
+        logger.error(f"Failed to edit message in checkin_relapsed: {e}")
+        try:
+            await callback.message.answer(confirm_text)
+        except Exception as e2:
+            logger.error(f"Failed to send relapse confirmation fallback: {e2}")
     
     if partner_username and business_connection_id:
         alert_text = (
             "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв, "
             "и я сбросил счетчик чистоты. Мне очень нужны твои поддержка и контроль сейчас."
         )
-        sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-        if sent:
-            await callback.message.answer(f"✅ Сообщение напарнику @{partner_username} успешно отправлено от вашего имени.")
-        else:
-            await callback.message.answer(f"⚠️ Не удалось автоматически отправить сообщение напарнику @{partner_username}.")
-    else:
-        await callback.message.answer(f"⚠️ Сообщение напарнику не отправлено (напарник или Бизнес-подключение не настроены).")
+        try:
+            sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+        except Exception as e:
+            logger.error(f"Error sending message to partner in checkin_relapsed: {e}")
+            sent = False
             
-    await callback.answer()
+        notify_msg = f"✅ Сообщение напарнику <code>@{partner_username}</code> успешно отправлено автоматически." if sent else f"⚠️ Не удалось автоматически отправить сообщение напарнику <code>@{partner_username}</code>."
+        try:
+            await callback.message.answer(notify_msg)
+        except Exception as e:
+            logger.error(f"Failed to send partner notification status: {e}")
+    else:
+        try:
+            await callback.message.answer(f"⚠️ Сообщение напарнику не отправлено (напарник или Бизнес-подключение не настроены).")
+        except Exception as e:
+            logger.error(f"Failed to send no-partner status: {e}")
+            
+    try:
+        await callback.answer()
+    except Exception:
+        pass
 
 # --- ОБРАБОТКА ПРИЧИН ОПОЗДАНИЯ ---
 async def save_excuse(user_id: int, excuse_text: str, callback: CallbackQuery = None, message: Message = None):
