@@ -1,0 +1,306 @@
+import json
+import logging
+from PIL import Image
+import google.generativeai as genai
+from config import GEMINI_API_KEY
+
+logger = logging.getLogger(__name__)
+
+# Настройка Gemini API
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    logger.warning("GEMINI_API_KEY не установлен! Функции ИИ будут недоступны.")
+
+async def parse_text_schedule(text: str) -> dict:
+    """
+    Разбирает текстовое описание расписания приема лекарства с помощью Gemini.
+    Возвращает словарь с параметрами.
+    """
+    if not GEMINI_API_KEY:
+        return None
+    
+    prompt = f"""
+    Проанализируй текст и выдели параметры приема лекарств.
+    Текст: "{text}"
+    
+    Верни строго JSON-объект следующего формата (без markdown разметки и других символов):
+    {{
+        "name": "Название лекарства (на русском языке, с большой буквы, например, 'Аспирин')",
+        "active_ingredient": "Действующее вещество лекарства (МНН, на русском языке, с большой буквы, например, 'Ацетилсалициловая кислота'). Если в тексте не указано, определи его по коммерческому названию из своей базы знаний. Если определить невозможно, верни null",
+        "dosage": "Дозировка/количество для одного приема (например, '1 таблетка', '5 мг', '1 капсула', '1 шт')",
+        "food_relation": "Отношение к еде (одно из: 'before_meal' (до еды), 'with_meal' (во время еды), 'after_meal' (после еды), 'none' (нет связи))",
+        "times": ["Список времени приемов в формате ЧЧ:ММ (например, ['09:00', '21:00']). Если время не указано, предложи разумное дефолтное время исходя из количества раз в день (например, если 1 раз в день, то ['09:00']; если 2 раза, то ['09:00', '21:00']; если 3 раза, то ['09:00', '14:00', '21:00'])]",
+        "schedule_type": "Тип расписания (одно из: 'daily' (каждый день), 'specific_days' (конкретные дни недели), 'interval' (через сколько-то дней))",
+        "schedule_data": "Для 'daily' это null. Для 'specific_days' это массив чисел-индексов дней недели, где 0 - Понедельник, 6 - Воскресенье (например, [0, 2, 4] для Пн, Ср, Пт). Для 'interval' это число дней между приемами (например, 2 для приема раз в два дня)",
+        "duration_days": "Длительность курса в днях (целое число, например, 7). Если не указано, верни null",
+        "stock_count": "Количество таблеток/доз в аптечке, если упомянуто. Если нет, верни null"
+    }}
+    
+    Обязательно верни только валидный JSON, без оборачивания в ```json и без лишних слов.
+    """
+    
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        # Для безопасности используем генерацию с температурными настройками для строгого вывода
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.1,
+                response_mime_type="application/json"
+            )
+        )
+        
+        # Очистим ответ от возможных остатков разметки
+        result_text = response.text.strip()
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        data = json.loads(result_text)
+        return data
+    except Exception as e:
+        logger.error(f"Ошибка парсинга текста через Gemini: {e}")
+        return None
+
+async def parse_medicine_photo(image_path: str) -> dict:
+    """
+    Распознает лекарство по фотографии упаковки с помощью Gemini Vision.
+    Возвращает название, дозировку и количество таблеток в пачке.
+    """
+    if not GEMINI_API_KEY:
+        return None
+    
+    prompt = """
+    Внимательно посмотри на это фото упаковки лекарства.
+    Определи:
+    1. Название препарата на русском языке (или оригинальное, если оно импортное, например, 'Но-шпа' или 'Нурофен').
+    2. Действующее вещество препарата (МНН, на русском языке, например, 'Дротаверин' или 'Ибупрофен'). Если не написано на пачке, определи по своей базе знаний для этого бренда.
+    3. Дозировку одной таблетки/дозы (например, '400 мг', '10 мг/мл', если есть).
+    4. Общее количество таблеток/капсул/объем в упаковке (целое число, если указано на пачке, например, 20 или 50).
+    
+    Верни строго JSON-объект следующего формата:
+    {
+        "name": "Название лекарства (коммерческое название)",
+        "active_ingredient": "Действующее вещество (МНН, на русском языке, например, 'Ибупрофен')",
+        "dosage": "Дозировка лекарства (например, '400 мг' или null, если не найдено)",
+        "quantity": "Количество таблеток/доз в упаковке (целое число или null, если не найдено)"
+    }
+    
+    Обязательно верни только валидный JSON, без оборачивания в ```json и без лишних слов.
+    """
+    
+    try:
+        img = Image.open(image_path)
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        
+        response = await model.generate_content_async(
+            [prompt, img],
+            generation_config=genai.GenerationConfig(
+                temperature=0.1,
+                response_mime_type="application/json"
+            )
+        )
+        
+        result_text = response.text.strip()
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        data = json.loads(result_text)
+        return data
+    except Exception as e:
+        logger.error(f"Ошибка распознавания фото через Gemini Vision: {e}")
+        return None
+
+async def validate_medicine_name(name: str) -> bool:
+    """
+    Проверяет с помощью локального словаря или Gemini, является ли введенная строка
+    названием реального лекарства, витамина, БАДа или действующего вещества.
+    """
+    cleaned_name = name.strip().lower()
+    if not cleaned_name:
+        return False
+        
+    # 1. Проверяем в локальном словаре
+    import database
+    
+    try:
+        if await database.check_medication_dict(cleaned_name):
+            return True
+    except Exception as e:
+        logger.error(f"Ошибка чтения локального словаря лекарств: {e}")
+        
+    # 2. Если не нашли, опрашиваем Gemini
+    if not GEMINI_API_KEY:
+        return True
+        
+    prompt = f"""
+    Проверь, является ли слово/фраза "{name}" реальным, существующим названием лекарства, витамина, биологически активной добавки (БАД), действующего вещества, медицинского препарата или фитосбора.
+    Ответь строго одним словом: "yes" или "no".
+    Например:
+    "Аспирин" -> yes
+    "Нурофен" -> yes
+    "Витамин D3" -> yes
+    "Какашка" -> no
+    "qwerty" -> no
+    "Помидор" -> no
+    "Глицин" -> yes
+    """
+    
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.1
+            )
+        )
+        result = response.text.strip().lower()
+        is_valid = "yes" in result
+        
+        # Динамический кэш: если лекарство подтверждено ИИ, запишем его в локальный словарь
+        if is_valid:
+            try:
+                await database.add_medication_dict(cleaned_name)
+            except Exception as cache_err:
+                logger.error(f"Не удалось кэшировать название {cleaned_name}: {cache_err}")
+                
+        return is_valid
+    except Exception as e:
+        logger.error(f"Ошибка валидации названия лекарства через Gemini: {e}")
+        return True
+
+async def suggest_dosage(medicine_name: str) -> list:
+    """
+    Возвращает список рекомендаций по дозировкам (например, ['500 мг', '1 таблетка', '10 мг'])
+    на основе названия препарата с помощью Gemini.
+    """
+    if not GEMINI_API_KEY:
+        return ['1 таблетка']
+        
+    prompt = f"""
+    На основе названия лекарственного препарата/добавки "{medicine_name}" предложи 3-4 наиболее распространенных вариантов дозировки для одного приема (например: "500 мг", "1 таблетка", "10 мг", "1 капсула").
+    Верни строго JSON-список строк, без markdown разметки.
+    Пример вывода: ["500 мг", "1 таблетка", "1 капсула"]
+    """
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                temperature=0.2,
+                response_mime_type="application/json"
+            )
+        )
+        result_text = response.text.strip()
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        dosages = json.loads(result_text)
+        if isinstance(dosages, list) and len(dosages) > 0:
+            return [str(d) for d in dosages[:4]]
+    except Exception as e:
+        logger.error(f"Ошибка получения рекомендации дозировок: {e}")
+    return ['1 таблетка']
+
+async def get_medicine_recommendations(medicine_name: str) -> str:
+    """
+    Возвращает рекомендации по приему лекарства (например, чем запивать, с чем не сочетать)
+    на основе названия препарата с помощью локальной базы или Gemini с таймаутом.
+    """
+    cleaned_name = medicine_name.strip().lower()
+    if not cleaned_name:
+        return ""
+        
+    # 1. Проверяем в локальном кэше рекомендаций
+    import database
+    import asyncio
+    
+    try:
+        cached_rec = await database.get_medication_rec(cleaned_name)
+        if cached_rec:
+            return cached_rec
+    except Exception as e:
+        logger.error(f"Ошибка чтения кэша рекомендаций: {e}")
+        
+    # 2. Если нет в кэше, опрашиваем Gemini с таймаутом 4 секунды
+    if not GEMINI_API_KEY:
+        return "Принимайте лекарство согласно инструкции. Запивайте достаточным количеством воды."
+        
+    prompt = f"""
+    Дай краткую рекомендацию по приему лекарства/БАДа "{medicine_name}" (буквально 2-3 предложения).
+    Расскажи, как его правильно принимать (например, до/после еды, чем лучше запивать, с чем нельзя сочетать, например, с алкоголем или молоком).
+    Используй дружелюбный тон от лица заботливого медицинского маскота "Мистера Таблетуса".
+    Не давай дисклеймеров, пиши сразу суть.
+    """
+    
+    fallback = "Рекомендуется принимать согласно инструкции на упаковке. Запивайте чистой водой, избегайте приема алкоголя во время курса лечения."
+    
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        # Оборачиваем запрос в таймаут 4 секунды
+        response = await asyncio.wait_for(
+            model.generate_content_async(
+                prompt,
+                generation_config=genai.GenerationConfig(temperature=0.3)
+            ),
+            timeout=4.0
+        )
+        rec_text = response.text.strip()
+        
+        if rec_text:
+            # Кэшируем результат
+            try:
+                await database.add_medication_rec(cleaned_name, rec_text)
+            except Exception as cache_err:
+                logger.error(f"Не удалось кэшировать рекомендации: {cache_err}")
+            return rec_text
+            
+    except asyncio.TimeoutError:
+        logger.warning(f"Таймаут получения рекомендаций для {medicine_name}")
+    except Exception as e:
+        logger.error(f"Ошибка получения рекомендаций через Gemini: {e}")
+        
+    return fallback
+
+
+async def search_medicine_image(medicine_name: str) -> str:
+    """
+    Ищет изображение упаковки лекарства в Bing Images и возвращает URL.
+    """
+    import urllib.request
+    import urllib.parse
+    import re
+    import asyncio
+    
+    query = urllib.parse.quote(f"{medicine_name} упаковка")
+    url = f"https://www.bing.com/images/search?q={query}&form=HDRSC2"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    def fetch():
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                html = response.read().decode('utf-8', errors='ignore')
+            murls = re.findall(r'murl&quot;:&quot;([^&]+?)&quot;', html)
+            if murls:
+                return murls[0].replace('&amp;', '&')
+        except Exception as e:
+            logger.error(f"Ошибка поиска изображения для {medicine_name}: {e}")
+        return None
+        
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, fetch)
+
+
+

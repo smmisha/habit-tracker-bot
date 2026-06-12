@@ -32,3 +32,8 @@ bot_run.log
 *.njsproj
 *.sln
 *.swp
+
+# Media/Photos
+photos/
+mister_tabletus_bot/photos/
+
