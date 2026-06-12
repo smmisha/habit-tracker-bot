@@ -33,6 +33,19 @@ class BusinessConnectionClient:
             return True
         except Exception as e:
             logger.error(f"Не удалось отправить сообщение напарнику @{partner_username} через Бизнес-аккаунт: {e}")
+            
+            # Резервный вариант: пробуем отправить сообщение напрямую от лица бота
+            try:
+                logger.info(f"Попытка отправить резервное сообщение напарнику @{partner_username} напрямую от лица бота...")
+                await bot.send_message(
+                    chat_id=target_chat,
+                    text=text
+                )
+                logger.info(f"Сообщение напарнику @{partner_username} успешно отправлено напрямую от лица бота (fallback).")
+                return True
+            except Exception as fallback_err:
+                logger.error(f"Не удалось отправить резервное сообщение напрямую от лица бота: {fallback_err}")
+                
             return False
 
 userbot = BusinessConnectionClient()

@@ -124,13 +124,33 @@ async def check_missed_deadlines():
                     partner_username = user.partner_username
                     await session.commit()
                     
+                    sent_partner = False
+                    # Отправляем сообщение напарнику только если пользователь был активен >= 10 минут
+                    if was_active_enough:
+                        business_connection_id = user.business_connection_id
+                        if partner_username and business_connection_id:
+                            alert_text = (
+                                "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы сообщить: я пропустил обязательную ежедневную отметку "
+                                "и не выходил на связь с ботом более 20 часов. Вероятно, я на грани срыва или избегаю контроля. Пожалуйста, свяжись со мной."
+                            )
+                            sent_partner = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                            logger.info(f"Результат уведомления напарника для {user.id}: {sent_partner}")
+
                     # Отправляем сообщение пользователю
                     if was_active_enough:
-                        user_text = (
-                            "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
-                            "Вы не отметились в течение 20 часов после назначенного времени. "
-                            "Напарнику отправлено автоматическое уведомление о пропуске отчета."
-                        )
+                        if sent_partner:
+                            user_text = (
+                                "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
+                                "Вы не отметились в течение 20 часов после назначенного времени. "
+                                "Напарнику отправлено автоматическое уведомление о пропуске отчета."
+                            )
+                        else:
+                            user_text = (
+                                "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
+                                "Вы не отметились в течение 20 часов после назначенного времени.\n\n"
+                                f"⚠️ <b>Внимание:</b> не удалось автоматически отправить уведомление вашему напарнику <code>@{partner_username}</code>. "
+                                "Пожалуйста, свяжитесь с ним самостоятельно!"
+                            )
                     else:
                         user_text = (
                             "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
@@ -146,17 +166,6 @@ async def check_missed_deadlines():
                         )
                     except Exception as e:
                         logger.error(f"Не удалось отправить уведомление пользователю {user.id}: {e}")
-                        
-                    # Отправляем сообщение напарнику только если пользователь был активен >= 10 минут
-                    if was_active_enough:
-                        business_connection_id = user.business_connection_id
-                        if partner_username and business_connection_id:
-                            alert_text = (
-                                "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы сообщить: я пропустил обязательную ежедневную отметку "
-                                "и не выходил на связь с ботом более 20 часов. Вероятно, я на грани срыва или избегаю контроля. Пожалуйста, свяжись со мной."
-                            )
-                            await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                            logger.info(f"Напарник уведомлен для пользователя {user.id} (активность >= 10 мин)")
                     else:
                         logger.info(f"Напарник НЕ уведомлен для пользователя {user.id} (активность < 10 мин или 0)")
             except Exception as e:
@@ -393,6 +402,7 @@ async def send_silent_panic_alert(user_id: int):
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id
         
+    sent = False
     if partner_username and business_connection_id:
         alert_text = (
             "🚨 [Автоматическое сообщение] Привет. Я зашел в зону экстренной помощи SOS в трекере чистоты, "
@@ -401,15 +411,36 @@ async def send_silent_panic_alert(user_id: int):
         )
         try:
             sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-            if sent:
+        except Exception as e:
+            logger.error(f"Ошибка при отправке тихой тревоги для {user_id}: {e}")
+
+    # Всегда оповещаем пользователя о срабатывании таймера
+    try:
+        if sent:
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"🚨 <b>Время вышло!</b> Вы вошли на вкладку SOS, но не подтвердили победу над тягой в течение 5 минут.\n\n"
+                     f"Вашему напарнику <code>@{partner_username}</code> автоматически отправлена тревога."
+            )
+            logger.info(f"Отправлена автоматическая тревога напарнику пользователя {user_id} из-за тайм-аута SOS")
+        else:
+            if partner_username:
                 await bot.send_message(
                     chat_id=user_id,
                     text=f"🚨 <b>Время вышло!</b> Вы вошли на вкладку SOS, но не подтвердили победу над тягой в течение 5 минут.\n\n"
-                         f"Вашему напарнику <code>@{partner_username}</code> автоматически отправлена тревога."
+                         f"⚠️ <b>Внимание:</b> не удалось автоматически отправить тревогу вашему напарнику <code>@{partner_username}</code>. "
+                         f"Пожалуйста, свяжитесь с ним самостоятельно!"
                 )
-                logger.info(f"Отправлена автоматическая тревога напарнику пользователя {user_id} из-за тайм-аута SOS")
-        except Exception as e:
-            logger.error(f"Ошибка при отправке тихой тревоги для {user_id}: {e}")
+                logger.warning(f"Тайм-аут SOS у {user_id}, но отправить тревогу напарнику {partner_username} не удалось.")
+            else:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=f"🚨 <b>Время вышло!</b> Вы вошли на вкладку SOS, но не подтвердили победу над тягой в течение 5 минут.\n\n"
+                         f"⚠️ <b>Внимание:</b> напарник не настроен или отсутствует бизнес-соединение, поэтому тревога не была отправлена."
+                )
+                logger.warning(f"Тайм-аут SOS у {user_id}, но напарник не настроен.")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомления пользователю {user_id} о тайм-ауте SOS: {e}")
 
 def setup_scheduler():
     """Инициализация и запуск планировщика"""
