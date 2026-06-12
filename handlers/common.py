@@ -169,7 +169,37 @@ async def process_cfg_toggle_achievements(callback: CallbackQuery):
 @router.callback_query(F.data == "cfg_partner")
 async def process_cfg_partner(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    user_id = callback.from_user.id
     
+    from datetime import datetime, timedelta
+    from database.models import RelapseLog
+    
+    async with db_helper.session_factory() as session:
+        # Проверяем последний срыв пользователя в логах
+        result = await session.execute(
+            select(RelapseLog)
+            .where(RelapseLog.user_id == user_id)
+            .order_by(RelapseLog.timestamp.desc())
+            .limit(1)
+        )
+        latest_relapse = result.scalar_one_or_none()
+        
+        if latest_relapse:
+            time_since_relapse = datetime.now() - latest_relapse.timestamp
+            if time_since_relapse < timedelta(hours=24):
+                time_left = timedelta(hours=24) - time_since_relapse
+                hours, remainder = divmod(time_left.seconds, 3600)
+                minutes = remainder // 60
+                
+                block_text = (
+                    "❌ <b>СМЕНА НАПАРНИКА ЗАБЛОКИРОВАНА</b>\n\n"
+                    "После срыва должно пройти не менее <b>24 часов</b>, прежде чем вы сможете сменить напарника-контролёра.\n"
+                    "Это ограничение создано для борьбы с самообманом и избеганием контроля в критические моменты.\n\n"
+                    f"⏳ Пожалуйста, подождите ещё: <b>{hours} ч. {minutes} мин.</b>"
+                )
+                await callback.message.answer(block_text)
+                return
+                
     covenant_text = (
         "📜 <b>СОГЛАШЕНИЕ О ДУХОВНОЙ ЧИСТОТЕ ПЕРЕД ИЕГОВОЙ</b>\n"
         "<i>(Подтверждается при каждой смене напарника)</i>\n\n"
