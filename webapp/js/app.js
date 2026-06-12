@@ -20,6 +20,7 @@ function getUserId() {
 
 const userId = getUserId();
 let relapseSource = 'direct'; // 'direct' или 'panic'
+let isSosUnlocked = false;
 
 // Уведомления (Toast)
 function showToast(message, type = 'success') {
@@ -67,6 +68,9 @@ function switchTab(tabId) {
         headerTitle.textContent = 'ДНЕВНИК';
     } else if (tabId === 'sos') {
         headerTitle.textContent = 'HELP / SOS';
+        if (!isSosUnlocked) {
+            openCognitiveLock();
+        }
     }
 }
 
