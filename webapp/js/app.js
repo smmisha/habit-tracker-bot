@@ -441,6 +441,8 @@ document.getElementById('btn-start-sos').addEventListener('click', () => {
 // Слушатель кнопки закрытия / отмены в модальном окне
 document.getElementById('btn-close-puzzle').addEventListener('click', () => {
     closeCognitiveLock();
+    // Возвращаем на дашборд, так как доступ к SOS закрыт без прохождения замка
+    switchTab('dashboard');
 });
 
 // Слушатель отправки ответа в модальном окне
@@ -467,6 +469,7 @@ function validatePuzzleAnswer() {
     
     if (userAnswer === currentPuzzleAnswer) {
         showToast('Когнитивный замок успешно пройден! Мозг переключен.', 'success');
+        isSosUnlocked = true; // Снимаем защиту
         closeCognitiveLock();
         startSosProcess(); // Запускаем загрузку шагов SOS
     } else {
