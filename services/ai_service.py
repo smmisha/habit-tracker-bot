@@ -357,4 +357,39 @@ class GeminiAIService:
             
         return False
 
+    async def analyze_journal_for_compromise(self, content: str) -> dict:
+        """
+        Фоновый анализ дневника на предмет торгов с разумом, компромиссов (типа 'посмотрел одним глазком')
+        и сильного риска срыва.
+        Возвращает dict: {'detected': bool, 'reason': str}
+        """
+        if not self.api_key or self.api_key.strip() in ("", "your_gemini_api_key_here"):
+            return {"detected": False, "reason": ""}
+            
+        prompt = (
+            "Проанализируй следующую запись в дневнике человека, который борется с PMO-зависимостью:\n"
+            f"\"{content}\"\n\n"
+            "Твоя задача — определить, признается ли пользователь в компромиссе с самим собой, "
+            "«торгах с разумом» (rationalization) или поведении, близком к срыву (например, «посмотрел одним глазком», "
+            "«глянул картинку только на секунду», «почти сорвался, но не до конца», «проверял себя», «искал лазейки»).\n\n"
+            "Верни ответ строго в формате JSON с двумя полями (без markdown разметки ```json):\n"
+            "1. 'detected' — true, если обнаружен компромисс, «взгляд одним глазком» или активный саботаж/торги; false в противном случае.\n"
+            "2. 'reason' — Краткое объяснение на русском языке, почему ты считаешь это компромиссом (например, 'Признание в просмотре материалов одним глазком' или 'Попытка оправдать срыв усталостью'), либо пустая строка, если ничего не обнаружено.\n\n"
+            "Пример формата:\n"
+            '{\n  "detected": true,\n  "reason": "Попытка оправдать компромисс («посмотрел только одним глазком»)"\n}'
+        )
+        
+        import json
+        try:
+            res_text = await self._call_gemini(prompt, "")
+            if res_text:
+                res_text_clean = res_text.strip().replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(res_text_clean)
+                if isinstance(parsed, dict) and "detected" in parsed and "reason" in parsed:
+                    return parsed
+        except Exception as e:
+            logger.error(f"Ошибка фонового анализа дневника на компромиссы: {e}")
+            
+        return {"detected": False, "reason": ""}
+
 ai_service = GeminiAIService()

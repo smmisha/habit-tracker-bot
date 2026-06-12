@@ -370,6 +370,52 @@ async def handle_api_save_journal(request):
             
         await session.commit()
         
+    # Запускаем фоновый анализ записи на предмет компромиссов/самообмана
+    async def run_silent_compromise_check():
+        try:
+            from services.ai_service import ai_service
+            from services.userbot_client import userbot
+            from main import bot
+            from database.models import User
+            from sqlalchemy import select
+            
+            analysis = await ai_service.analyze_journal_for_compromise(content)
+            if analysis.get("detected"):
+                logger.warning(f"ИИ обнаружил компромисс в дневнике пользователя {user_id}: {analysis.get('reason')}")
+                
+                # Получаем пользователя из БД для отправки предупреждения
+                async with db_helper.session_factory() as session:
+                    result = await session.execute(select(User).where(User.id == user_id))
+                    user = result.scalar_one_or_none()
+                    if not user:
+                        return
+                    partner_username = user.partner_username
+                    business_connection_id = user.business_connection_id
+                
+                # 1. Отправляем предупреждение самому пользователю в чат
+                user_warning = (
+                    f"⚠️ <b>Обнаружен компромисс и «торги с разумом»!</b>\n\n"
+                    f"ИИ-помощник заметил в вашей записи опасные мысли: <i>«{analysis.get('reason')}»</i>.\n\n"
+                    f"Пожалуйста, помните: компромиссы (вроде «посмотрел одним глазком» или поиск самооправданий) — "
+                    f"это первый шаг к реальному срыву. Не поддавайтесь уловкам мозга!\n\n"
+                    f"🤖 Вашему напарнику <code>@{partner_username}</code> автоматически отправлено тихое уведомление, "
+                    f"чтобы он поддержал вас в этот критический момент."
+                )
+                await bot.send_message(chat_id=user_id, text=user_warning)
+                
+                # 2. Отправляем предупреждение напарнику
+                if partner_username and business_connection_id:
+                    partner_text = (
+                        f"🤖 [Автоматическое ИИ-предупреждение] Привет! Мой анализ дневника показывает, что "
+                        f"я начинаю допускать компромиссы с совестью (ИИ определил это как: «{analysis.get('reason')}»). "
+                        f"Кажется, я нахожусь под сильным искушением и пытаюсь успокоить свою совесть. Пожалуйста, напиши или позвони мне сегодня!"
+                    )
+                    await userbot.send_message_to_partner(business_connection_id, partner_username, partner_text)
+        except Exception as e:
+            logger.error(f"Ошибка выполнения фоновой проверки компромиссов: {e}")
+
+    asyncio.create_task(run_silent_compromise_check())
+        
     return web.json_response({"success": True, "message": f"Заметка успешно {action_text}!"})
 
 async def handle_api_log_relapse(request):
