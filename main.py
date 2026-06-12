@@ -550,6 +550,40 @@ async def handle_api_manage_panic(request):
         
     return web.json_response({"error": "Unknown action"}, status=400)
 
+async def handle_api_accept_covenant(request):
+    try:
+        data = await request.json()
+        user_id = int(data.get("user_id"))
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+        
+    from utils.states import Form
+    # Получаем контекст состояний для пользователя
+    state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
+    
+    # Удаляем предыдущее сообщение с договором, если оно было сохранено в FSM
+    state_data = await state_ctx.get_data()
+    msg_id = state_data.get("covenant_msg_id")
+    if msg_id:
+        try:
+            await bot.delete_message(chat_id=user_id, message_id=msg_id)
+        except Exception as e:
+            logger.warning(f"Не удалось удалить сообщение договора {msg_id} для {user_id}: {e}")
+            
+    await state_ctx.set_state(Form.waiting_for_partner)
+    
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text="✅ <b>Соглашение совести успешно подтверждено!</b>\n\n"
+                 "👥 Введите **цифровой ID** вашего нового напарника (например, `123456789`) или его Telegram-юзернейм (например, `partner_username`):\n\n"
+                 "💡 **РЕКОМЕНДУЕТСЯ использовать цифровой ID**, так как Telegram надежно отправляет сообщения именно по нему."
+        )
+    except Exception as e:
+        logger.error(f"Не удалось отправить сообщение об успешном подписании договора пользователю {user_id}: {e}")
+        
+    return web.json_response({"success": True})
+
 async def start_web_server():
     app = web.Application()
     app.add_routes([
@@ -558,7 +592,8 @@ async def start_web_server():
         web.get("/api/stats", handle_api_stats),
         web.post("/api/journal", handle_api_save_journal),
         web.post("/api/relapse", handle_api_log_relapse),
-        web.post("/api/panic", handle_api_manage_panic)
+        web.post("/api/panic", handle_api_manage_panic),
+        web.post("/api/accept_covenant", handle_api_accept_covenant)
     ])
     
     # Раздача статики стилей и скриптов WebApp

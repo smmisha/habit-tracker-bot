@@ -174,27 +174,18 @@ async def process_cfg_partner(callback: CallbackQuery, state: FSMContext):
         "📜 <b>СОГЛАШЕНИЕ О ДУХОВНОЙ ЧИСТОТЕ ПЕРЕД ИЕГОВОЙ</b>\n"
         "<i>(Подтверждается при каждой смене напарника)</i>\n\n"
         "«Воля Бога в том, чтобы вы были святы и воздерживались от блуда» (1 Фессалоникийцам 4:3)\n\n"
-        "Заявляя о смене напарника в этом боте, я принимаю следующие условия:\n\n"
-        "1️⃣ <b>Осознание характера греха</b>\n"
-        "Я полностью признаю, что порнография (Матфея 5:28), киберсекс, секстинг, секс по телефону "
-        "и мастурбация (Колоссянам 3:5) являются греховным нарушением библейских принципов.\n\n"
-        "2️⃣ <b>Чистота мотивов смены напарника</b>\n"
-        "Я торжественно заявляю перед Иеговой, что это действие НЕ является попыткой скрыть греховные действия, "
-        "тайные срывы или утаить нечистые привычки от собрания, а также попыткой найти более снисходительного напарника.\n\n"
-        "3️⃣ <b>Обязательство честности</b>\n"
-        "Я обязуюсь быть абсолютно честным со своим напарником, сообщать о срывах в течение 24 часов "
-        "и давать ему право задавать мне прямые вопросы в любое время.\n\n"
-        "⚠️ <i>Нажатие кнопки подтверждает принятие условий перед Богом.</i>"
+        "Для смены напарника вам необходимо открыть, прочитать и подписать Соглашение:\n\n"
+        "1️⃣ Нажмите кнопку ниже для открытия текста Соглашения.\n"
+        "2️⃣ Пролистайте документ до самого конца, чтобы активировать подтверждение.\n"
+        "3️⃣ Подтвердите согласие внутри страницы, и бот предложит вам ввести новый ID.\n\n"
+        "⚠️ <i>Без подписания Соглашения замена напарника невозможна.</i>"
     )
     
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🟢 Принять условия", callback_data="covenant_accept")
-            ],
-            [
                 InlineKeyboardButton(
-                    text="📄 Читать полную версию",
+                    text="📄 Читать и подписать Соглашение",
                     web_app=WebAppInfo(url="https://habit-tracker-bot-s7of.onrender.com/webapp/purity_covenant_jw_v2.html")
                 )
             ],
@@ -204,30 +195,15 @@ async def process_cfg_partner(callback: CallbackQuery, state: FSMContext):
         ]
     )
     
-    await callback.message.answer(covenant_text, reply_markup=keyboard)
-
-
-@router.callback_query(F.data == "covenant_accept")
-async def process_covenant_accept(callback: CallbackQuery, state: FSMContext):
-    await callback.answer("Условия договора приняты.")
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-    
-    await callback.message.answer(
-        "👥 Введите **цифровой ID** вашего нового напарника (например, `123456789`) или его Telegram-юзернейм (например, `partner_username`):\n\n"
-        "💡 **РЕКОМЕНДУЕТСЯ использовать цифровой ID**, так как Telegram надежно отправляет сообщения именно по нему. "
-        "Узнать ID напарника можно, переслав любое его сообщение боту [@userinfobot](https://t.me/userinfobot)."
-    )
-    await state.set_state(Form.waiting_for_partner)
+    sent_msg = await callback.message.answer(covenant_text, reply_markup=keyboard)
+    await state.update_data(covenant_msg_id=sent_msg.message_id)
 
 
 @router.callback_query(F.data == "covenant_cancel")
 async def process_covenant_cancel(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Действие отменено.")
     try:
-        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.delete()
     except Exception:
         pass
     await callback.message.answer("❌ Смена напарника отменена. Текущий напарник сохранен.")

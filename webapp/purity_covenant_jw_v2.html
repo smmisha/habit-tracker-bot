@@ -1,162 +1,263 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Соглашение о духовной чистоте перед Иеговой</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --color-text-primary: #ffffff;
+      --color-text-secondary: #85899e;
+      --color-text-tertiary: #5c5f73;
+      --color-border-primary: rgba(255, 255, 255, 0.08);
+      --color-border-secondary: rgba(0, 255, 135, 0.3);
+      --color-border-tertiary: rgba(255, 255, 255, 0.04);
+      --color-background-secondary: rgba(255, 255, 255, 0.02);
+      --color-background-warning: rgba(255, 59, 48, 0.06);
+      --color-border-warning: rgba(255, 59, 48, 0.2);
+      --color-text-warning: #ff453a;
+      --color-background-info: rgba(96, 239, 255, 0.06);
+      --color-border-info: rgba(96, 239, 255, 0.2);
+      --color-text-info: #64d2ff;
+      --font-serif: 'Playfair Display', Georgia, serif;
+      --font-sans: 'Outfit', sans-serif;
+      --border-radius-md: 8px;
+      --border-radius-lg: 16px;
+    }
 
-<style>
-  .covenant-wrap {
-    max-width: 660px;
-    margin: 0 auto;
-    padding: 2rem 0.5rem;
-    font-family: var(--font-serif);
-    color: var(--color-text-primary);
-  }
-  .covenant-header {
-    text-align: center;
-    margin-bottom: 2rem;
-    padding-bottom: 1.5rem;
-    border-bottom: 0.5px solid var(--color-border-primary);
-  }
-  .covenant-header .eyebrow {
-    font-family: var(--font-sans);
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-    margin-bottom: 0.75rem;
-  }
-  .covenant-header h1 {
-    font-family: var(--font-serif);
-    font-size: 20px;
-    font-weight: 500;
-    line-height: 1.4;
-    margin: 0 0 0.5rem;
-  }
-  .covenant-header .subtitle {
-    font-size: 13px;
-    color: var(--color-text-secondary);
-    font-family: var(--font-sans);
-  }
-  .section { margin-bottom: 1.75rem; }
-  .section-label {
-    font-family: var(--font-sans);
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-    margin-bottom: 0.6rem;
-  }
-  .body-text {
-    font-size: 15px;
-    line-height: 1.8;
-    color: var(--color-text-primary);
-    margin: 0 0 0.9rem;
-  }
-  .scripture-block {
-    border-left: 2px solid var(--color-border-secondary);
-    padding: 0.75rem 1rem;
-    margin: 1rem 0;
-    background: var(--color-background-secondary);
-    border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
-  }
-  .scripture-block .verse {
-    font-size: 14px;
-    font-style: italic;
-    line-height: 1.75;
-    color: var(--color-text-secondary);
-    margin: 0 0 0.3rem;
-  }
-  .scripture-block .ref {
-    font-family: var(--font-sans);
-    font-size: 11px;
-    color: var(--color-text-tertiary);
-    margin: 0;
-  }
-  .sins-list {
-    margin: 0.75rem 0;
-    padding: 0;
-    list-style: none;
-  }
-  .sins-list li {
-    font-size: 14px;
-    font-family: var(--font-sans);
-    color: var(--color-text-secondary);
-    padding: 0.35rem 0;
-    border-bottom: 0.5px solid var(--color-border-tertiary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .sins-list li:last-child { border-bottom: none; }
-  .sins-list li::before {
-    content: "·";
-    color: var(--color-text-tertiary);
-    font-size: 18px;
-    line-height: 1;
-  }
-  .divider {
-    border: none;
-    border-top: 0.5px solid var(--color-border-tertiary);
-    margin: 2rem 0;
-  }
-  .warning-block {
-    background: var(--color-background-warning);
-    border: 0.5px solid var(--color-border-warning);
-    border-radius: var(--border-radius-lg);
-    padding: 1rem 1.25rem;
-    margin: 1.5rem 0;
-  }
-  .warning-block p {
-    font-family: var(--font-sans);
-    font-size: 14px;
-    line-height: 1.65;
-    color: var(--color-text-warning);
-    margin: 0;
-  }
-  .partner-block {
-    background: var(--color-background-info);
-    border: 0.5px solid var(--color-border-info);
-    border-radius: var(--border-radius-lg);
-    padding: 1rem 1.25rem;
-    margin: 1.5rem 0;
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-  }
-  .partner-block i {
-    font-size: 20px;
-    color: var(--color-text-info);
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-  .partner-block .partner-text {
-    font-family: var(--font-sans);
-    font-size: 14px;
-    line-height: 1.65;
-    color: var(--color-text-info);
-  }
-  .partner-block .partner-id {
-    font-weight: 500;
-    font-size: 15px;
-    display: block;
-    margin-top: 4px;
-  }
-  .seal-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 0.5px solid var(--color-border-primary);
-  }
-  .seal-row i { font-size: 22px; color: var(--color-text-secondary); }
-  .seal-text {
-    font-family: var(--font-sans);
-    font-size: 12px;
-    color: var(--color-text-secondary);
-    line-height: 1.5;
-  }
-</style>
+    body {
+      background-color: #0b0c10;
+      color: var(--color-text-primary);
+      font-family: var(--font-sans);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+    }
+
+    .covenant-wrap {
+      max-width: 660px;
+      margin: 0 auto;
+      padding: 2rem 1rem 140px 1rem; /* Extra padding at bottom for sticky action bar */
+      font-family: var(--font-serif);
+      color: var(--color-text-primary);
+    }
+    .covenant-header {
+      text-align: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 0.5px solid var(--color-border-primary);
+    }
+    .covenant-header .eyebrow {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--color-text-secondary);
+      margin-bottom: 0.75rem;
+    }
+    .covenant-header h1 {
+      font-family: var(--font-serif);
+      font-size: 22px;
+      font-weight: 500;
+      line-height: 1.4;
+      margin: 0 0 0.5rem;
+    }
+    .covenant-header .subtitle {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      font-family: var(--font-sans);
+    }
+    .section { margin-bottom: 1.75rem; }
+    .section-label {
+      font-family: var(--font-sans);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      margin-bottom: 0.6rem;
+    }
+    .body-text {
+      font-size: 15px;
+      line-height: 1.8;
+      color: var(--color-text-primary);
+      margin: 0 0 0.9rem;
+      font-family: var(--font-sans);
+    }
+    .scripture-block {
+      border-left: 2px solid var(--color-border-secondary);
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+      background: var(--color-background-secondary);
+      border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+    }
+    .scripture-block .verse {
+      font-size: 14px;
+      font-style: italic;
+      line-height: 1.75;
+      color: var(--color-text-secondary);
+      margin: 0 0 0.3rem;
+    }
+    .scripture-block .ref {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      margin: 0;
+    }
+    .sins-list {
+      margin: 0.75rem 0;
+      padding: 0;
+      list-style: none;
+    }
+    .sins-list li {
+      font-size: 14px;
+      font-family: var(--font-sans);
+      color: var(--color-text-secondary);
+      padding: 0.35rem 0;
+      border-bottom: 0.5px solid var(--color-border-tertiary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sins-list li:last-child { border-bottom: none; }
+    .sins-list li::before {
+      content: "·";
+      color: var(--color-text-tertiary);
+      font-size: 18px;
+      line-height: 1;
+    }
+    .divider {
+      border: none;
+      border-top: 0.5px solid var(--color-border-tertiary);
+      margin: 2rem 0;
+    }
+    .warning-block {
+      background: var(--color-background-warning);
+      border: 0.5px solid var(--color-border-warning);
+      border-radius: var(--border-radius-lg);
+      padding: 1rem 1.25rem;
+      margin: 1.5rem 0;
+    }
+    .warning-block p {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--color-text-warning);
+      margin: 0;
+    }
+    .partner-block {
+      background: var(--color-background-info);
+      border: 0.5px solid var(--color-border-info);
+      border-radius: var(--border-radius-lg);
+      padding: 1rem 1.25rem;
+      margin: 1.5rem 0;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .partner-block .partner-text {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--color-text-info);
+    }
+    .partner-block .partner-id {
+      font-weight: 500;
+      font-size: 15px;
+      display: block;
+      margin-top: 4px;
+    }
+    .seal-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 0.5px solid var(--color-border-primary);
+    }
+    .seal-text {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Стили для формы согласия внизу */
+    .accept-section {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(11, 12, 16, 0.95);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      z-index: 100;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+    }
+    .scroll-warning {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      color: #ff9f0a;
+      text-align: center;
+      margin: 0;
+      font-weight: 500;
+    }
+    .checkbox-container {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1.4;
+      user-select: none;
+      color: var(--color-text-secondary);
+      transition: opacity 0.3s;
+      font-family: var(--font-sans);
+    }
+    .checkbox-container.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .checkbox-container input {
+      margin-top: 2px;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .btn-confirm {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #0b0c10;
+      background: linear-gradient(135deg, #00ff87 0%, #60efff 100%);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0, 255, 135, 0.2);
+      font-family: var(--font-sans);
+    }
+    .btn-confirm.disabled {
+      background: #1f2026;
+      color: #5c5f73;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+  </style>
+</head>
+<body>
 
 <div class="covenant-wrap">
-  <h2 class="sr-only">Торжественное соглашение о духовной чистоте перед Иеговой</h2>
-
   <div class="covenant-header">
     <p class="eyebrow">Личное обязательство христианина</p>
     <h1>Соглашение о духовной чистоте<br>перед Иеговой</h1>
@@ -231,7 +332,6 @@
     <p class="section-label">Назначение нового напарника</p>
 
     <div class="partner-block">
-      <i class="ti ti-user-check" aria-hidden="true"></i>
       <div class="partner-text">
         Подтверждая это соглашение, я назначаю своим напарником-контролёром пользователя с ID:
         <span class="partner-id">693 656 777</span>
@@ -249,7 +349,105 @@
   </div>
 
   <div class="seal-row">
-    <i class="ti ti-writing-sign" aria-hidden="true"></i>
     <p class="seal-text">Подтверждается нажатием кнопки «Принять» в боте.<br>Дата и время фиксируются автоматически.</p>
   </div>
 </div>
+
+<!-- Блок с подтверждением соглашения -->
+<div class="accept-section" id="accept-section">
+  <p class="scroll-warning" id="scroll-warning">⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.</p>
+  
+  <label class="checkbox-container disabled" id="checkbox-label">
+    <input type="checkbox" id="accept-checkbox" disabled>
+    <span class="label-text">Я прочитал и искренне принимаю условия Соглашения о духовной чистоте перед Иеговой</span>
+  </label>
+  
+  <button class="btn-confirm disabled" id="btn-confirm" disabled>
+    🟢 Подтвердить и продолжить
+  </button>
+</div>
+
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  const checkbox = document.getElementById('accept-checkbox');
+  const checkboxLabel = document.getElementById('checkbox-label');
+  const btnConfirm = document.getElementById('btn-confirm');
+  const scrollWarning = document.getElementById('scroll-warning');
+
+  // Функция проверки прокрутки до низа
+  function checkScroll() {
+      const scrollHeight = document.documentElement.scrollHeight;
+      const clientHeight = document.documentElement.clientHeight;
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      
+      const distanceToBottom = scrollHeight - clientHeight - scrollTop;
+
+      // Если до низа страницы осталось меньше 60px или страница полностью помещается в окно
+      if (distanceToBottom < 60 || scrollHeight <= clientHeight + 10) {
+          checkboxLabel.classList.remove('disabled');
+          checkbox.removeAttribute('disabled');
+          scrollWarning.style.display = 'none';
+          window.removeEventListener('scroll', checkScroll);
+      }
+  }
+
+  // Слушаем прокрутку
+  window.addEventListener('scroll', checkScroll);
+  // На некоторых мобильных браузерах проверяем сразу после рендеринга
+  setTimeout(checkScroll, 300);
+
+  // Слушаем изменение чекбокса
+  checkbox.addEventListener('change', function() {
+      if (this.checked) {
+          btnConfirm.classList.remove('disabled');
+          btnConfirm.removeAttribute('disabled');
+      } else {
+          btnConfirm.classList.add('disabled');
+          btnConfirm.setAttribute('disabled', 'true');
+      }
+  });
+
+  // Отправка подтверждения на сервер
+  btnConfirm.addEventListener('click', function() {
+      if (this.classList.contains('disabled')) return;
+      
+      const userId = tg.initDataUnsafe?.user?.id;
+      if (!userId) {
+          alert("Ошибка: не удалось определить ваш Telegram ID. Пожалуйста, откройте страницу через официального бота.");
+          return;
+      }
+
+      btnConfirm.classList.add('disabled');
+      btnConfirm.setAttribute('disabled', 'true');
+      btnConfirm.innerHTML = '⌛ Сохранение соглашения...';
+
+      fetch('/api/accept_covenant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId })
+      })
+      .then(response => response.json())
+      .then(data => {
+          if (data.success) {
+              tg.close();
+          } else {
+              alert("Ошибка при сохранении: " + (data.error || "Неизвестная ошибка"));
+              btnConfirm.classList.remove('disabled');
+              btnConfirm.removeAttribute('disabled');
+              btnConfirm.innerHTML = '🟢 Подтвердить и продолжить';
+          }
+      })
+      .catch(err => {
+          alert("Ошибка подключения к серверу: " + err);
+          btnConfirm.classList.remove('disabled');
+          btnConfirm.removeAttribute('disabled');
+          btnConfirm.innerHTML = '🟢 Подтвердить и продолжить';
+      });
+  });
+</script>
+
+</body>
+</html>
