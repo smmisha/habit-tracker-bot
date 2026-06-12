@@ -438,11 +438,15 @@ async def handle_api_manage_panic(request):
             except Exception:
                 pass
                 
+            import pytz
             from datetime import timedelta
+            kyiv_tz = pytz.timezone("Europe/Kyiv")
+            run_time = datetime.now(kyiv_tz) + timedelta(minutes=5)
+            
             scheduler.add_job(
                 send_silent_panic_alert,
                 'date',
-                run_date=datetime.now() + timedelta(minutes=5),
+                run_date=run_time,
                 args=[user_id],
                 id=f"panic_alert_{user_id}",
                 replace_existing=True
