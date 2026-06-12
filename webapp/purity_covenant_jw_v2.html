@@ -42,7 +42,7 @@
     .covenant-wrap {
       max-width: 660px;
       margin: 0 auto;
-      padding: 2rem 1rem 140px 1rem; /* Extra padding at bottom for sticky action bar */
+      padding: 2rem 1rem 160px 1rem; /* Extra padding at bottom for sticky action bar */
       font-family: var(--font-serif);
       color: var(--color-text-primary);
     }
@@ -210,6 +210,7 @@
       text-align: center;
       margin: 0;
       font-weight: 500;
+      line-height: 1.4;
     }
     .checkbox-container {
       display: flex;
@@ -355,7 +356,7 @@
 
 <!-- Блок с подтверждением соглашения -->
 <div class="accept-section" id="accept-section">
-  <p class="scroll-warning" id="scroll-warning">⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.</p>
+  <p class="scroll-warning" id="scroll-warning">⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Кнопка подтверждения разблокируется через: 3:00</p>
   
   <label class="checkbox-container disabled" id="checkbox-label">
     <input type="checkbox" id="accept-checkbox" disabled>
@@ -377,6 +378,48 @@
   const btnConfirm = document.getElementById('btn-confirm');
   const scrollWarning = document.getElementById('scroll-warning');
 
+  let timeRemaining = 180; // 3 минуты в секундах
+  let timerExpired = false;
+  let scrolledToBottom = false;
+
+  // Функция форматирования времени
+  function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Обновление текста предупреждения/таймера
+  function updateStatusMessage() {
+      if (!timerExpired) {
+          const timeStr = formatTime(timeRemaining);
+          if (scrolledToBottom) {
+              scrollWarning.innerHTML = `⏳ Текст прокручен. Пожалуйста, завершите вдумчивое чтение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
+          } else {
+              scrollWarning.innerHTML = `⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
+          }
+          scrollWarning.style.display = 'block';
+      } else {
+          if (!scrolledToBottom) {
+              scrollWarning.innerHTML = `⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.`;
+              scrollWarning.style.display = 'block';
+          } else {
+              scrollWarning.style.display = 'none';
+          }
+      }
+  }
+
+  // Запуск таймера чтения
+  const timerInterval = setInterval(() => {
+      timeRemaining--;
+      updateStatusMessage();
+      if (timeRemaining <= 0) {
+          clearInterval(timerInterval);
+          timerExpired = true;
+          checkActivation();
+      }
+  }, 1000);
+
   // Функция проверки прокрутки до низа
   function checkScroll() {
       const scrollHeight = document.documentElement.scrollHeight;
@@ -387,6 +430,16 @@
 
       // Если до низа страницы осталось меньше 60px или страница полностью помещается в окно
       if (distanceToBottom < 60 || scrollHeight <= clientHeight + 10) {
+          scrolledToBottom = true;
+          updateStatusMessage();
+          checkActivation();
+      }
+  }
+
+  // Функция активации элементов управления
+  function checkActivation() {
+      updateStatusMessage();
+      if (timerExpired && scrolledToBottom) {
           checkboxLabel.classList.remove('disabled');
           checkbox.removeAttribute('disabled');
           scrollWarning.style.display = 'none';
@@ -396,7 +449,7 @@
 
   // Слушаем прокрутку
   window.addEventListener('scroll', checkScroll);
-  // На некоторых мобильных браузерах проверяем сразу после рендеринга
+  // Первичная проверка на случай маленьких экранов
   setTimeout(checkScroll, 300);
 
   // Слушаем изменение чекбокса
