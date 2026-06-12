@@ -16,7 +16,7 @@ class User(Base):
     
     # Настройки часового пояса и отчетов
     timezone: Mapped[str] = mapped_column(String(50), default="Europe/Kyiv")
-    partner_username: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Без символа @
+    partner_username: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="693656777", server_default="693656777")  # Без символа @
     
     # Метрики и счетчики
     streak_start: Mapped[datetime] = mapped_column(DateTime, default=func.now())
