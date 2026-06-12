@@ -218,12 +218,46 @@ async def process_partner_input(message: Message, state: FSMContext):
         return
         
     user_id = message.from_user.id
+    user_username = message.from_user.username
+    
+    # Запрет указывать самого себя в качестве напарника (защита от обхода)
+    if partner_username == str(user_id) or (user_username and partner_username.lower() == user_username.lower()):
+        await message.answer("❌ Вы не можете указать самого себя в качестве напарника!")
+        return
+        
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if user:
+            old_partner = user.partner_username
             user.partner_username = partner_username
             await session.commit()
+            
+            # Если был срыв или требовалась помощь в последние 24 часа, уведомляем старого напарника
+            if old_partner and old_partner != partner_username and user.business_connection_id:
+                from datetime import datetime, timedelta
+                from database.models import RelapseLog
+                from services.userbot_client import userbot
+                
+                limit_time = datetime.now() - timedelta(hours=24)
+                relapse_check = await session.execute(
+                    select(RelapseLog)
+                    .where(RelapseLog.user_id == user_id)
+                    .where(RelapseLog.timestamp >= limit_time)
+                )
+                has_recent_relapse = relapse_check.scalars().first() is not None
+                
+                if has_recent_relapse:
+                    alert_text = (
+                        f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы сообщить: "
+                        f"я сменил напарника-контролера в трекере чистоты. "
+                        f"Спасибо за твою поддержку в моей борьбе."
+                    )
+                    try:
+                        await userbot.send_message_to_partner(user.business_connection_id, old_partner, alert_text)
+                        logger.info(f"Уведомление о смене напарника успешно отправлено старому напарнику {old_partner}")
+                    except Exception as e:
+                        logger.error(f"Не удалось отправить уведомление о смене напарника старому напарнику {old_partner}: {e}")
             
     await state.clear()
     display_partner = partner_username if partner_username.isdigit() else f"@{partner_username}"
