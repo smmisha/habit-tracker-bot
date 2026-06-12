@@ -380,11 +380,8 @@ async def handle_api_log_relapse(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
-    from database.models import User, RelapseLog
-    from services.ai_service import ai_service
-    from services.userbot_client import userbot
-    
-    now = datetime.now()
+    from database.models import User
+    from handlers.tracker import start_confession_flow
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -393,46 +390,15 @@ async def handle_api_log_relapse(request):
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
             
-        # Логируем срыв и сбрасываем счетчик
-        user.streak_start = now
-        user.total_relapses += 1
-        
-        log = RelapseLog(
-            user_id=user_id,
-            timestamp=now,
-            trigger_reason=trigger_reason
-        )
-        session.add(log)
-        await session.commit()
-        
-        partner_username = user.partner_username
-        business_connection_id = user.business_connection_id
-        
-    # Запускаем ИИ-ассистента в фоне
-    async def send_bot_alert():
-        try:
-            ai_response = await ai_service.generate_relapse_response(trigger_reason)
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"😔 <b>Счетчик сброшен. Начинаем стрик заново!</b>\n\n{ai_response}"
-            )
-            
-            if partner_username and business_connection_id:
-                alert_text = (
-                    f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв "
-                    f"(триггер: {trigger_reason}), и я сбросил счетчик чистоты. Мне очень нужны твои поддержка и контроль сейчас."
-                )
-                sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                if sent:
-                    await bot.send_message(chat_id=user_id, text=f"✅ Сообщение напарнику @{partner_username} успешно отправлено от вашего имени.")
-                else:
-                    await bot.send_message(chat_id=user_id, text=f"⚠️ Не удалось автоматически отправить сообщение напарнику @{partner_username}.")
-        except Exception as e:
-            logger.error(f"Ошибка отправки уведомлений после срыва по API: {e}")
-            
-    asyncio.create_task(send_bot_alert())
+    # Переводим пользователя в режим ожидания исповеди
+    state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
+    await start_confession_flow(user_id, trigger_reason, state=state_ctx, bot=bot)
     
-    return web.json_response({"success": True, "message": "Срыв зафиксирован. Поддерживающее сообщение отправлено вам в чат."})
+    return web.json_response({
+        "success": True, 
+        "confession_pending": True,
+        "message": "Запрос на исповедь отправлен в Telegram. Пожалуйста, отправьте голосовое или видеосообщение с признанием."
+    })
 
 async def handle_api_manage_panic(request):
     try:
@@ -500,53 +466,23 @@ async def handle_api_manage_panic(request):
         return web.json_response({"success": True, "message": "Поздравляем с победой над тягой!"})
         
     elif action == "failed":
-        now = datetime.now()
+        from database.models import User
+        from handlers.tracker import start_confession_flow
+        
         async with db_helper.session_factory() as session:
             user_db = await session.get(User, user_id)
-            user_db.streak_start = now
-            user_db.total_relapses += 1
-            
-            log = RelapseLog(
-                user_id=user_id,
-                timestamp=now,
-                trigger_reason=f"Паника: {trigger_reason}"
-            )
-            session.add(log)
-            await session.commit()
-            
-        async def send_help_failed():
-            try:
-                ai_response = await ai_service.generate_relapse_response(trigger_reason)
-                await bot.send_message(
-                    chat_id=user_id,
-                    text=f"😔 <b>Счетчик сброшен. Попробуем снова!</b>\n\n{ai_response}"
-                )
+            if not user_db:
+                return web.json_response({"error": "User not found"}, status=404)
                 
-                state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
-                await state_ctx.set_state(Form.panic_chat)
-                await state_ctx.update_data(ai_questions_today=0)
-                
-                await bot.send_message(
-                    chat_id=user_id,
-                    text="💬 <b>Я подключил ИИ-ассистента для поддержки.</b>\n"
-                         "Вы можете написать сюда ваши мысли или чувства, чтобы обсудить их с ИИ (введите ответ в чат):"
-                )
-                
-                if partner_username and business_connection_id:
-                    alert_text = (
-                        f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв "
-                        f"(я нажал кнопку SOS, но не справился; триггер: {trigger_reason}). Мне очень нужны твои поддержка и контроль сейчас."
-                    )
-                    sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                    if sent:
-                        await bot.send_message(chat_id=user_id, text=f"✅ Сообщение напарнику @{partner_username} успешно отправлено от вашего имени.")
-                    else:
-                        await bot.send_message(chat_id=user_id, text=f"⚠️ Не удалось автоматически отправить сообщение напарнику @{partner_username}.")
-            except Exception as e:
-                logger.error(f"Ошибка отправки сообщений при срыве в панике по API: {e}")
-                
-        asyncio.create_task(send_help_failed())
-        return web.json_response({"success": True, "message": "Срыв зафиксирован. Алерт напарнику отправлен."})
+        # Переводим пользователя в режим ожидания исповеди
+        state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
+        await start_confession_flow(user_id, f"Паника: {trigger_reason}", state=state_ctx, bot=bot)
+        
+        return web.json_response({
+            "success": True, 
+            "confession_pending": True,
+            "message": "Запрос на исповедь отправлен в Telegram. Пожалуйста, отправьте голосовое или видеосообщение с признанием."
+        })
         
     return web.json_response({"error": "Unknown action"}, status=400)
 
@@ -592,6 +528,7 @@ async def start_web_server():
         web.get("/api/stats", handle_api_stats),
         web.post("/api/journal", handle_api_save_journal),
         web.post("/api/relapse", handle_api_log_relapse),
+        web.post("/api/initiate_relapse", handle_api_log_relapse),
         web.post("/api/panic", handle_api_manage_panic),
         web.post("/api/accept_covenant", handle_api_accept_covenant)
     ])

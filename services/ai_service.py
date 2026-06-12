@@ -300,4 +300,61 @@ class GeminiAIService:
             
         return fallback
 
+    async def verify_confession_speech(self, file_bytes: bytes, mime_type: str) -> bool:
+        """
+        Проверяет аудио или видео признание срыва с помощью Gemini.
+        Возвращает True, если ИИ подтверждает наличие нужных ключевых фраз (APPROVED).
+        """
+        import base64
+        if not self.api_key or self.api_key.strip() in ("", "your_gemini_api_key_here"):
+            logger.warning("Gemini API key is not configured. Skipping speech verification (auto-approve for development).")
+            return True
+            
+        base64_data = base64.b64encode(file_bytes).decode("utf-8")
+        
+        prompt = (
+            "Проанализируй эту аудиозапись (или видеозапись). Пользователь должен сказать "
+            "искреннее признание в срыве и принятие ответственности перед Богом (Иеговой) "
+            "и своим напарником старейшиной Андреем. "
+            "Он должен сказать фразу, близкую по смыслу к следующей: "
+            "«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»\n\n"
+            "Если в записи пользователь действительно признает срыв (не обязательно слово в слово, "
+            "но признает факт срыва и ответственность перед Андреем), ответь строго ОДНИМ словом: APPROVED.\n"
+            "Если пользователь говорит ерунду, считает цифры, молчит, шутит, или текст не содержит "
+            "признания в срыве и упоминания старейшины Андрея, ответь строго ОДНИМ словом: REJECTED.\n"
+            "Не пиши никаких других слов, знаков препинания или комментариев, только APPROVED или REJECTED."
+        )
+        
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inlineData": {
+                                "mimeType": mime_type,
+                                "data": base64_data
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.url, json=payload, headers={"Content-Type": "application/json"}) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        text_result = data['candidates'][0]['content']['parts'][0]['text'].strip().upper()
+                        logger.info(f"Gemini speech verification result: {text_result}")
+                        return "APPROVED" in text_result
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Gemini Speech API returned status {response.status}: {error_text}")
+        except Exception as e:
+            logger.error(f"Error in verify_confession_speech: {e}")
+            
+        return False
+
 ai_service = GeminiAIService()

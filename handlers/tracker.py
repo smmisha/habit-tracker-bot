@@ -1,4 +1,5 @@
 from datetime import datetime
+from io import BytesIO
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -239,6 +240,29 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         except Exception as e:
             logger.error(f"Failed to send partner notification status to user: {e}")
 
+async def start_confession_flow(user_id: int, trigger_reason: str, state: FSMContext, message: Message = None, callback: CallbackQuery = None, bot = None):
+    """Инициализация процесса исповеди перед сбросом счетчика"""
+    await state.set_state(Form.waiting_for_confession)
+    await state.update_data(relapse_trigger_reason=trigger_reason)
+    
+    prompt_text = (
+        "⚠️ <b>Шаг подтверждения срыва: Зеркало исповеди</b>\n\n"
+        "Для сброса счетчика вы должны прислать в этот чат <b>голосовое сообщение или видеосообщение</b> с искренним признанием.\n\n"
+        "💬 <b>Произнесите слова:</b>\n"
+        "<i>«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»</i>\n\n"
+        "ИИ проверит ваше сообщение. Только после успешной проверки счетчик чистоты будет сброшен, а старейшина Андрей получит автоматическое уведомление."
+    )
+    
+    if callback:
+        await callback.message.edit_text(prompt_text)
+    elif message:
+        await message.answer(prompt_text)
+    elif bot:
+        try:
+            await bot.send_message(chat_id=user_id, text=prompt_text)
+        except Exception as e:
+            logger.error(f"Failed to send confession prompt to user {user_id}: {e}")
+
 @router.callback_query(F.data.startswith("relapse_trigger_"))
 async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -262,14 +286,66 @@ async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):
         "relapse_trigger_web": "Искушение в интернете"
     }
     trigger = reasons.get(action, "Общая причина")
-    await execute_relapse_reset(user_id, trigger, callback=callback)
+    await start_confession_flow(user_id, trigger, state=state, callback=callback)
 
 @router.message(Form.waiting_for_relapse_trigger_other)
 async def process_relapse_trigger_other_text(message: Message, state: FSMContext):
-    await state.clear()
     user_id = message.from_user.id
     text = message.text.strip()
-    await execute_relapse_reset(user_id, f"Другое: {text}", message=message)
+    await start_confession_flow(user_id, f"Другое: {text}", state=state, message=message)
+
+@router.message(Form.waiting_for_confession, F.voice | F.video_note)
+async def process_confession_media(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    
+    status_msg = await message.answer("⏳ <i>Скачиваю медиафайл и отправляю на проверку в Gemini AI...</i>")
+    
+    try:
+        file_in_io = BytesIO()
+        if message.voice:
+            file = await message.bot.get_file(message.voice.file_id)
+            mime_type = message.voice.mime_type or "audio/ogg"
+            await message.bot.download_file(file.file_path, file_in_io)
+        else: # video_note
+            file = await message.bot.get_file(message.video_note.file_id)
+            mime_type = "video/mp4"
+            await message.bot.download_file(file.file_path, file_in_io)
+            
+        file_bytes = file_in_io.getvalue()
+        
+        await status_msg.edit_text("🎙️ <i>Gemini AI анализирует вашу речь на наличие признания срыва...</i>")
+        
+        is_approved = await ai_service.verify_confession_speech(file_bytes, mime_type)
+        
+        if is_approved:
+            await status_msg.delete()
+            state_data = await state.get_data()
+            trigger_reason = state_data.get("relapse_trigger_reason", "Срыв подтвержден исповедью")
+            await state.clear()
+            await execute_relapse_reset(user_id, trigger_reason, message=message)
+        else:
+            await status_msg.edit_text(
+                "❌ <b>Исповедь отклонена Gemini AI</b>\n\n"
+                "Вы должны искренне и внятно признать свой срыв, упомянув Бога и напарника.\n\n"
+                "💬 <b>Попробуйте сказать еще раз:</b>\n"
+                "<i>«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»</i>\n\n"
+                "Запишите и отправьте новое голосовое сообщение или видеосообщение."
+            )
+    except Exception as e:
+        logger.error(f"Error processing confession: {e}")
+        await status_msg.edit_text(
+            "⚠️ Произошла техническая ошибка при проверке аудио/видео. Пожалуйста, попробуйте записать еще раз или введите /cancel для отмены."
+        )
+
+@router.message(Form.waiting_for_confession)
+async def process_confession_invalid_type(message: Message):
+    await message.answer(
+        "⚠️ <b>Ожидание признания (Зеркало исповеди)</b>\n\n"
+        "Для подтверждения срыва и сброса счетчика вы <b>обязаны отправить голосовое сообщение или видеосообщение</b>.\n\n"
+        "💬 <b>Произнесите слова:</b>\n"
+        "<i>«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»</i>\n\n"
+        "Если вы хотите отменить сброс, отправьте команду /cancel."
+    )
 
 @router.callback_query(F.data == "relapse_cancel")
 async def process_relapse_cancel(callback: CallbackQuery):

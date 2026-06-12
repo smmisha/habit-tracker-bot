@@ -302,8 +302,150 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
 
 // --- SOS И СРЫВ ЛОГИКА ---
 
-// 0. Запуск динамического ИИ-SOS
-document.getElementById('btn-start-sos').addEventListener('click', async () => {
+// --- COGNITIVE LOCK LOGIC ---
+let currentPuzzleAnswer = null;
+
+// Функция генерации случайного математического примера или логической последовательности
+function generatePuzzle() {
+    const puzzleType = Math.floor(Math.random() * 2); // 0: математика, 1: последовательность
+    if (puzzleType === 0) {
+        const operations = ['+', '-'];
+        const op1 = operations[Math.floor(Math.random() * operations.length)];
+        
+        let num1, num2, num3, text, ans;
+        if (Math.random() > 0.5) {
+            // Умножение + сложение/вычитание
+            num1 = Math.floor(Math.random() * 8) + 6; // 6-13
+            num2 = Math.floor(Math.random() * 6) + 3; // 3-8
+            num3 = Math.floor(Math.random() * 20) + 5; // 5-24
+            
+            if (op1 === '+') {
+                text = `${num1} * ${num2} + ${num3}`;
+                ans = num1 * num2 + num3;
+            } else {
+                const prod = num1 * num2;
+                if (prod > num3) {
+                    text = `${num1} * ${num2} - ${num3}`;
+                    ans = prod - num3;
+                } else {
+                    text = `${num3} + ${num1} * ${num2}`;
+                    ans = num3 + prod;
+                }
+            }
+        } else {
+            // Деление + сложение/вычитание
+            const divisors = [2, 3, 4, 5];
+            const div = divisors[Math.floor(Math.random() * divisors.length)];
+            const quotient = Math.floor(Math.random() * 12) + 5; // 5-16
+            num1 = quotient * div;
+            num2 = div;
+            num3 = Math.floor(Math.random() * 20) + 5;
+            
+            if (op1 === '+') {
+                text = `${num1} / ${num2} + ${num3}`;
+                ans = quotient + num3;
+            } else {
+                if (quotient > num3) {
+                    text = `${num1} / ${num2} - ${num3}`;
+                    ans = quotient - num3;
+                } else {
+                    text = `${num3} - ${num1} / ${num2}`;
+                    ans = num3 - quotient;
+                }
+            }
+        }
+        
+        currentPuzzleAnswer = ans;
+        return text;
+    } else {
+        // Логические последовательности
+        const patterns = [
+            { seq: [2, 4, 8, 16], next: 32, label: '2, 4, 8, 16, ...' },
+            { seq: [1, 4, 9, 16], next: 25, label: '1, 4, 9, 16, ...' },
+            { seq: [3, 6, 12, 24], next: 48, label: '3, 6, 12, 24, ...' },
+            { seq: [1, 2, 4, 7, 11], next: 16, label: '1, 2, 4, 7, 11, ...' },
+            { seq: [2, 5, 10, 17], next: 26, label: '2, 5, 10, 17, ...' },
+            { seq: [5, 10, 15, 20], next: 25, label: '5, 10, 15, 20, ...' },
+            { seq: [10, 9, 7, 4], next: 0, label: '10, 9, 7, 4, ...' },
+            { seq: [1, 3, 7, 15], next: 31, label: '1, 3, 7, 15, ...' }
+        ];
+        const selected = patterns[Math.floor(Math.random() * patterns.length)];
+        currentPuzzleAnswer = selected.next;
+        return `Продолжите ряд: ${selected.label}`;
+    }
+}
+
+// Открытие модального окна когнитивного замка
+function openCognitiveLock() {
+    const modal = document.getElementById('cognitive-lock-modal');
+    const puzzleText = document.getElementById('puzzle-text');
+    const input = document.getElementById('puzzle-answer');
+    
+    input.value = '';
+    puzzleText.textContent = generatePuzzle();
+    modal.classList.add('active');
+    
+    setTimeout(() => input.focus(), 100);
+}
+
+// Закрытие модального окна
+function closeCognitiveLock() {
+    const modal = document.getElementById('cognitive-lock-modal');
+    modal.classList.remove('active');
+}
+
+// Слушатель кнопки SOS (показывает когнитивный замок вместо прямого старта)
+document.getElementById('btn-start-sos').addEventListener('click', () => {
+    openCognitiveLock();
+});
+
+// Слушатель кнопки закрытия / отмены в модальном окне
+document.getElementById('btn-close-puzzle').addEventListener('click', () => {
+    closeCognitiveLock();
+});
+
+// Слушатель отправки ответа в модальном окне
+document.getElementById('btn-submit-puzzle').addEventListener('click', () => {
+    validatePuzzleAnswer();
+});
+
+// Также проверяем ответ при нажатии Enter в поле ввода
+document.getElementById('puzzle-answer').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        validatePuzzleAnswer();
+    }
+});
+
+function validatePuzzleAnswer() {
+    const input = document.getElementById('puzzle-answer');
+    const modalContent = document.querySelector('#cognitive-lock-modal .modal-card');
+    const userAnswer = parseInt(input.value.trim(), 10);
+    
+    if (isNaN(userAnswer)) {
+        showToast('Пожалуйста, введите числовой ответ', 'error');
+        return;
+    }
+    
+    if (userAnswer === currentPuzzleAnswer) {
+        showToast('Когнитивный замок успешно пройден! Мозг переключен.', 'success');
+        closeCognitiveLock();
+        startSosProcess(); // Запускаем загрузку шагов SOS
+    } else {
+        showToast('Неверно! Попробуйте решить новую задачу.', 'error');
+        input.value = '';
+        
+        // Эффект тряски при ошибке
+        modalContent.classList.add('shake');
+        setTimeout(() => modalContent.classList.remove('shake'), 400);
+        
+        // Новая задача
+        document.getElementById('puzzle-text').textContent = generatePuzzle();
+        input.focus();
+    }
+}
+
+// Непосредственно сам процесс запуска SOS и получения советов от ИИ
+async function startSosProcess() {
     const btn = document.getElementById('btn-start-sos');
     const startScreen = document.getElementById('sos-start-screen');
     const dynamicContent = document.getElementById('sos-dynamic-content');
@@ -356,7 +498,7 @@ document.getElementById('btn-start-sos').addEventListener('click', async () => {
         btn.querySelector('.spinner').classList.add('hidden');
         btn.querySelector('.btn-text').textContent = '🆘 Мне тяжело / Нужна помощь';
     }
-});
+}
 
 // 1. SOS - Справился (Helped)
 document.getElementById('btn-panic-helped').addEventListener('click', async () => {
@@ -455,7 +597,11 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
         
         const resData = await response.json();
         if (response.ok && resData.success) {
-            showToast(resData.message || 'Счетчик сброшен. Пожалуйста, откройте чат бота.');
+            if (resData.confession_pending) {
+                showToast(resData.message, 'info');
+            } else {
+                showToast(resData.message || 'Счетчик сброшен. Пожалуйста, откройте чат бота.');
+            }
             
             // Очищаем форму и возвращаем исходное состояние
             document.getElementById('relapse-form').classList.add('hidden');
@@ -472,7 +618,7 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
             
             // По возможности закрываем Mini App, чтобы пользователь сразу зашел в ИИ-чат
             if (tg) {
-                setTimeout(() => tg.close(), 1500);
+                setTimeout(() => tg.close(), 2500); // Даем больше времени прочитать уведомление об исповеди
             }
         } else {
             showToast(resData.error || 'Ошибка сохранения срыва', 'error');
