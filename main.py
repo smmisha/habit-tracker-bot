@@ -390,6 +390,13 @@ async def handle_api_log_relapse(request):
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
             
+    # Отменяем таймер тихой тревоги, если он был активен
+    from services.scheduler import scheduler
+    try:
+        scheduler.remove_job(f"panic_alert_{user_id}")
+    except Exception:
+        pass
+
     # Переводим пользователя в режим ожидания исповеди
     state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
     await start_confession_flow(user_id, trigger_reason, state=state_ctx, bot=bot)
@@ -424,7 +431,26 @@ async def handle_api_manage_panic(request):
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id
         
-        if action == "start":
+        if action == "initiate":
+            from services.scheduler import scheduler, send_silent_panic_alert
+            try:
+                scheduler.remove_job(f"panic_alert_{user_id}")
+            except Exception:
+                pass
+                
+            from datetime import timedelta
+            scheduler.add_job(
+                send_silent_panic_alert,
+                'date',
+                run_date=datetime.now() + timedelta(minutes=5),
+                args=[user_id],
+                id=f"panic_alert_{user_id}",
+                replace_existing=True
+            )
+            logger.info(f"Запущен 5-минутный таймер тихой тревоги SOS для {user_id}")
+            return web.json_response({"success": True})
+            
+        elif action == "start":
             # 1. Загружаем историю триггеров срывов
             relapses_result = await session.execute(
                 select(RelapseLog.trigger_reason)
@@ -454,6 +480,12 @@ async def handle_api_manage_panic(request):
             return web.json_response({"success": True, "guidelines": guidelines})
         
     if action == "helped":
+        from services.scheduler import scheduler
+        try:
+            scheduler.remove_job(f"panic_alert_{user_id}")
+        except Exception:
+            pass
+            
         async def send_help_ok():
             try:
                 await bot.send_message(
@@ -466,6 +498,12 @@ async def handle_api_manage_panic(request):
         return web.json_response({"success": True, "message": "Поздравляем с победой над тягой!"})
         
     elif action == "failed":
+        from services.scheduler import scheduler
+        try:
+            scheduler.remove_job(f"panic_alert_{user_id}")
+        except Exception:
+            pass
+            
         from database.models import User
         from handlers.tracker import start_confession_flow
         

@@ -377,6 +377,40 @@ async def send_weekly_reports():
             except Exception as e:
                 logger.error(f"Ошибка формирования недельного отчета для {user.id}: {e}")
 
+async def send_silent_panic_alert(user_id: int):
+    """Отправка автоматического сообщения напарнику, если пользователь не подтвердил победу над тягой за 5 минут"""
+    from main import bot
+    from database.models import User
+    from services.userbot_client import userbot
+    
+    async with db_helper.session_factory() as session:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            return
+            
+        partner_username = user.partner_username
+        business_connection_id = user.business_connection_id
+        
+    if partner_username and business_connection_id:
+        alert_text = (
+            "🚨 [Автоматическое сообщение] Привет. Я зашел в зону экстренной помощи SOS в трекере чистоты, "
+            "но не подтвердил, что справился с тягой, и закрыл приложение. Похоже, я нахожусь в состоянии сильного искушения "
+            "или пытаюсь обойти контроль. Пожалуйста, срочно свяжись со мной или позвони мне!"
+        )
+        try:
+            sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+            if sent:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=f"🚨 <b>Время вышло!</b> Вы вошли на вкладку SOS, но не подтвердили победу над тягой в течение 5 минут.\n\n"
+                         f"Вашему напарнику <code>@{partner_username}</code> автоматически отправлена тревога."
+                )
+                logger.info(f"Отправлена автоматическая тревога напарнику пользователя {user_id} из-за тайм-аута SOS")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке тихой тревоги для {user_id}: {e}")
+
 def setup_scheduler():
     """Инициализация и запуск планировщика"""
     # Чек-ины проверяются каждую минуту

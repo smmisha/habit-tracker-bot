@@ -69,6 +69,7 @@ function switchTab(tabId) {
     } else if (tabId === 'sos') {
         headerTitle.textContent = 'HELP / SOS';
         if (!isSosUnlocked) {
+            initiatePanicTimer();
             openCognitiveLock();
         }
     }
@@ -483,6 +484,19 @@ function validatePuzzleAnswer() {
         // Новая задача
         document.getElementById('puzzle-text').textContent = generatePuzzle();
         input.focus();
+    }
+}
+
+// Отправка запроса на инициализацию таймера "тихой тревоги"
+async function initiatePanicTimer() {
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'initiate' })
+        });
+    } catch (e) {
+        console.error("Ошибка при инициализации тихой тревоги:", e);
     }
 }
 
