@@ -3,7 +3,31 @@ import sqlite3
 import aiosqlite
 import asyncpg
 from typing import Optional
-from config import DB_PATH, DATABASE_URL
+import urllib.parse
+from config import DB_PATH, DATABASE_URL as RAW_DATABASE_URL
+
+def clean_db_url(url: str) -> str:
+    if not url:
+        return url
+    if not url.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://")):
+        return url
+    try:
+        scheme_split = url.split("://", 1)
+        scheme = scheme_split[0]
+        rest = scheme_split[1]
+        if "@" in rest:
+            userinfo, hostspec = rest.rsplit("@", 1)
+            if ":" in userinfo:
+                user, password = userinfo.split(":", 1)
+                if urllib.parse.unquote(password) == password:
+                    encoded_password = urllib.parse.quote(password)
+                    userinfo = f"{user}:{encoded_password}"
+            rest = f"{userinfo}@{hostspec}"
+        return f"{scheme}://{rest}"
+    except:
+        return url
+
+DATABASE_URL = clean_db_url(RAW_DATABASE_URL)
 
 # Глобальный пул соединений для PostgreSQL
 pg_pool = None

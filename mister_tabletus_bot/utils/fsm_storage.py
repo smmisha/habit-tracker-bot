@@ -7,8 +7,25 @@ from aiogram.fsm.storage.base import BaseStorage, StorageKey, StateType
 
 class PersistentSQLStorage(BaseStorage):
     def __init__(self, db_path_or_url: str):
+        import urllib.parse
         self.db_path_or_url = str(db_path_or_url)
-        self.is_pg = self.db_path_or_url.startswith(("postgresql://", "postgres://"))
+        self.is_pg = self.db_path_or_url.startswith(("postgresql://", "postgres://", "postgresql+asyncpg://"))
+        if self.is_pg:
+            try:
+                scheme_split = self.db_path_or_url.split("://", 1)
+                scheme = scheme_split[0]
+                rest = scheme_split[1]
+                if "@" in rest:
+                    userinfo, hostspec = rest.rsplit("@", 1)
+                    if ":" in userinfo:
+                        user, password = userinfo.split(":", 1)
+                        if urllib.parse.unquote(password) == password:
+                            encoded_password = urllib.parse.quote(password)
+                            userinfo = f"{user}:{encoded_password}"
+                    rest = f"{userinfo}@{hostspec}"
+                self.db_path_or_url = f"{scheme}://{rest}"
+            except:
+                pass
         self.pg_pool = None
 
     async def init_db(self):
