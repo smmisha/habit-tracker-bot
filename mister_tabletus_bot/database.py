@@ -39,7 +39,7 @@ async def init_db():
     if is_postgres():
         global pg_pool
         if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL)
+            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
         async with pg_pool.acquire() as conn:
             # Таблица пользователей
             await conn.execute("""
@@ -215,7 +215,7 @@ async def execute(query_sqlite: str, query_pg: str, params: tuple = ()):
     if is_postgres():
         global pg_pool
         if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL)
+            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
         async with pg_pool.acquire() as conn:
             return await conn.execute(query_pg, *processed_params)
     else:
@@ -229,7 +229,7 @@ async def execute_insert(query_sqlite: str, query_pg: str, params: tuple = ()):
     if is_postgres():
         global pg_pool
         if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL)
+            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
         actual_pg_query = query_pg
         if "returning" not in query_pg.lower():
             actual_pg_query += " RETURNING id"
@@ -247,7 +247,7 @@ async def fetch_one(query_sqlite: str, query_pg: str, params: tuple = ()):
     if is_postgres():
         global pg_pool
         if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL)
+            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
         async with pg_pool.acquire() as conn:
             row = await conn.fetchrow(query_pg, *processed_params)
             return dict(row) if row else None
@@ -263,7 +263,7 @@ async def fetch_all(query_sqlite: str, query_pg: str, params: tuple = ()):
     if is_postgres():
         global pg_pool
         if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL)
+            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
         async with pg_pool.acquire() as conn:
             rows = await conn.fetch(query_pg, *processed_params)
             return [dict(r) for r in rows]

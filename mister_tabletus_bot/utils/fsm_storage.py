@@ -31,7 +31,7 @@ class PersistentSQLStorage(BaseStorage):
     async def init_db(self):
         if self.is_pg:
             if not self.pg_pool:
-                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url)
+                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url, statement_cache_size=0)
             async with self.pg_pool.acquire() as conn:
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS fsm_storage (
@@ -63,7 +63,7 @@ class PersistentSQLStorage(BaseStorage):
         state_str = state.state if hasattr(state, "state") else state
         if self.is_pg:
             if not self.pg_pool:
-                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url)
+                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url, statement_cache_size=0)
             async with self.pg_pool.acquire() as conn:
                 await conn.execute("""
                     INSERT INTO fsm_storage (bot_id, chat_id, user_id, destiny, state, data)
@@ -84,7 +84,7 @@ class PersistentSQLStorage(BaseStorage):
     async def get_state(self, key: StorageKey) -> Optional[str]:
         if self.is_pg:
             if not self.pg_pool:
-                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url)
+                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url, statement_cache_size=0)
             async with self.pg_pool.acquire() as conn:
                 val = await conn.fetchval("""
                     SELECT state FROM fsm_storage
@@ -104,7 +104,7 @@ class PersistentSQLStorage(BaseStorage):
         data_str = json.dumps(data, ensure_ascii=False)
         if self.is_pg:
             if not self.pg_pool:
-                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url)
+                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url, statement_cache_size=0)
             async with self.pg_pool.acquire() as conn:
                 await conn.execute("""
                     INSERT INTO fsm_storage (bot_id, chat_id, user_id, destiny, state, data)
@@ -125,7 +125,7 @@ class PersistentSQLStorage(BaseStorage):
     async def get_data(self, key: StorageKey) -> Dict[str, Any]:
         if self.is_pg:
             if not self.pg_pool:
-                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url)
+                self.pg_pool = await asyncpg.create_pool(self.db_path_or_url, statement_cache_size=0)
             async with self.pg_pool.acquire() as conn:
                 val = await conn.fetchval("""
                     SELECT data FROM fsm_storage

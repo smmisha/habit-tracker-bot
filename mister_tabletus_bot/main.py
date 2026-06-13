@@ -2,7 +2,7 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from utils.fsm_storage import SQLiteStorage
-from config import DB_PATH
+from config import DB_PATH, DATABASE_URL
 
 import database
 import scheduler
@@ -21,7 +21,7 @@ async def main():
     await database.init_db()
     
     # Инициализация хранилища FSM
-    storage = SQLiteStorage(DB_PATH)
+    storage = SQLiteStorage(DATABASE_URL if DATABASE_URL else DB_PATH)
     await storage.init_db()
     
     # Инициализация бота и диспетчера
