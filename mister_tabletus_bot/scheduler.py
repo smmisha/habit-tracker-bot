@@ -110,23 +110,12 @@ async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: in
 async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_time_iso: str, message_id: int):
     """Проверяет через 45 минут, принял ли пользователь лекарство. Если нет — штрафует и шлет алармы."""
     try:
-        async with aiosqlite.connect(database.DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT status FROM history WHERE user_id = ? AND medication_id = ? AND reminder_time = ?",
-                (user_id, med_id, expected_time_iso)
-            ) as cursor:
-                row = await cursor.fetchone()
+        status_history = await database.get_history_status(med_id, expected_time_iso)
                 
         # Если статус до сих пор pending — значит пользователь проигнорировал пуш
-        if row and row['status'] == 'pending':
+        if status_history == 'pending':
             # 1. Меняем статус на skipped
-            async with aiosqlite.connect(database.DB_PATH) as db:
-                await db.execute(
-                    "UPDATE history SET status = 'skipped', action_time = ? WHERE user_id = ? AND medication_id = ? AND reminder_time = ?",
-                    (datetime.now().isoformat(), user_id, med_id, expected_time_iso)
-                )
-                await db.commit()
+            await database.update_history_status(med_id, expected_time_iso, 'skipped', datetime.now().isoformat())
             
             # 2. Штрафуем Тамагочи (-15 здоровья)
             status = await database.update_user_tamagotchi(user_id, health_delta=-15, xp_delta=0)

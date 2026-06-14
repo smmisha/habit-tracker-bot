@@ -721,25 +721,13 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
         return
         
     # Проверяем историю, чтобы не кликали дважды
-    async with aiosqlite.connect(database.DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT status FROM history WHERE medication_id = ? AND reminder_time = ?",
-            (med_id, expected_time_iso)
-        ) as cursor:
-            row = await cursor.fetchone()
-            
-    if row and row['status'] == 'taken':
+    status_history = await database.get_history_status(med_id, expected_time_iso)
+    if status_history == 'taken':
         await callback.answer("Прием уже подтвержден!")
         return
         
     # 1. Обновляем статус в истории
-    async with aiosqlite.connect(database.DB_PATH) as db:
-        await db.execute(
-            "UPDATE history SET status = 'taken', action_time = ? WHERE medication_id = ? AND reminder_time = ?",
-            (datetime.now().isoformat(), med_id, expected_time_iso)
-        )
-        await db.commit()
+    await database.update_history_status(med_id, expected_time_iso, 'taken', datetime.now().isoformat())
         
     # 2. Уменьшаем запас на 1 дозу
     await database.update_medication_stock(med_id, -1)
@@ -784,25 +772,13 @@ async def process_skip_pill(callback: CallbackQuery):
         return
         
     # Проверяем историю
-    async with aiosqlite.connect(database.DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT status FROM history WHERE medication_id = ? AND reminder_time = ?",
-            (med_id, expected_time_iso)
-        ) as cursor:
-            row = await cursor.fetchone()
-            
-    if row and row['status'] in ['taken', 'skipped']:
+    status_history = await database.get_history_status(med_id, expected_time_iso)
+    if status_history in ['taken', 'skipped']:
         await callback.answer("Прием уже обработан!")
         return
         
     # 1. Записываем пропуск
-    async with aiosqlite.connect(database.DB_PATH) as db:
-        await db.execute(
-            "UPDATE history SET status = 'skipped', action_time = ? WHERE medication_id = ? AND reminder_time = ?",
-            (datetime.now().isoformat(), med_id, expected_time_iso)
-        )
-        await db.commit()
+    await database.update_history_status(med_id, expected_time_iso, 'skipped', datetime.now().isoformat())
         
     # 2. Штрафуем маскота (-15 здоровья)
     status = await database.update_user_tamagotchi(callback.from_user.id, health_delta=-15, xp_delta=0)

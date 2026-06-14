@@ -424,6 +424,22 @@ async def log_history(user_id: int, medication_id: int, reminder_time: str, stat
         (user_id, medication_id, reminder_time, status, action_time)
     )
 
+async def get_history_status(medication_id: int, reminder_time: str):
+    row = await fetch_one(
+        "SELECT status FROM history WHERE medication_id = ? AND reminder_time = ?",
+        "SELECT status FROM history WHERE medication_id = $1 AND reminder_time = $2",
+        (medication_id, reminder_time)
+    )
+    return row['status'] if row else None
+
+async def update_history_status(medication_id: int, reminder_time: str, status: str, action_time: str):
+    await execute(
+        "UPDATE history SET status = ?, action_time = ? WHERE medication_id = ? AND reminder_time = ?",
+        "UPDATE history SET status = $1, action_time = $2 WHERE medication_id = $3 AND reminder_time = $4",
+        (status, action_time, medication_id, reminder_time)
+    )
+
+
 
 # --- Опекуны (Бадди) ---
 
