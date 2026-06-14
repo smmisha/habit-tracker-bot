@@ -177,22 +177,40 @@ async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContex
     await state.set_state(AddMedication.waiting_for_dosage)
     await state.update_data(name=name, active_ingredient=None)
     
-    processing_dosage = await callback.message.answer("🔍 *Мистер Таблетус подбирает варианты дозировок...* 🤖", parse_mode="Markdown")
-    dosages = await gemini_service.suggest_dosage(name)
-    await processing_dosage.delete()
-    
-    keyboard_buttons = []
-    for d in dosages:
-        keyboard_buttons.append([InlineKeyboardButton(text=d, callback_data=f"dosage_suggest:{d}")])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-    
-    await callback.message.answer(
+    # Отправляем сообщение-запрос дозировки моментально
+    prompt_msg = await callback.message.answer(
         f"Введите дозировку для *{name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
-        f"_(Или выберите один из вариантов ниже)_",
-        reply_markup=keyboard,
+        f"_(Загружаю варианты дозировок... если хотите, введите вручную прямо сейчас)_",
         parse_mode="Markdown"
     )
     await callback.message.delete()
+    
+    # Запуск фонового подбора дозировок через Gemini
+    async def load_dosages_bg(msg_to_edit: Message, med_name: str):
+        try:
+            dosages = await gemini_service.suggest_dosage(med_name)
+            keyboard_buttons = []
+            for d in dosages:
+                keyboard_buttons.append([InlineKeyboardButton(text=d, callback_data=f"dosage_suggest:{d}")])
+            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+            
+            await msg_to_edit.edit_text(
+                f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
+                f"_(Или выберите один из вариантов ниже)_",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой загрузки дозировок: {e}")
+            try:
+                await msg_to_edit.edit_text(
+                    f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+                
+    asyncio.create_task(load_dosages_bg(prompt_msg, name))
 
 
 # --- Ввод текстом (NLP) ---
@@ -539,7 +557,7 @@ async def process_manual_name(message: Message, state: FSMContext):
         name = raw_name
         active_ingredient = None
         
-    # Валидация названия через Gemini
+    # Валидация названия (теперь быстрая, Wiki-поиск в фоне)
     processing_msg = await message.answer("🔍 *Мистер Таблетус проверяет название...* 🤖", parse_mode="Markdown")
     is_valid = await gemini_service.validate_medicine_name(name)
     await processing_msg.delete()
@@ -555,22 +573,39 @@ async def process_manual_name(message: Message, state: FSMContext):
     await state.update_data(name=name, active_ingredient=active_ingredient)
     await state.set_state(AddMedication.waiting_for_dosage)
     
-    # Запрос дозировки с рекомендациями от Gemini
-    processing_dosage = await message.answer("🔍 *Мистер Таблетус подбирает варианты дозировок...* 🤖", parse_mode="Markdown")
-    dosages = await gemini_service.suggest_dosage(name)
-    await processing_dosage.delete()
-    
-    keyboard_buttons = []
-    for d in dosages:
-        keyboard_buttons.append([InlineKeyboardButton(text=d, callback_data=f"dosage_suggest:{d}")])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-    
-    await message.answer(
+    # Отправляем сообщение-запрос дозировки моментально
+    prompt_msg = await message.answer(
         f"Введите дозировку для *{name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
-        f"_(Или выберите один из вариантов ниже)_",
-        reply_markup=keyboard,
+        f"_(Загружаю варианты дозировок... если хотите, введите вручную прямо сейчас)_",
         parse_mode="Markdown"
     )
+    
+    # Запуск фонового подбора дозировок через Gemini
+    async def load_dosages_bg(msg_to_edit: Message, med_name: str):
+        try:
+            dosages = await gemini_service.suggest_dosage(med_name)
+            keyboard_buttons = []
+            for d in dosages:
+                keyboard_buttons.append([InlineKeyboardButton(text=d, callback_data=f"dosage_suggest:{d}")])
+            keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+            
+            await msg_to_edit.edit_text(
+                f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
+                f"_(Или выберите один из вариантов ниже)_",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой загрузки дозировок: {e}")
+            try:
+                await msg_to_edit.edit_text(
+                    f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+                
+    asyncio.create_task(load_dosages_bg(prompt_msg, name))
 
 
 

@@ -193,17 +193,18 @@ async def validate_medicine_name(name: str) -> bool:
     if len(name.strip()) < 2:
         return False
 
-    # 3. Быстрый поиск по Wikipedia
-    is_valid = await check_wikipedia_drug(name)
-    if is_valid:
+    # 3. Запускаем поиск по Wikipedia и кэширование в фоновой задаче,
+    # чтобы не задерживать пользователя блокирующими HTTP-запросами.
+    async def bg_wiki_check():
         try:
-            await database.add_medication_dict(cleaned_name)
+            is_valid = await check_wikipedia_drug(name)
+            if is_valid:
+                await database.add_medication_dict(cleaned_name)
         except Exception as cache_err:
-            logger.error(f"Не удалось кэшировать название {cleaned_name}: {cache_err}")
-        return True
-        
-    # 4. Если в Википедии не нашли, но формат строки корректный — все равно одобряем, 
-    # чтобы не блокировать ввод редких или пользовательских названий.
+            logger.error(f"Ошибка фонового кэширования названия {cleaned_name}: {cache_err}")
+            
+    import asyncio
+    asyncio.create_task(bg_wiki_check())
     return True
 
 async def suggest_dosage(medicine_name: str) -> list:
