@@ -208,9 +208,23 @@ async def validate_medicine_name(name: str) -> bool:
 
 async def suggest_dosage(medicine_name: str) -> list:
     """
-    Возвращает список рекомендаций по дозировкам с таймаутом 2.0 секунды.
+    Возвращает список рекомендаций по дозировкам с кэшированием в базе данных.
+    Таймаут первого запроса к ИИ — 5.5 секунды.
     """
     fallback_dosages = ['1 таблетка', '1 капсула', '500 мг', '1 шт']
+    cleaned_name = medicine_name.strip().lower()
+    if not cleaned_name:
+        return fallback_dosages
+        
+    # 1. Проверяем в локальном кэше дозировок (моментально)
+    import database
+    try:
+        cached_dosages = await database.get_dosage_cache(cleaned_name)
+        if cached_dosages:
+            return cached_dosages
+    except Exception as cache_err:
+        logger.error(f"Ошибка чтения кэша дозировок: {cache_err}")
+
     if not GEMINI_API_KEY:
         return fallback_dosages
         
@@ -223,7 +237,7 @@ async def suggest_dosage(medicine_name: str) -> list:
     try:
         model = genai.GenerativeModel("gemini-3.5-flash")
         
-        # Запуск с таймаутом 2.0 секунды
+        # Запуск с таймаутом 5.5 секунды для первой генерации
         response = await asyncio.wait_for(
             model.generate_content_async(
                 prompt,
@@ -232,7 +246,7 @@ async def suggest_dosage(medicine_name: str) -> list:
                     response_mime_type="application/json"
                 )
             ),
-            timeout=2.0
+            timeout=5.5
         )
         
         result_text = response.text.strip()
@@ -244,9 +258,17 @@ async def suggest_dosage(medicine_name: str) -> list:
         
         dosages = json.loads(result_text)
         if isinstance(dosages, list) and len(dosages) > 0:
-            return [str(d) for d in dosages[:4]]
+            result_dosages = [str(d) for d in dosages[:4]]
+            
+            # Кэшируем полученные дозировки в БД
+            try:
+                await database.add_dosage_cache(cleaned_name, result_dosages)
+            except Exception as save_err:
+                logger.error(f"Ошибка сохранения кэша дозировок: {save_err}")
+                
+            return result_dosages
     except Exception as e:
-        logger.error(f"Ошибка получения рекомендации дозировок: {e}")
+        logger.error(f"Ошибка получения рекомендации дозировок от ИИ: {e}")
         
     return fallback_dosages
 

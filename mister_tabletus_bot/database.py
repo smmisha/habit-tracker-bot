@@ -120,6 +120,13 @@ async def init_db():
                     recommendations TEXT
                 )
             """)
+            # Таблица кэша дозировок
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS dosage_cache (
+                    name TEXT PRIMARY KEY,
+                    dosages TEXT
+                )
+            """)
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             # Таблица пользователей
@@ -198,6 +205,13 @@ async def init_db():
                 CREATE TABLE IF NOT EXISTS medication_rec (
                     name TEXT PRIMARY KEY,
                     recommendations TEXT
+                )
+            """)
+            # Таблица кэша дозировок
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS dosage_cache (
+                    name TEXT PRIMARY KEY,
+                    dosages TEXT
                 )
             """)
             await db.commit()
@@ -521,4 +535,25 @@ async def add_medication_rec(name: str, recommendations: str):
         "INSERT OR REPLACE INTO medication_rec (name, recommendations) VALUES (?, ?)",
         "INSERT INTO medication_rec (name, recommendations) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET recommendations = EXCLUDED.recommendations",
         (name, recommendations)
+    )
+
+async def get_dosage_cache(name: str):
+    row = await fetch_one(
+        "SELECT dosages FROM dosage_cache WHERE LOWER(name) = ?",
+        "SELECT dosages FROM dosage_cache WHERE LOWER(name) = LOWER($1)",
+        (name.lower(),)
+    )
+    if row and row['dosages']:
+        try:
+            return json.loads(row['dosages'])
+        except:
+            pass
+    return None
+
+async def add_dosage_cache(name: str, dosages: list):
+    dosages_str = json.dumps(dosages, ensure_ascii=False)
+    await execute(
+        "INSERT OR REPLACE INTO dosage_cache (name, dosages) VALUES (?, ?)",
+        "INSERT INTO dosage_cache (name, dosages) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET dosages = EXCLUDED.dosages",
+        (name.lower(), dosages_str)
     )
