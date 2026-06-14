@@ -365,4 +365,60 @@ async def search_medicine_image(medicine_name: str) -> str:
     return await loop.run_in_executor(None, fetch)
 
 
+async def classify_medicine_name(medicine_name: str) -> dict:
+    """
+    Классифицирует название препарата через Gemini:
+    - real: реально существующий препарат/БАД
+    - plausible: реалистичное, но отсутствующее в справочниках название (нужно спросить действующее вещество)
+    - nonsense: обычное бытовое слово/бессмыслица (не нужно спрашивать МНН)
+    """
+    fallback = {"category": "real", "explanation": ""}
+    if not GEMINI_API_KEY:
+        return fallback
+        
+    prompt = f"""
+    Проанализируй слово/фразу "{medicine_name}" и определи, к какой категории оно относится в контексте медицины и фармакологии:
+    
+    Категории:
+    1. "real" - реальное существующее коммерческое название лекарства, витамина или БАД (например, "Аспирин", "Золофт", "Гидазепам", "Есцителопрам").
+    2. "plausible" - вымышленное, редкое или новое слово, которое грамматически и фонетически звучит как название лекарства или БАДа, но такого препарата нет в официальных справочниках (например, "Радукпирон", "Аспиринус", "Новопасситин").
+    3. "nonsense" - обычное бытовое слово, оскорбление, предмет, фрукт, овощ или любая бессмыслица, которая никак не может быть названием лекарства (например, "Какашка", "Стол", "Привет", "Дурак", "qwerty").
+    
+    Верни строго JSON-объект следующего формата (без markdown разметки и лишних слов):
+    {{
+        "category": "одно из: real, plausible, nonsense",
+        "explanation": "краткое объяснение на русском языке"
+    }}
+    """
+    import asyncio
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        response = await asyncio.wait_for(
+            model.generate_content_async(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json"
+                )
+            ),
+            timeout=5.0
+        )
+        
+        result_text = response.text.strip()
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        data = json.loads(result_text)
+        if isinstance(data, dict) and "category" in data:
+            return data
+    except Exception as e:
+        logger.error(f"Ошибка классификации названия лекарства через Gemini: {e}")
+        
+    return fallback
+
+
+
 

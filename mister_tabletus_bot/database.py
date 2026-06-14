@@ -557,3 +557,10 @@ async def add_dosage_cache(name: str, dosages: list):
         "INSERT INTO dosage_cache (name, dosages) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET dosages = EXCLUDED.dosages",
         (name.lower(), dosages_str)
     )
+
+async def update_medication_active_ingredient(med_id: int, active_ingredient: str):
+    await execute(
+        "UPDATE medications SET active_ingredient = ? WHERE id = ?",
+        "UPDATE medications SET active_ingredient = $1 WHERE id = $2",
+        (active_ingredient, med_id)
+    )

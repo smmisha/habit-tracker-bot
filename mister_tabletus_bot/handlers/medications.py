@@ -58,6 +58,9 @@ class AddMedication(StatesGroup):
     waiting_for_stock = State()         # Ручной ввод: остаток в аптечке
     waiting_for_schedule_after_photo = State() # После фото: ожидание ввода графика текстом
 
+class EditMedication(StatesGroup):
+    waiting_for_active_ingredient = State()
+
 # --- СПИСОК ЛЕКАРСТВ ---
 
 @router.message(StateFilter("*"), F.text == "💊 Мои лекарства")
@@ -516,20 +519,8 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
     await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
     await state.clear()
     
-    # Отправляем рекомендации асинхронно в фоне
-    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str):
-        try:
-            recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
-            if recommendations:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name}:*\n{recommendations}",
-                    parse_mode="Markdown"
-                )
-        except Exception as e:
-            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
-            
-    asyncio.create_task(send_recommendations_bg(bot, callback.from_user.id, data["name"]))
+    # Запускаем фоновый анализ и отправку рекомендаций
+    asyncio.create_task(run_background_classification_and_rec(bot, callback.from_user.id, med_id, data["name"]))
 
 
 @router.callback_query(StateFilter(AddMedication.confirming_parsed), F.data == "confirm_no")
@@ -727,20 +718,8 @@ async def process_manual_stock(message: Message, state: FSMContext, bot: Bot):
     await message.answer(success_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
     await state.clear()
     
-    # Отправляем рекомендации асинхронно в фоне
-    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str):
-        try:
-            recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
-            if recommendations:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name}:*\n{recommendations}",
-                    parse_mode="Markdown"
-                )
-        except Exception as e:
-            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
-            
-    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, state_data["name"]))
+    # Запускаем фоновый анализ и отправку рекомендаций
+    asyncio.create_task(run_background_classification_and_rec(bot, message.from_user.id, med_id, state_data["name"]))
 
 
 # --- ОБРАБОТКА ДЕЙСТВИЙ ИЗ УВЕДОМЛЕНИЙ (ПРИНЯЛ / ПРОПУСТИЛ) ---
@@ -873,3 +852,100 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
     )
     
     await callback.answer("Отложено на 15 минут!")
+
+
+# --- ФОНОВАЯ КЛАССИФИКАЦИЯ И РЕКОМЕНДАЦИИ ИИ ---
+
+async def run_background_classification_and_rec(bot: Bot, chat_id: int, med_id: int, medicine_name: str):
+    try:
+        # 1. Классифицируем название препарата через Gemini
+        classification = await gemini_service.classify_medicine_name(medicine_name)
+        category = classification.get("category", "real")
+        
+        if category == "real":
+            # Реальное лекарство -> запрашиваем и отправляем рекомендации
+            recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
+            if recommendations:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name}:*\n{recommendations}",
+                    parse_mode="Markdown"
+                )
+        elif category == "plausible":
+            # Вымышленное/редкое название -> предлагаем ввести действующее вещество
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🧪 Указать действующее вещество", callback_data=f"set_active_ing:{med_id}")]
+            ])
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ *Мистер Таблетус:* «Я не нашел препарат **{medicine_name}** в медицинских справочниках.\n\n"
+                     f"Если это настоящее лекарство (например, новое или редкое), пожалуйста, укажите его действующее вещество (МНН) ниже, чтобы я мог подобрать рекомендации.»",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        else: # nonsense (какашка, стол и т.д.)
+            # Заведомо нелекарственное слово -> просто сообщаем об этом
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ *Мистер Таблетус:* «Препарата с названием **{medicine_name}** не существует в медицинских справочниках.»",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.error(f"Ошибка фонового анализа лекарства {medicine_name}: {e}")
+
+
+@router.callback_query(F.data.startswith("set_active_ing:"))
+async def process_set_active_ing_callback(callback: CallbackQuery, state: FSMContext):
+    med_id = int(callback.data.split(":")[1])
+    med = await database.get_medication(med_id)
+    if not med:
+        await callback.answer("Лекарство не найдено!")
+        return
+        
+    await state.set_state(EditMedication.waiting_for_active_ingredient)
+    await state.update_data(edit_med_id=med_id)
+    
+    await callback.message.answer(
+        f"Введите действующее вещество для лекарства *{med['name']}* (например: _Ибупрофен_):",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.message(StateFilter(EditMedication.waiting_for_active_ingredient))
+async def process_input_active_ingredient(message: Message, state: FSMContext, bot: Bot):
+    active_ingredient = message.text.strip()
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    
+    med = await database.get_medication(med_id)
+    if not med:
+        await message.answer("Ошибка: лекарство не найдено в базе данных.", reply_markup=get_main_menu_keyboard())
+        await state.clear()
+        return
+        
+    # Обновляем действующее вещество в базе данных
+    await database.update_medication_active_ingredient(med_id, active_ingredient)
+    
+    await message.answer(
+        f"✅ Действующее вещество для *{med['name']}* успешно обновлено на **{active_ingredient}**!",
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode="Markdown"
+    )
+    await state.clear()
+    
+    # Заново запускаем отправку рекомендаций в фоне
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str):
+        try:
+            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
+            if recommendations:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name} ({ingredient}):*\n{recommendations}",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
+            
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+
