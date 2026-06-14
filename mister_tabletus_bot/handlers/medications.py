@@ -1,4 +1,5 @@
 import os
+import asyncio
 import re
 import uuid
 import logging
@@ -500,17 +501,24 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
     
     await callback.message.delete()
     
-    # Запрос медицинских рекомендаций от Gemini
-    processing_rec = await callback.message.answer("🔍 *Мистер Таблетус готовит рекомендации по приему...* 🤖", parse_mode="Markdown")
-    recommendations = await gemini_service.get_medicine_recommendations(data["name"])
-    await processing_rec.delete()
-    
     success_text = f"🎉 Лекарство *{data['name']}* успешно добавлено в вашу аптечку!\n\n"
-    if recommendations:
-        success_text += f"💡 *Рекомендации от Мистера Таблетуса:*\n{recommendations}"
-        
     await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
     await state.clear()
+    
+    # Отправляем рекомендации асинхронно в фоне
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str):
+        try:
+            recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
+            if recommendations:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name}:*\n{recommendations}",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
+            
+    asyncio.create_task(send_recommendations_bg(bot, callback.from_user.id, data["name"]))
 
 
 @router.callback_query(StateFilter(AddMedication.confirming_parsed), F.data == "confirm_no")
@@ -693,17 +701,24 @@ async def process_manual_stock(message: Message, state: FSMContext, bot: Bot):
     # Настраиваем планировщик
     await scheduler.setup_scheduler(bot)
     
-    # Запрос медицинских рекомендаций от Gemini
-    processing_rec = await message.answer("🔍 *Мистер Таблетус готовит рекомендации по приему...* 🤖", parse_mode="Markdown")
-    recommendations = await gemini_service.get_medicine_recommendations(state_data["name"])
-    await processing_rec.delete()
-    
     success_text = f"🎉 Лекарство *{state_data['name']}* успешно добавлено в аптечку!\n\n"
-    if recommendations:
-        success_text += f"💡 *Рекомендации от Мистера Таблетуса:*\n{recommendations}"
-        
     await message.answer(success_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
     await state.clear()
+    
+    # Отправляем рекомендации асинхронно в фоне
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str):
+        try:
+            recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
+            if recommendations:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name}:*\n{recommendations}",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
+            
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, state_data["name"]))
 
 
 # --- ОБРАБОТКА ДЕЙСТВИЙ ИЗ УВЕДОМЛЕНИЙ (ПРИНЯЛ / ПРОПУСТИЛ) ---

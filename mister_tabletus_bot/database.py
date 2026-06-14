@@ -495,9 +495,9 @@ async def toggle_buddies_enabled(user_id: int) -> int:
 
 async def check_medication_dict(name: str) -> bool:
     row = await fetch_one(
-        "SELECT name FROM medication_dict WHERE name = ?",
-        "SELECT name FROM medication_dict WHERE name = $1",
-        (name,)
+        "SELECT name FROM medication_dict WHERE LOWER(name) = ?",
+        "SELECT name FROM medication_dict WHERE LOWER(name) = LOWER($1)",
+        (name.lower(),)
     )
     return row is not None
 

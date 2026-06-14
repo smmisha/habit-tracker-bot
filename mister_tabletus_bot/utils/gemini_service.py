@@ -117,86 +117,124 @@ async def parse_medicine_photo(image_path: str) -> dict:
         logger.error(f"Ошибка распознавания фото через Gemini Vision: {e}")
         return None
 
+async def check_wikipedia_drug(name: str) -> bool:
+    """
+    Проверяет существование лекарства/вещества через русское и украинское Wikipedia OpenSearch API.
+    """
+    import urllib.request
+    import urllib.parse
+    import json
+    import asyncio
+    
+    cleaned_name = name.strip()
+    headers = {
+        'User-Agent': 'MisterTabletusBot/1.0 (contact: smmisha@github.com; generic medicine bot)'
+    }
+    
+    for lang in ['ru', 'uk']:
+        try:
+            query = urllib.parse.quote(cleaned_name)
+            url = f"https://{lang}.wikipedia.org/w/api.php?action=opensearch&search={query}&limit=3&format=json"
+            
+            def fetch():
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=2.0) as response:
+                        return json.loads(response.read().decode('utf-8'))
+                except Exception:
+                    return None
+                    
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(None, fetch)
+            if not res or len(res) < 3:
+                continue
+                
+            titles = res[1]
+            snippets = res[2]
+            
+            for title, snippet in zip(titles, snippets):
+                if cleaned_name.lower() in title.lower() or title.lower() in cleaned_name.lower():
+                    # Проверяем ключевые слова, характерные для медицинских статей
+                    keywords = [
+                        'лекарствен', 'препарат', 'вещество', 'витамин', 'средство', 'кислота', 
+                        'таблет', 'атх', 'фармако', 'ліків', 'засіб', 'речовина', 'антибиотик',
+                        'гормон', 'вакцина', 'бад'
+                    ]
+                    text_to_check = (title + " " + snippet).lower()
+                    if any(kw in text_to_check for kw in keywords):
+                        return True
+        except Exception:
+            pass
+            
+    return False
+
 async def validate_medicine_name(name: str) -> bool:
     """
-    Проверяет с помощью локального словаря или Gemini, является ли введенная строка
-    названием реального лекарства, витамина, БАДа или действующего вещества.
+    Проверяет с помощью локального словаря, Wikipedia или regex, является ли введенная строка
+    названием лекарства. Не блокирует пользователя, если это просто корректный текст.
     """
     cleaned_name = name.strip().lower()
     if not cleaned_name:
         return False
         
-    # 1. Проверяем в локальном словаре
+    # 1. Проверяем в локальном словаре (моментально)
     import database
-    
     try:
         if await database.check_medication_dict(cleaned_name):
             return True
     except Exception as e:
         logger.error(f"Ошибка чтения локального словаря лекарств: {e}")
         
-    # 2. Если не нашли, опрашиваем Gemini
-    if not GEMINI_API_KEY:
+    # 2. Быстрая проверка формата (буквы, дефисы, пробелы)
+    import re
+    if not re.match(r"^[a-zA-Zа-яА-ЯёЁіІїЇєЄґҐ\s\-]+$", name.strip()):
+        return False
+        
+    if len(name.strip()) < 2:
+        return False
+
+    # 3. Быстрый поиск по Wikipedia
+    is_valid = await check_wikipedia_drug(name)
+    if is_valid:
+        try:
+            await database.add_medication_dict(cleaned_name)
+        except Exception as cache_err:
+            logger.error(f"Не удалось кэшировать название {cleaned_name}: {cache_err}")
         return True
         
-    prompt = f"""
-    Проверь, является ли слово/фраза "{name}" реальным, существующим названием лекарства, витамина, биологически активной добавки (БАД), действующего вещества, медицинского препарата или фитосбора.
-    Ответь строго одним словом: "yes" или "no".
-    Например:
-    "Аспирин" -> yes
-    "Нурофен" -> yes
-    "Витамин D3" -> yes
-    "Какашка" -> no
-    "qwerty" -> no
-    "Помидор" -> no
-    "Глицин" -> yes
-    """
-    
-    try:
-        model = genai.GenerativeModel("gemini-3.5-flash")
-        response = await model.generate_content_async(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                temperature=0.1
-            )
-        )
-        result = response.text.strip().lower()
-        is_valid = "yes" in result
-        
-        # Динамический кэш: если лекарство подтверждено ИИ, запишем его в локальный словарь
-        if is_valid:
-            try:
-                await database.add_medication_dict(cleaned_name)
-            except Exception as cache_err:
-                logger.error(f"Не удалось кэшировать название {cleaned_name}: {cache_err}")
-                
-        return is_valid
-    except Exception as e:
-        logger.error(f"Ошибка валидации названия лекарства через Gemini: {e}")
-        return True
+    # 4. Если в Википедии не нашли, но формат строки корректный — все равно одобряем, 
+    # чтобы не блокировать ввод редких или пользовательских названий.
+    return True
 
 async def suggest_dosage(medicine_name: str) -> list:
     """
-    Возвращает список рекомендаций по дозировкам (например, ['500 мг', '1 таблетка', '10 мг'])
-    на основе названия препарата с помощью Gemini.
+    Возвращает список рекомендаций по дозировкам с таймаутом 2.0 секунды.
     """
+    fallback_dosages = ['1 таблетка', '1 капсула', '500 мг', '1 шт']
     if not GEMINI_API_KEY:
-        return ['1 таблетка']
+        return fallback_dosages
         
     prompt = f"""
     На основе названия лекарственного препарата/добавки "{medicine_name}" предложи 3-4 наиболее распространенных вариантов дозировки для одного приема (например: "500 мг", "1 таблетка", "10 мг", "1 капсула").
     Верни строго JSON-список строк, без markdown разметки.
     Пример вывода: ["500 мг", "1 таблетка", "1 капсула"]
     """
+    import asyncio
     try:
         model = genai.GenerativeModel("gemini-3.5-flash")
-        response = await model.generate_content_async(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                temperature=0.2,
-                response_mime_type="application/json"
-            )
+        
+        # Запуск с таймаутом 2.0 секунды
+        response = await asyncio.wait_for(
+            model.generate_content_async(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.2,
+                    response_mime_type="application/json"
+                )
+            ),
+            timeout=2.0
         )
+        
         result_text = response.text.strip()
         if result_text.startswith("```json"):
             result_text = result_text[7:]
@@ -209,7 +247,8 @@ async def suggest_dosage(medicine_name: str) -> list:
             return [str(d) for d in dosages[:4]]
     except Exception as e:
         logger.error(f"Ошибка получения рекомендации дозировок: {e}")
-    return ['1 таблетка']
+        
+    return fallback_dosages
 
 async def get_medicine_recommendations(medicine_name: str) -> str:
     """
