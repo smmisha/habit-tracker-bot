@@ -271,15 +271,8 @@ async def process_text_schedule(message: Message, state: FSMContext):
         return
 
 
-    # Ищем фото лекарства в интернете
-    processing_img = await message.answer("🔍 *Мистер Таблетус ищет изображение упаковки...* 🌐", parse_mode="Markdown")
-    img_url = await gemini_service.search_medicine_image(parsed_data["name"])
-    await processing_img.delete()
-    
-    if img_url:
-        local_img = await download_searched_image(img_url)
-        if local_img:
-            parsed_data["image_path"] = local_img
+    # Изображение по умолчанию
+    parsed_data["image_path"] = None
 
     # Сохраняем распарсенные данные во временное хранилище FSM
     await state.update_data(parsed_data=parsed_data)
@@ -669,14 +662,8 @@ async def process_manual_stock(message: Message, state: FSMContext, bot: Bot):
         
     state_data = await state.get_data()
     
-    # Ищем фото лекарства в интернете
-    processing_img = await message.answer("🔍 *Мистер Таблетус ищет изображение упаковки...* 🌐", parse_mode="Markdown")
-    img_url = await gemini_service.search_medicine_image(state_data["name"])
-    await processing_img.delete()
-    
+    # Изображение по умолчанию
     image_path = None
-    if img_url:
-        image_path = await download_searched_image(img_url)
         
     # Формируем итоговые данные для сохранения
     med_id = await database.add_medication(
