@@ -156,19 +156,10 @@ async def handle_business_message(message: Message):
                         await bot.send_message(
                             chat_id=user_id,
                             text="🚨 <b>Вы общаетесь в Telegram уже более 30 минут, но не прошли ежедневный чек-ин!</b>\n\n"
-                                 "Напарнику автоматически отправлено сообщение о пропуске отчета."
+                                 "Пожалуйста, пройдите чек-ин прямо сейчас."
                         )
                     except Exception as e:
                         logger.error(f"Не удалось отправить уведомление в ЛС боту: {e}")
-                        
-                    # Отправляем предупреждение напарнику от лица пользователя через бизнес-соединение
-                    if partner_username:
-                        alert_text = (
-                            "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы сообщить: бот зафиксировал мою активность в Telegram "
-                            "(более 30 минут общения), но я проигнорировал обязательную отметку. Похоже, я избегаю отчета и нахожусь "
-                            "на грани срыва. Пожалуйста, свяжись со мной."
-                        )
-                        await userbot.send_message_to_partner(connection_id, partner_username, alert_text)
 
 # --- ВЕБ-СЕРВЕР И API ДЛЯ DASHBOARD (WEBAPP) ---
 
@@ -374,43 +365,17 @@ async def handle_api_save_journal(request):
     async def run_silent_compromise_check():
         try:
             from services.ai_service import ai_service
-            from services.userbot_client import userbot
-            from main import bot
-            from database.models import User
-            from sqlalchemy import select
             
             analysis = await ai_service.analyze_journal_for_compromise(content)
             if analysis.get("detected"):
-                logger.warning(f"ИИ обнаружил компромисс в дневнике пользователя {user_id}: {analysis.get('reason')}")
-                
-                # Получаем пользователя из БД для отправки предупреждения
-                async with db_helper.session_factory() as session:
-                    result = await session.execute(select(User).where(User.id == user_id))
-                    user = result.scalar_one_or_none()
-                    if not user:
-                        return
-                    partner_username = user.partner_username
-                    business_connection_id = user.business_connection_id
-                
-                # 1. Отправляем предупреждение самому пользователю в чат
+                # Отправляем предупреждение самому пользователю в чат
                 user_warning = (
                     f"⚠️ <b>Обнаружен компромисс и «торги с разумом»!</b>\n\n"
                     f"ИИ-помощник заметил в вашей записи опасные мысли: <i>«{analysis.get('reason')}»</i>.\n\n"
                     f"Пожалуйста, помните: компромиссы (вроде «посмотрел одним глазком» или поиск самооправданий) — "
-                    f"это первый шаг к реальному срыву. Не поддавайтесь уловкам мозга!\n\n"
-                    f"🤖 Вашему напарнику <code>@{partner_username}</code> автоматически отправлено тихое уведомление, "
-                    f"чтобы он поддержал вас в этот критический момент."
+                    f"это первый шаг к реальному срыву. Не поддавайтесь уловкам мозга!"
                 )
                 await bot.send_message(chat_id=user_id, text=user_warning)
-                
-                # 2. Отправляем предупреждение напарнику
-                if partner_username and business_connection_id:
-                    partner_text = (
-                        f"🤖 [Автоматическое ИИ-предупреждение] Привет! Мой анализ дневника показывает, что "
-                        f"я начинаю допускать компромиссы с совестью (ИИ определил это как: «{analysis.get('reason')}»). "
-                        f"Кажется, я нахожусь под сильным искушением и пытаюсь успокоить свою совесть. Пожалуйста, напиши или позвони мне сегодня!"
-                    )
-                    await userbot.send_message_to_partner(business_connection_id, partner_username, partner_text)
         except Exception as e:
             logger.error(f"Ошибка выполнения фоновой проверки компромиссов: {e}")
 
@@ -498,6 +463,18 @@ async def handle_api_manage_panic(request):
                 replace_existing=True
             )
             logger.info(f"Запущен 5-минутный таймер тихой тревоги SOS для {user_id}")
+            
+            # Отправляем сообщение напарнику о начале SOS через бизнес-соединение
+            if partner_username and business_connection_id:
+                async def send_sos_to_partner():
+                    try:
+                        alert_text = await ai_service.humanize_sos_alert()
+                        await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                        logger.info(f"Напарник {partner_username} уведомлен о начале SOS для {user_id}")
+                    except Exception as e:
+                        logger.error(f"Не удалось отправить SOS-уведомление напарнику: {e}")
+                asyncio.create_task(send_sos_to_partner())
+                
             return web.json_response({"success": True})
             
         elif action == "start":
@@ -542,6 +519,12 @@ async def handle_api_manage_panic(request):
                     chat_id=user_id,
                     text="🎉 <b>Отлично! Ты справился с тягой и защитил свой стрик!</b>\n\nКаждая такая победа делает тебя сильнее."
                 )
+                
+                # Дополнительно оповещаем напарника об успехе
+                if partner_username and business_connection_id:
+                    alert_text = await ai_service.humanize_sos_success()
+                    await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                    logger.info(f"Напарник {partner_username} уведомлен об успешном выходе из SOS для {user_id}")
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения: {e}")
         asyncio.create_task(send_help_ok())
@@ -581,7 +564,6 @@ async def handle_api_accept_covenant(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
-    from utils.states import Form
     # Получаем контекст состояний для пользователя
     state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
     
@@ -594,17 +576,17 @@ async def handle_api_accept_covenant(request):
         except Exception as e:
             logger.warning(f"Не удалось удалить сообщение договора {msg_id} для {user_id}: {e}")
             
-    await state_ctx.set_state(Form.waiting_for_partner)
-    
+    # Не переходим в waiting_for_partner, так как напарник зафиксирован.
+    # Вместо этого отправляем клавиатуру чек-ина.
+    from keyboards.inline import get_checkin_keyboard
     try:
         await bot.send_message(
             chat_id=user_id,
-            text="✅ <b>Соглашение совести успешно подтверждено!</b>\n\n"
-                 "👥 Введите **цифровой ID** вашего нового напарника (например, `123456789`) или его Telegram-юзернейм (например, `partner_username`):\n\n"
-                 "💡 **РЕКОМЕНДУЕТСЯ использовать цифровой ID**, так как Telegram надежно отправляет сообщения именно по нему."
+            text="✅ <b>Соглашение совести подтверждено!</b>\n\nКак прошел сегодняшний день? Все под контролем?",
+            reply_markup=get_checkin_keyboard()
         )
     except Exception as e:
-        logger.error(f"Не удалось отправить сообщение об успешном подписании договора пользователю {user_id}: {e}")
+        logger.error(f"Не удалось отправить клавиатуру чек-ина пользователю {user_id}: {e}")
         
     return web.json_response({"success": True})
 

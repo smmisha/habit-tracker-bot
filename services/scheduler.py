@@ -53,15 +53,33 @@ async def check_and_send_checkins():
                         session.add(new_log)
                         await session.commit()
                         
-                        # Отправляем сообщение пользователю
-                        await bot.send_message(
+                        # Отправляем сообщение с кнопкой Соглашения пользователю
+                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+                        from main import bot, dp
+                        
+                        keyboard = InlineKeyboardMarkup(
+                            inline_keyboard=[
+                                [
+                                    InlineKeyboardButton(
+                                        text="📄 Читать и подписать Соглашение",
+                                        web_app=WebAppInfo(url="https://habit-tracker-bot-s7of.onrender.com/webapp/purity_covenant_jw_v2.html")
+                                    )
+                                ]
+                            ]
+                        )
+                        
+                        sent_msg = await bot.send_message(
                             chat_id=user.id,
                             text="🔔 <b>Время ежедневного отчета!</b>\n\n"
-                                 "Пожалуйста, сделайте отметку о том, как прошел сегодняшний день. "
-                                 "У вас есть 5 минут для своевременной отметки или до 20 часов дополнительного времени.",
-                            reply_markup=get_checkin_keyboard()
+                                 "Пожалуйста, откройте и подтвердите Соглашение совести перед заполнением отчёта.",
+                             reply_markup=keyboard
                         )
-                        logger.info(f"Отправлен ежедневный чек-ин пользователю {user.id}")
+                        
+                        # Сохраняем ID сообщения в контексте FSM
+                        state_ctx = dp.fsm.resolve_context(bot, user.id, user.id)
+                        await state_ctx.update_data(covenant_msg_id=sent_msg.message_id)
+                        
+                        logger.info(f"Отправлен ежедневный чек-ин (соглашение) пользователю {user.id}")
             except Exception as e:
                 logger.error(f"Ошибка при обработке чек-ина для пользователя {user.id}: {e}")
 
@@ -124,41 +142,10 @@ async def check_missed_deadlines():
                     partner_username = user.partner_username
                     await session.commit()
                     
-                    sent_partner = False
-                    # Отправляем сообщение напарнику только если пользователь был активен >= 10 минут
-                    if was_active_enough:
-                        business_connection_id = user.business_connection_id
-                        if partner_username and business_connection_id:
-                            alert_text = (
-                                "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы сообщить: я пропустил обязательную ежедневную отметку "
-                                "и не выходил на связь с ботом более 20 часов. Вероятно, я на грани срыва или избегаю контроля. Пожалуйста, свяжись со мной."
-                            )
-                            sent_partner = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                            logger.info(f"Результат уведомления напарника для {user.id}: {sent_partner}")
-
-                    # Отправляем сообщение пользователю
-                    if was_active_enough:
-                        if sent_partner:
-                            user_text = (
-                                "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
-                                "Вы не отметились в течение 20 часов после назначенного времени. "
-                                "Напарнику отправлено автоматическое уведомление о пропуске отчета."
-                            )
-                        else:
-                            user_text = (
-                                "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
-                                "Вы не отметились в течение 20 часов после назначенного времени.\n\n"
-                                f"⚠️ <b>Внимание:</b> не удалось автоматически отправить уведомление вашему напарнику <code>@{partner_username}</code>. "
-                                "Пожалуйста, свяжитесь с ним самостоятельно!"
-                            )
-                    else:
-                        user_text = (
-                            "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
-                            "Вы не отметились в течение 20 часов после назначенного времени. "
-                            "Поскольку вы практически не пользовались Telegram (активность менее 10 минут), "
-                            "автоматическое уведомление напарнику НЕ отправлялось."
-                        )
-                        
+                    user_text = (
+                        "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
+                        "Вы не отметились в течение 20 часов после назначенного времени."
+                    )
                     try:
                         await bot.send_message(
                             chat_id=user.id,
@@ -166,8 +153,6 @@ async def check_missed_deadlines():
                         )
                     except Exception as e:
                         logger.error(f"Не удалось отправить уведомление пользователю {user.id}: {e}")
-                    else:
-                        logger.info(f"Напарник НЕ уведомлен для пользователя {user.id} (активность < 10 мин или 0)")
             except Exception as e:
                 logger.error(f"Ошибка проверки дедлайна для записи {log.id}: {e}")
 

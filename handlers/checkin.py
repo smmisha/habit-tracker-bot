@@ -195,10 +195,11 @@ async def process_checkin_relapsed(callback: CallbackQuery):
             logger.error(f"Failed to send relapse confirmation fallback: {e2}")
     
     if partner_username and business_connection_id:
-        alert_text = (
-            "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв, "
-            "и я сбросил счетчик чистоты. Мне очень нужны твои поддержка и контроль сейчас."
-        )
+        try:
+            alert_text = await ai_service.humanize_relapse_confession("Срыв зафиксирован при чек-ине")
+        except Exception as e:
+            logger.error(f"Error humanizing confession: {e}")
+            alert_text = "Привет. К сожалению, сегодня у меня произошел срыв."
         try:
             sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
         except Exception as e:

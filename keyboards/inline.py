@@ -14,11 +14,10 @@ def get_settings_keyboard(notify_achievements: bool) -> InlineKeyboardMarkup:
     """Клавиатура настроек"""
     keyboard = [
         [
-            InlineKeyboardButton(text="👥 Напарник", callback_data="cfg_partner"),
-            InlineKeyboardButton(text="⏰ Время отчета", callback_data="cfg_time")
+            InlineKeyboardButton(text="⏰ Время отчета", callback_data="cfg_time"),
+            InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="cfg_tz")
         ],
         [
-            InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="cfg_tz"),
             InlineKeyboardButton(
                 text="🏆 Награды: ВКЛ ✅" if notify_achievements else "🏆 Награды: ВЫКЛ ❌",
                 callback_data="cfg_toggle_achievements"

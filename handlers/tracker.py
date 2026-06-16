@@ -218,11 +218,12 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         
     # 4. Оповещение напарника
     if partner_username and business_connection_id:
-        escaped_trigger = html.escape(trigger_reason)
-        alert_text = (
-            f"🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы признаться: сегодня у меня произошел срыв, "
-            f"и я сбросил счетчик чистоты. (Причина: {escaped_trigger}). Мне очень нужны твои поддержка и контроль сейчас."
-        )
+        try:
+            alert_text = await ai_service.humanize_relapse_confession(trigger_reason)
+        except Exception as e:
+            logger.error(f"Error humanizing confession: {e}")
+            escaped_trigger = html.escape(trigger_reason)
+            alert_text = f"Привет. К сожалению, сегодня у меня произошел срыв. Причина: {escaped_trigger}."
         
         try:
             sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
