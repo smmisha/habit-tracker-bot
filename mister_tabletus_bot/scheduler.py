@@ -219,7 +219,17 @@ def add_reminder_to_scheduler(bot: Bot, r):
     except Exception:
         user_tz = pytz.timezone('Europe/Moscow')
         
-    hour, minute = map(int, r['time_str'].split(':'))
+    try:
+        time_str = r['time_str']
+        if ':' not in time_str:
+            if len(time_str) == 2 and time_str.isdigit():
+                time_str = f"{time_str}:00"
+            else:
+                raise ValueError(f"Invalid time format: '{time_str}'")
+        hour, minute = map(int, time_str.split(':'))
+    except Exception as parse_err:
+        logger.error(f"Error parsing time_str '{r['time_str']}' for reminder {r['reminder_id']}: {parse_err}")
+        return
     
     # Настраиваем триггер в зависимости от типа расписания
     trigger = None

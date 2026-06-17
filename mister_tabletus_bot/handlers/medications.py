@@ -782,7 +782,7 @@ async def process_edit_times_preset(callback: CallbackQuery, state: FSMContext, 
     user = await database.get_user(callback.from_user.id)
     lang = user.get("language") if user else "ru"
     
-    preset_data = callback.data.split(":")[1]
+    preset_data = callback.data.split(":", 1)[1]
     times = [t.strip() for t in preset_data.split(",")]
     
     state_data = await state.get_data()
@@ -1550,7 +1550,7 @@ async def process_times_preset(callback: CallbackQuery, state: FSMContext):
     user = await database.get_user(callback.from_user.id)
     lang = user.get("language") if user else "ru"
     
-    preset_data = callback.data.split(":")[1]
+    preset_data = callback.data.split(":", 1)[1]
     times = [t.strip() for t in preset_data.split(",")]
     
     await state.update_data(times=times)
