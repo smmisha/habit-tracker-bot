@@ -6,6 +6,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import database
+from utils.locales import _T
 
 logger = logging.getLogger(__name__)
 
