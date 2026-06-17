@@ -1943,18 +1943,22 @@ async def find_target_reminder_for_cabinet_take(med_id: int, user_tz, actual_tim
         else:
             expected_dt = naive_dt.replace(tzinfo=user_tz)
             
-        best_dt = expected_dt
-        best_diff = abs((expected_dt - actual_time).total_seconds())
-        for offset in [-1, 1]:
+        # Only consider candidates that are in the past or at most 2h in the future
+        valid_cands = []
+        for offset in [-1, 0, 1]:
             cand_naive = naive_dt + timedelta(days=offset)
             if hasattr(user_tz, 'localize'):
                 cand = user_tz.localize(cand_naive)
             else:
                 cand = cand_naive.replace(tzinfo=user_tz)
-            diff = abs((cand - actual_time).total_seconds())
-            if diff < best_diff:
-                best_diff = diff
-                best_dt = cand
+            
+            if cand <= actual_time + timedelta(hours=2):
+                valid_cands.append(cand)
+
+        if not valid_cands:
+            continue
+
+        best_dt = min(valid_cands, key=lambda c: abs((c - actual_time).total_seconds()))
                 
         expected_iso = best_dt.isoformat()
         status = await database.get_history_status(med_id, expected_iso)
