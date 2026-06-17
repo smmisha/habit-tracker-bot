@@ -30,8 +30,22 @@ async def process_cancel_wizard(message: Message, state: FSMContext):
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
-    # Очищаем локальные временные файлы
+    # Delete saved wizard messages
     state_data = await state.get_data()
+    msg_ids = state_data.get("wizard_msg_ids", [])
+    for msg_id in msg_ids:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_id)
+        except Exception:
+            pass
+            
+    # Delete user's cancellation message
+    try:
+        await message.delete()
+    except Exception:
+        pass
+        
+    # Очищаем локальные временные файлы
     for key in ["parsed_data", "photo_data"]:
         data = state_data.get(key, {})
         if data and data.get("image_path") and os.path.exists(data["image_path"]):

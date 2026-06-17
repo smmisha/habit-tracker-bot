@@ -20,6 +20,41 @@ from utils.locales import _T
 logger = logging.getLogger(__name__)
 router = Router()
 
+async def save_wizard_msg(state: FSMContext, msg_id: int):
+    if not state:
+        return
+    try:
+        data = await state.get_data()
+        msg_ids = data.get("wizard_msg_ids", [])
+        if msg_id not in msg_ids:
+            msg_ids = list(msg_ids)
+            msg_ids.append(msg_id)
+            await state.update_data(wizard_msg_ids=msg_ids)
+    except Exception as e:
+        logger.error(f"Error saving wizard message ID: {e}")
+
+async def delete_wizard_msgs(bot: Bot, chat_id: int, state: FSMContext):
+    if not state:
+        return
+    try:
+        data = await state.get_data()
+        msg_ids = data.get("wizard_msg_ids", [])
+        for msg_id in msg_ids:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=msg_id)
+            except Exception:
+                pass
+        await state.update_data(wizard_msg_ids=[])
+    except Exception as e:
+        logger.error(f"Error deleting wizard messages: {e}")
+
+async def complete_wizard(message: Message, state: FSMContext, bot: Bot):
+    await delete_wizard_msgs(bot, message.chat.id, state)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
 async def download_searched_image(url: str) -> str:
     """Скачивает изображение по ссылке во временный файл и возвращает путь к нему"""
     import urllib.request
@@ -81,15 +116,18 @@ def get_cancel_keyboard(lang: str = "ru"):
 # --- СПИСОК ЛЕКАРСТВ ---
 
 @router.message(StateFilter("*"), lambda m: m.text in [_T("menu_my_meds", "ru"), _T("menu_my_meds", "en"), _T("menu_my_meds", "uk")] if m.text else False)
-async def list_medications(message: Message, state: FSMContext = None):
+async def list_medications(message: Message, state: FSMContext = None, user_id: int = None):
     if state:
         await state.clear()
         
-    user = await database.get_user(message.from_user.id)
+    if user_id is None:
+        user_id = message.from_user.id
+        
+    user = await database.get_user(user_id)
     lang = user.get("language") if user else "ru"
     
     # Получаем все лекарства с их напоминаниями за один запрос
-    rows = await database.get_user_medications_with_reminders(message.from_user.id)
+    rows = await database.get_user_medications_with_reminders(user_id)
     if not rows:
         await message.answer(
             _T("cabinet_empty", lang),
@@ -266,13 +304,22 @@ async def process_edit_medication(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "edit_cancel")
 async def process_edit_cancel(callback: CallbackQuery, state: FSMContext):
+    # Delete saved wizard messages
+    state_data = await state.get_data()
+    msg_ids = state_data.get("wizard_msg_ids", [])
+    for msg_id in msg_ids:
+        try:
+            await callback.bot.delete_message(chat_id=callback.message.chat.id, message_id=msg_id)
+        except Exception:
+            pass
+            
     await state.clear()
     try:
         await callback.message.delete()
     except Exception:
         pass
     
-    await list_medications(callback.message, state)
+    await list_medications(callback.message, state, user_id=callback.from_user.id)
     await callback.answer()
 
 
@@ -310,7 +357,8 @@ async def process_edit_field_selection(callback: CallbackQuery, state: FSMContex
         )
         
         await callback.message.delete()
-        await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        prompt_msg = await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        await save_wizard_msg(state, prompt_msg.message_id)
         await callback.answer()
         
     elif field == "stock":
@@ -329,7 +377,8 @@ async def process_edit_field_selection(callback: CallbackQuery, state: FSMContex
             f"Введіть нову кількість доз/таблеток в аптечці (ціле число):"
         )
         await callback.message.delete()
-        await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        prompt_msg = await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        await save_wizard_msg(state, prompt_msg.message_id)
         await callback.answer()
         
     elif field == "times":
@@ -351,7 +400,8 @@ async def process_edit_field_selection(callback: CallbackQuery, state: FSMContex
             f"Введіть новий час прийомів через кому або пробіл у форматі ГГ:ХХ (наприклад: _08:00, 20:00_):"
         )
         await callback.message.delete()
-        await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        prompt_msg = await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        await save_wizard_msg(state, prompt_msg.message_id)
         await callback.answer()
         
     elif field == "food":
@@ -455,6 +505,7 @@ async def process_edit_value_inline(callback: CallbackQuery, state: FSMContext, 
             f"✅ Спосіб прийому для ліків *{med['name']}* успішно змінено на: **{rel_localized}**"
         )
         
+        await delete_wizard_msgs(bot, callback.message.chat.id, state)
         await state.clear()
         await callback.message.delete()
         await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
@@ -478,6 +529,7 @@ async def process_edit_value_inline(callback: CallbackQuery, state: FSMContext, 
                 f"✅ Курс прийому ліків *{med['name']}* змінено на безстроковий!"
             )
             
+            await delete_wizard_msgs(bot, callback.message.chat.id, state)
             await state.clear()
             await callback.message.delete()
             await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
@@ -499,12 +551,14 @@ async def process_edit_value_inline(callback: CallbackQuery, state: FSMContext, 
             )
             
             await callback.message.delete()
-            await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+            prompt_msg = await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+            await save_wizard_msg(state, prompt_msg.message_id)
             await callback.answer()
 
 
 @router.message(StateFilter(EditMedDetails.waiting_for_new_value))
 async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot):
+    await save_wizard_msg(state, message.message_id)
     state_data = await state.get_data()
     med_id = state_data.get("edit_med_id")
     field = state_data.get("edit_field")
@@ -515,7 +569,8 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
     med = await database.get_medication(med_id)
     if not med:
         err_msg = "Ошибка: лекарство не найдено в базе данных." if lang == "ru" else "Error: medication not found in database." if lang == "en" else "Помилка: препарат не знайдено в базі даних."
-        await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
+        sent_err = await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
+        await save_wizard_msg(state, sent_err.message_id)
         await state.clear()
         return
         
@@ -523,7 +578,8 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
     
     if field == "dosage":
         if not text:
-            await message.answer("Пожалуйста, введите корректное значение:" if lang == "ru" else "Please enter a valid value:" if lang == "en" else "Будь ласка, введіть коректне значення:")
+            sent_err = await message.answer("Пожалуйста, введите корректное значение:" if lang == "ru" else "Please enter a valid value:" if lang == "en" else "Будь ласка, введіть коректне значення:")
+            await save_wizard_msg(state, sent_err.message_id)
             return
             
         await database.update_medication_dosage(med_id, text)
@@ -537,6 +593,7 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
         )
         
         await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await complete_wizard(message, state, bot)
         await state.clear()
         
     elif field == "stock":
@@ -545,7 +602,8 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
             if stock < 0:
                 raise ValueError()
         except ValueError:
-            await message.answer(_T("invalid_number", lang))
+            sent_err = await message.answer(_T("invalid_number", lang))
+            await save_wizard_msg(state, sent_err.message_id)
             return
             
         await database.set_medication_stock(med_id, stock)
@@ -559,6 +617,7 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
         )
         
         await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await complete_wizard(message, state, bot)
         await state.clear()
         
     elif field == "times":
@@ -584,15 +643,17 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
             if time_regex.match(t):
                 cleaned_times.append(t)
             else:
-                await message.answer(_T("invalid_time", lang, time=t))
+                sent_err = await message.answer(_T("invalid_time", lang, time=t))
+                await save_wizard_msg(state, sent_err.message_id)
                 return
                 
         if not cleaned_times:
-            await message.answer(
+            sent_err = await message.answer(
                 "Время не распознано. Введите время в формате ЧЧ:ММ через пробел:" if lang == "ru"
                 else "No times recognized. Enter times in HH:MM format separated by space:" if lang == "en"
                 else "Час не розпізнано. Введіть час у форматі ГГ:ХХ через пробіл:"
             )
+            await save_wizard_msg(state, sent_err.message_id)
             return
             
         await database.delete_medication_reminders(med_id)
@@ -614,6 +675,7 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
         )
         
         await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await complete_wizard(message, state, bot)
         await state.clear()
         
     elif field == "duration_days":
@@ -635,14 +697,16 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
                     past_err = ("❌ Дата окончания не может быть в прошлом. Введите корректную дату:" if lang == "ru"
                                 else "❌ End date cannot be in the past. Enter a valid date:" if lang == "en"
                                 else "❌ Дата закінчення не може бути в минулому. Введіть коректну дату:")
-                    await message.answer(past_err)
+                    sent_err = await message.answer(past_err)
+                    await save_wizard_msg(state, sent_err.message_id)
                     return
                 end_date_str = parsed_date.strftime("%Y-%m-%d")
             except ValueError:
-                await message.answer(
+                sent_err = await message.answer(
                     _T("invalid_duration", lang),
                     parse_mode="Markdown"
                 )
+                await save_wizard_msg(state, sent_err.message_id)
                 return
                 
         await database.update_medication_duration(med_id, start_date_str, end_date_str)
@@ -657,6 +721,7 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
         )
         
         await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await complete_wizard(message, state, bot)
         await state.clear()
 
 
@@ -674,26 +739,33 @@ async def start_add_medication(message: Message, state: FSMContext):
         [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
     ])
     
-    await message.answer(
+    sent_msg = await message.answer(
         _T("add_welcome", lang),
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, message.message_id)
+    await save_wizard_msg(state, sent_msg.message_id)
 
 
 @router.callback_query(F.data == "add_manual")
 async def process_add_manual(callback: CallbackQuery, state: FSMContext):
+    state_data = await state.get_data()
+    msg_ids = state_data.get("wizard_msg_ids", [])
+    
     await state.clear()
     await state.set_state(AddMedication.waiting_for_name)
+    await state.update_data(wizard_msg_ids=msg_ids)
     
     user = await database.get_user(callback.from_user.id)
     lang = user.get("language") if user else "ru"
     
-    await callback.message.answer(
+    sent_msg = await callback.message.answer(
         _T("prompt_name", lang),
         reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, sent_msg.message_id)
     try:
         await callback.message.delete()
     except Exception:
@@ -719,6 +791,7 @@ async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContex
         reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, prompt_msg.message_id)
     await callback.message.delete()
     
     # Запуск фонового подбора дозировок через Gemini
@@ -754,6 +827,7 @@ async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContex
 # --- Ввод текстом (NLP) ---
 @router.message(StateFilter(AddMedication.waiting_for_input), F.text)
 async def process_text_schedule(message: Message, state: FSMContext):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
@@ -784,22 +858,24 @@ async def process_text_schedule(message: Message, state: FSMContext):
                 [InlineKeyboardButton(text=_T("btn_confirm_no", lang), callback_data="confirm_no")]
             ])
             
-            await message.answer(
+            sent_msg = await message.answer(
                 _T("detected_name_only", lang, detected_name=detected_name),
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
+            await save_wizard_msg(state, sent_msg.message_id)
             return
 
         # Fallback
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
         ])
-        await message.answer(
+        sent_msg = await message.answer(
             _T("invalid_schedule", lang),
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        await save_wizard_msg(state, sent_msg.message_id)
         return
 
     # Валидация названия
@@ -811,11 +887,12 @@ async def process_text_schedule(message: Message, state: FSMContext):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
         ])
-        await message.answer(
+        sent_msg = await message.answer(
             _T("invalid_med_name", lang, name=parsed_data['name']),
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        await save_wizard_msg(state, sent_msg.message_id)
         return
 
     parsed_data["image_path"] = None
@@ -859,19 +936,22 @@ async def process_text_schedule(message: Message, state: FSMContext):
         
     if os.path.exists(image_path):
         from aiogram.types import FSInputFile
-        await message.answer_photo(
+        sent_msg = await message.answer_photo(
             photo=FSInputFile(image_path),
             caption=confirm_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        await save_wizard_msg(state, sent_msg.message_id)
     else:
-        await message.answer(confirm_text, reply_markup=keyboard, parse_mode="Markdown")
+        sent_msg = await message.answer(confirm_text, reply_markup=keyboard, parse_mode="Markdown")
+        await save_wizard_msg(state, sent_msg.message_id)
 
 
 # --- Ввод фото (Vision OCR) ---
 @router.message(StateFilter(AddMedication.waiting_for_input), F.photo)
 async def process_photo_medication(message: Message, state: FSMContext, bot: Bot):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
@@ -894,10 +974,11 @@ async def process_photo_medication(message: Message, state: FSMContext, bot: Bot
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
         ])
-        await message.answer(
+        sent_err = await message.answer(
             _T("invalid_photo_box", lang),
             reply_markup=keyboard
         )
+        await save_wizard_msg(state, sent_err.message_id)
         if os.path.exists(local_path):
             os.remove(local_path)
         return
@@ -911,11 +992,12 @@ async def process_photo_medication(message: Message, state: FSMContext, bot: Bot
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
         ])
-        await message.answer(
+        sent_err = await message.answer(
             _T("invalid_photo_med", lang, name=parsed_data['name']),
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        await save_wizard_msg(state, sent_err.message_id)
         if os.path.exists(local_path):
             os.remove(local_path)
         return
@@ -924,7 +1006,7 @@ async def process_photo_medication(message: Message, state: FSMContext, bot: Bot
     await state.update_data(photo_data=parsed_data)
     await state.set_state(AddMedication.waiting_for_schedule_after_photo)
     
-    await message.answer(
+    sent_msg = await message.answer(
         _T(
             "photo_recognized_text",
             lang,
@@ -934,10 +1016,12 @@ async def process_photo_medication(message: Message, state: FSMContext, bot: Bot
         ),
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, sent_msg.message_id)
 
 
 @router.message(StateFilter(AddMedication.waiting_for_schedule_after_photo), F.text)
 async def process_schedule_after_photo(message: Message, state: FSMContext):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
@@ -949,7 +1033,8 @@ async def process_schedule_after_photo(message: Message, state: FSMContext):
     await processing_msg.delete()
     
     if not parsed_schedule:
-        await message.answer(_T("invalid_photo_schedule", lang))
+        sent_err = await message.answer(_T("invalid_photo_schedule", lang))
+        await save_wizard_msg(state, sent_err.message_id)
         return
         
     merged_data = {
@@ -1002,14 +1087,16 @@ async def process_schedule_after_photo(message: Message, state: FSMContext):
         
     if os.path.exists(image_path):
         from aiogram.types import FSInputFile
-        await message.answer_photo(
+        sent_msg = await message.answer_photo(
             photo=FSInputFile(image_path),
             caption=confirm_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        await save_wizard_msg(state, sent_msg.message_id)
     else:
-        await message.answer(confirm_text, reply_markup=keyboard, parse_mode="Markdown")
+        sent_msg = await message.answer(confirm_text, reply_markup=keyboard, parse_mode="Markdown")
+        await save_wizard_msg(state, sent_msg.message_id)
 
 
 # --- Подтверждение автозаполнения ---
@@ -1066,6 +1153,7 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
     end_display = end_date_str if end_date_str else _T("course_no_limit", lang)
     success_text = _T("add_success", lang, name=data["name"], start=start_display, end=end_display)
     
+    await delete_wizard_msgs(bot, callback.message.chat.id, state)
     await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
     await state.clear()
     
@@ -1095,6 +1183,8 @@ async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
         except Exception:
             pass
         
+    # Delete saved wizard messages
+    await delete_wizard_msgs(callback.bot, callback.message.chat.id, state)
     await state.clear()
     try:
         await callback.message.delete()
@@ -1108,6 +1198,7 @@ async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
 
 @router.message(StateFilter(AddMedication.waiting_for_name))
 async def process_manual_name(message: Message, state: FSMContext):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
@@ -1126,10 +1217,11 @@ async def process_manual_name(message: Message, state: FSMContext):
     await processing_msg.delete()
     
     if not is_valid:
-        await message.answer(
+        err_msg = await message.answer(
             _T("prompt_name_invalid", lang),
             parse_mode="Markdown"
         )
+        await save_wizard_msg(state, err_msg.message_id)
         return
         
     await state.update_data(name=name, active_ingredient=active_ingredient)
@@ -1143,6 +1235,7 @@ async def process_manual_name(message: Message, state: FSMContext):
         reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, prompt_msg.message_id)
     
     # Фоновый подбор дозировок через Gemini
     async def load_dosages_bg(msg_to_edit: Message, med_name: str, user_lang: str):
@@ -1176,6 +1269,7 @@ async def process_manual_name(message: Message, state: FSMContext):
 
 @router.message(StateFilter(AddMedication.waiting_for_dosage))
 async def process_manual_dosage(message: Message, state: FSMContext):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
@@ -1192,7 +1286,8 @@ async def process_manual_dosage(message: Message, state: FSMContext):
             InlineKeyboardButton(text=_T("food_none", lang), callback_data="food:none")
         ]
     ])
-    await message.answer(_T("food_relation_q", lang), reply_markup=keyboard)
+    sent_msg = await message.answer(_T("food_relation_q", lang), reply_markup=keyboard)
+    await save_wizard_msg(state, sent_msg.message_id)
 
 
 @router.callback_query(StateFilter(AddMedication.waiting_for_dosage), F.data.startswith("dosage_suggest:"))
@@ -1218,11 +1313,12 @@ async def process_dosage_suggest_callback(callback: CallbackQuery, state: FSMCon
     ])
     
     title_text = f"Вы выбрали дозировку: *{dosage}*\n\n" if lang=="ru" else f"You selected dosage: *{dosage}*\n\n" if lang=="en" else f"Ви обрали дозування: *{dosage}*\n\n"
-    await callback.message.answer(
+    sent_msg = await callback.message.answer(
         title_text + _T("food_relation_q", lang),
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, sent_msg.message_id)
 
 
 @router.callback_query(StateFilter(AddMedication.waiting_for_food), F.data.startswith("food:"))
@@ -1242,6 +1338,7 @@ async def process_manual_food(callback: CallbackQuery, state: FSMContext):
 
 @router.message(StateFilter(AddMedication.waiting_for_times))
 async def process_manual_times(message: Message, state: FSMContext):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
@@ -1254,27 +1351,32 @@ async def process_manual_times(message: Message, state: FSMContext):
             datetime.strptime(t, "%H:%M")
             times.append(t)
         except ValueError:
-            await message.answer(_T("invalid_time", lang, time=t), parse_mode="Markdown")
+            err_msg = await message.answer(_T("invalid_time", lang, time=t), parse_mode="Markdown")
+            await save_wizard_msg(state, err_msg.message_id)
             return
             
     if not times:
-        await message.answer(_T("prompt_times_empty", lang))
+        err_msg = await message.answer(_T("prompt_times_empty", lang))
+        await save_wizard_msg(state, err_msg.message_id)
         return
         
     await state.update_data(times=times)
     await state.set_state(AddMedication.waiting_for_stock)
-    await message.answer(_T("prompt_stock", lang))
+    sent_msg = await message.answer(_T("prompt_stock", lang))
+    await save_wizard_msg(state, sent_msg.message_id)
 
 
 @router.message(StateFilter(AddMedication.waiting_for_stock))
 async def process_manual_stock(message: Message, state: FSMContext):
+    await save_wizard_msg(state, message.message_id)
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
     try:
         stock = int(message.text)
     except ValueError:
-        await message.answer(_T("invalid_number", lang))
+        err_msg = await message.answer(_T("invalid_number", lang))
+        await save_wizard_msg(state, err_msg.message_id)
         return
         
     await state.update_data(stock_count=stock)
@@ -1284,15 +1386,17 @@ async def process_manual_stock(message: Message, state: FSMContext):
         [InlineKeyboardButton(text=_T("btn_permanent", lang), callback_data="duration_permanent")]
     ])
     
-    await message.answer(
+    sent_msg = await message.answer(
         _T("prompt_duration", lang),
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+    await save_wizard_msg(state, sent_msg.message_id)
 
 
 @router.message(StateFilter(AddMedication.waiting_for_duration))
 async def process_manual_duration(message: Message, state: FSMContext, bot: Bot):
+    await save_wizard_msg(state, message.message_id)
     text = message.text.strip()
     
     user = await database.get_user(message.from_user.id)
@@ -1318,14 +1422,16 @@ async def process_manual_duration(message: Message, state: FSMContext, bot: Bot)
                 past_err = ("❌ Дата окончания не может быть в прошлом. Введите корректную дату:" if lang == "ru"
                             else "❌ End date cannot be in the past. Enter a valid date:" if lang == "en"
                             else "❌ Дата закінчення не може бути в минулому. Введіть коректну дату:")
-                await message.answer(past_err)
+                err_msg = await message.answer(past_err)
+                await save_wizard_msg(state, err_msg.message_id)
                 return
             end_date_str = parsed_date.strftime("%Y-%m-%d")
         except ValueError:
-            await message.answer(
+            err_msg = await message.answer(
                 _T("invalid_duration", lang),
                 parse_mode="Markdown"
             )
+            await save_wizard_msg(state, err_msg.message_id)
             return
 
     state_data = await state.get_data()
@@ -1357,6 +1463,7 @@ async def process_manual_duration(message: Message, state: FSMContext, bot: Bot)
     success_text = _T("add_success", lang, name=state_data["name"], start=start_display, end=end_display)
     
     await message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+    await complete_wizard(message, state, bot)
     await state.clear()
     
     # Анализ лекарства
@@ -1401,6 +1508,7 @@ async def process_duration_permanent(callback: CallbackQuery, state: FSMContext,
     end_display = _T("course_no_limit", lang)
     success_text = _T("add_success", lang, name=state_data["name"], start=start_display, end=end_display)
     
+    await delete_wizard_msgs(bot, callback.message.chat.id, state)
     await callback.message.delete()
     await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
     await state.clear()
