@@ -142,23 +142,31 @@ async def list_medications(message: Message, state: FSMContext = None):
         rel_key = relation_keys.get(med['food_relation'], 'food_none')
         relation_text = _T(rel_key, lang)
         
+        # Strip inner emojis from value
+        for emoji in ["🥣", "🍽️", "🍽", "🍰", "🤷"]:
+            relation_text = relation_text.replace(emoji, "")
+        relation_text = relation_text.strip()
+        
         times_list = ", ".join(sorted(med['times'])) if med['times'] else ("не задано" if lang == "ru" else "not set" if lang == "en" else "не задано")
         active_ing = f" ({med['active_ingredient']})" if med['active_ingredient'] else ""
         
         # Данные по длительности курса
         if med['start_date'] and med['end_date']:
             course_lbl = "Срок курса" if lang == "ru" else "Course duration" if lang == "en" else "Термін курсу"
-            course_info = f"\n   • {course_lbl}: с {med['start_date']} по {med['end_date']}"
+            course_info = f"\n📅 {course_lbl}: с {med['start_date']} по {med['end_date']}"
         else:
-            course_lbl = "Срок" if lang == "ru" else "Duration" if lang == "en" else "Термін"
-            course_info = f"\n   • {course_lbl}: {_T('btn_permanent', lang)}"
+            perm_text = _T('btn_permanent', lang)
+            for emoji in ["🤷", "📅", "📆"]:
+                perm_text = perm_text.replace(emoji, "")
+            perm_text = perm_text.strip()
+            course_info = f"\n📅 {perm_text}"
             
         med_text = (
-            f"💊 *{idx}. {med['name']}*{active_ing}\n"
-            f"   • {dosage_lbl}: {med['dosage'] or 'не указана'}\n"
-            f"   • {intake_lbl}: {relation_text}\n"
-            f"   • {time_lbl}: {times_list}\n"
-            f"   • {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}"
+            f"{idx}. *{med['name']}*{active_ing}\n"
+            f"⚖️ {dosage_lbl}: {med['dosage'] or ('не указана' if lang == 'ru' else 'not specified' if lang == 'en' else 'не вказана')}\n"
+            f"🍽️ {intake_lbl}: {relation_text}\n"
+            f"⏰ {time_lbl}: {times_list}\n"
+            f"📦 {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}"
         )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
