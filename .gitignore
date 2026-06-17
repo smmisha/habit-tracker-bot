@@ -37,3 +37,6 @@ bot_run.log
 photos/
 mister_tabletus_bot/photos/
 
+# Scratch/Temporary scripts
+scratch/
+mister_tabletus_bot/scratch/

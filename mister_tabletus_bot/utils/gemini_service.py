@@ -226,73 +226,108 @@ async def query_openfda_api(english_name: str) -> Optional[dict]:
         }
     return None
 
+_paddle_ocr_instance = None
+
+def get_paddle_ocr():
+    global _paddle_ocr_instance
+    if _paddle_ocr_instance is None:
+        from paddleocr import PaddleOCR
+        # Initialize PaddleOCR with Russian/English support and disable logging to keep console clean
+        _paddle_ocr_instance = PaddleOCR(use_angle_cls=True, lang='ru', show_log=False)
+    return _paddle_ocr_instance
+
+async def ocr_image_paddleocr(image_path: str) -> Optional[str]:
+    """
+    Выполняет OCR над изображением с помощью локального PaddleOCR.
+    Возвращает объединенный текст, распознанный на картинке.
+    """
+    import asyncio
+    
+    def run_paddle():
+        try:
+            ocr = get_paddle_ocr()
+            result = ocr.ocr(image_path, cls=True)
+            if not result or not result[0]:
+                return None
+            
+            texts = []
+            for line in result[0]:
+                text = line[1][0]
+                texts.append(text)
+            return "\n".join(texts)
+        except Exception as e:
+            logger.error(f"Ошибка выполнения PaddleOCR: {e}")
+            return None
+            
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, run_paddle)
+
 async def parse_medicine_photo(image_path: str) -> dict:
     """
-    Распознает лекарство по фотографии упаковки с помощью Google Vision OCR + Gemini,
+    Распознает лекарство по фотографии упаковки с помощью локального PaddleOCR + Gemini,
     с автоматическим фоллбэком на чистый Gemini Vision при необходимости.
     """
     import asyncio
     
-    # 1. Попытка использовать Google Cloud Vision OCR
-    if GOOGLE_VISION_API_KEY:
-        try:
-            ocr_text = await ocr_image_google_vision(image_path)
-            if ocr_text:
-                # Пробуем разобрать локально (быстро, без вызовов AI при нагрузке)
-                local_match = await parse_ocr_text_locally(ocr_text)
-                if local_match and local_match.get("name") and local_match.get("dosage"):
-                    logger.info(f"Найдено локальное совпадение OCR: {local_match}")
-                    return local_match
-                
-                # Если локальный разбор неполный, используем Gemini для парсинга OCR текста (это быстро и дешево)
-                if GEMINI_API_KEY:
-                    prompt = f"""
-                    Проанализируй распознанный OCR-текст с упаковки лекарства и определи:
-                    1. Название препарата на русском языке (или оригинальное, если оно импортное, например, 'Но-шпа' или 'Нурофен').
-                    2. Действующее вещество препарата (МНН, на русском языке, например, 'Дротаверин' или 'Ибупрофен'). Если не написано в тексте, определи по своей базе знаний для этого бренда.
-                    3. Дозировку одной таблетки/дозы (например, '400 мг', '10 мг/мл', если есть).
-                    4. Общее количество таблеток/капсул/объем в упаковке (целое число, если указано, например, 20 или 50).
-                    
-                    OCR текст:
-                    "{ocr_text}"
-                    
-                    Верни строго JSON-объект следующего формата:
-                    {{
-                        "name": "Название лекарства (коммерческое название)",
-                        "active_ingredient": "Действующее вещество (МНН, на русском языке, например, 'Ибупрофен')",
-                        "dosage": "Дозировка лекарства (например, '400 мг' или null, если не найдено)",
-                        "quantity": "Количество таблеток/доз в упаковке (целое число или null, если не найдено)"
-                    }}
-                    
-                    Обязательно верни только валидный JSON, без оборачивания в ```json и без лишних слов.
-                    """
-                    model = genai.GenerativeModel("gemini-3.5-flash")
-                    response = await asyncio.wait_for(
-                        model.generate_content_async(
-                            prompt,
-                            generation_config=genai.GenerationConfig(
-                                temperature=0.1,
-                                response_mime_type="application/json"
-                            )
-                        ),
-                        timeout=5.0
-                    )
-                    
-                    result_text = response.text.strip()
-                    if result_text.startswith("```json"):
-                        result_text = result_text[7:]
-                    if result_text.endswith("```"):
-                        result_text = result_text[:-3]
-                    result_text = result_text.strip()
-                    
-                    data = json.loads(result_text)
-                    # Если локальный парсер нашел название, но Gemini вернул кривое название, доверяем локальному
-                    if local_match and local_match.get("name") and not data.get("name"):
-                        data["name"] = local_match["name"]
-                    return data
-        except Exception as ocr_err:
-            logger.error(f"Ошибка парсинга через Google OCR + Gemini text: {ocr_err}. Фоллбэк на Gemini Vision...")
+    # 1. Попытка использовать локальный PaddleOCR
+    try:
+        ocr_text = await ocr_image_paddleocr(image_path)
+        if ocr_text:
+            # Пробуем разобрать локально (быстро, без вызовов AI при нагрузке)
+            local_match = await parse_ocr_text_locally(ocr_text)
+            if local_match and local_match.get("name") and local_match.get("dosage"):
+                logger.info(f"Найдено локальное совпадение OCR: {local_match}")
+                return local_match
             
+            # Если локальный разбор неполный, используем Gemini для парсинга OCR текста (быстро и дешево)
+            if GEMINI_API_KEY:
+                prompt = f"""
+                Проанализируй распознанный OCR-текст с упаковки лекарства и определи:
+                1. Название препарата на русском языке (или оригинальное, если оно импортное, например, 'Но-шпа' или 'Нурофен').
+                2. Действующее вещество препарата (МНН, на русском языке, например, 'Дротаверин' или 'Ибупрофен'). Если не написано в тексте, определи по своей базе знаний для этого бренда.
+                3. Дозировку одной таблетки/дозы (например, '400 мг', '10 мг/мл', если есть).
+                4. Общее количество таблеток/капсул/объем в упаковке (целое число, если указано, например, 20 или 50).
+                
+                OCR текст:
+                "{ocr_text}"
+                
+                Верни строго JSON-объект следующего формата:
+                {{
+                    "name": "Название лекарства (коммерческое название)",
+                    "active_ingredient": "Действующее вещество (МНН, на русском языке, например, 'Ибупрофен')",
+                    "dosage": "Дозировка лекарства (например, '400 мг' или null, если не найдено)",
+                    "quantity": "Количество таблеток/доз в упаковке (целое число или null, если не найдено)"
+                }}
+                
+                Обязательно верни только валидный JSON, без оборачивания в ```json и без лишних слов.
+                """
+                model = genai.GenerativeModel("gemini-3.5-flash")
+                response = await asyncio.wait_for(
+                    model.generate_content_async(
+                        prompt,
+                        generation_config=genai.GenerationConfig(
+                            temperature=0.1,
+                            response_mime_type="application/json"
+                        )
+                    ),
+                    timeout=5.0
+                )
+                
+                result_text = response.text.strip()
+                if result_text.startswith("```json"):
+                    result_text = result_text[7:]
+                if result_text.endswith("```"):
+                    result_text = result_text[:-3]
+                result_text = result_text.strip()
+                
+                data = json.loads(result_text)
+                # Если локальный парсер нашел название, но Gemini вернул кривое название, доверяем локальному
+                if local_match and local_match.get("name") and not data.get("name"):
+                    data["name"] = local_match["name"]
+                return data
+    except Exception as ocr_err:
+        logger.error(f"Ошибка парсинга через PaddleOCR + Gemini text: {ocr_err}. Фоллбэк на Gemini Vision...")
+        
     # 2. Фоллбэк: прямой вызов Gemini Vision к картинке
     if not GEMINI_API_KEY:
         return None
