@@ -60,6 +60,9 @@ class AddMedication(StatesGroup):
 
 class EditMedication(StatesGroup):
     waiting_for_active_ingredient = State()
+    waiting_for_photo = State()
+    waiting_for_link = State()
+
 
 # --- СПИСОК ЛЕКАРСТВ ---
 
@@ -167,11 +170,17 @@ async def start_add_medication(message: Message, state: FSMContext):
         parse_mode="Markdown"
     )
 
-@router.callback_query(F.data == "add_manual", StateFilter(AddMedication.waiting_for_input))
+@router.callback_query(F.data == "add_manual")
 async def process_add_manual(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
     await state.set_state(AddMedication.waiting_for_name)
     await callback.message.answer("Введите название лекарства (например, Аспирин):", reply_markup=ReplyKeyboardRemove())
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer()
+
 
 @router.callback_query(StateFilter(AddMedication.waiting_for_input), F.data.startswith("add_manual_prefilled:"))
 async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContext):
@@ -872,22 +881,44 @@ async def run_background_classification_and_rec(bot: Bot, chat_id: int, med_id: 
                     parse_mode="Markdown"
                 )
         elif category == "plausible":
-            # Вымышленное/редкое название -> предлагаем ввести действующее вещество
+            # Вымышленное/редкое название -> предлагаем ввести действующее вещество, отправить фото или скинуть ссылку
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🧪 Указать действующее вещество", callback_data=f"set_active_ing:{med_id}")]
+                [
+                    InlineKeyboardButton(text="🧪 Указать вещество", callback_data=f"set_active_ing:{med_id}"),
+                    InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")
+                ],
+                [
+                    InlineKeyboardButton(text="🔗 Скинуть ссылку", callback_data=f"set_active_link:{med_id}")
+                ]
             ])
             await bot.send_message(
                 chat_id=chat_id,
                 text=f"⚠️ *Мистер Таблетус:* «Я не нашел препарат **{medicine_name}** в медицинских справочниках.\n\n"
-                     f"Если это настоящее лекарство (например, новое или редкое), пожалуйста, укажите его действующее вещество (МНН) ниже, чтобы я мог подобрать рекомендации.»",
+                     f"Если это настоящее лекарство (например, новое или редкое), пожалуйста, предоставьте дополнительную информацию (укажите действующее вещество, пришлите фото упаковки или ссылку на описание), чтобы я мог подобрать рекомендации.»",
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
-        else: # nonsense (какашка, стол и т.д.)
-            # Заведомо нелекарственное слово -> просто сообщаем об этом
+        else: # nonsense (какашка, бред, стол и т.д.)
+            # Сначала получим напоминания, чтобы удалить их из планировщика в памяти
+            reminders = await database.get_medication_reminders(med_id)
+            for r in reminders:
+                scheduler.remove_reminder_from_scheduler(r['id'])
+                
+            # Помечаем лекарство как неактивное в БД
+            await database.delete_medication(med_id)
+            
+            # Перезагружаем задачи в планировщике
+            await scheduler.setup_scheduler(bot)
+            
+            # Заведомо нелекарственное слово -> сообщаем об удалении и предлагаем ввести заново
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➕ Добавить лекарство заново", callback_data="add_manual")]
+            ])
             await bot.send_message(
                 chat_id=chat_id,
-                text=f"⚠️ *Мистер Таблетус:* «Препарата с названием **{medicine_name}** не существует в медицинских справочниках.»",
+                text=f"⚠️ *Мистер Таблетус:* «Препарата с названием **{medicine_name}** не существует в медицинских справочниках.\n\n"
+                     f"Я удалил эту запись из вашей аптечки. Пожалуйста, введите корректное название лекарства заново.»",
+                reply_markup=keyboard,
                 parse_mode="Markdown"
             )
     except Exception as e:
@@ -948,4 +979,206 @@ async def process_input_active_ingredient(message: Message, state: FSMContext, b
             logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
             
     asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+
+
+@router.callback_query(F.data.startswith("set_active_photo:"))
+async def process_set_active_photo_callback(callback: CallbackQuery, state: FSMContext):
+    med_id = int(callback.data.split(":")[1])
+    med = await database.get_medication(med_id)
+    if not med:
+        await callback.answer("Лекарство не найдено!")
+        return
+        
+    await state.set_state(EditMedication.waiting_for_photo)
+    await state.update_data(edit_med_id=med_id)
+    
+    await callback.message.answer(
+        f"📸 Пожалуйста, пришлите фотографию упаковки лекарства *{med['name']}* (я попробую распознать действующее вещество с помощью ИИ):",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("set_active_link:"))
+async def process_set_active_link_callback(callback: CallbackQuery, state: FSMContext):
+    med_id = int(callback.data.split(":")[1])
+    med = await database.get_medication(med_id)
+    if not med:
+        await callback.answer("Лекарство не найдено!")
+        return
+        
+    await state.set_state(EditMedication.waiting_for_link)
+    await state.update_data(edit_med_id=med_id)
+    
+    await callback.message.answer(
+        f"🔗 Пожалуйста, отправьте ссылку на веб-страницу с описанием лекарства *{med['name']}* (я прочитаю её и извлеку действующее вещество):",
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@router.message(StateFilter(EditMedication.waiting_for_photo), F.photo)
+async def process_input_active_photo(message: Message, state: FSMContext, bot: Bot):
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    
+    med = await database.get_medication(med_id)
+    if not med:
+        await message.answer("Ошибка: лекарство не найдено в базе данных.", reply_markup=get_main_menu_keyboard())
+        await state.clear()
+        return
+        
+    processing_msg = await message.answer("🔍 *Мистер Таблетус анализирует фото упаковки...* 📸", parse_mode="Markdown")
+    
+    try:
+        photo = message.photo[-1]
+        file_info = await bot.get_file(photo.file_id)
+        
+        os.makedirs("photos", exist_ok=True)
+        file_ext = file_info.file_path.split(".")[-1]
+        local_path = f"photos/{uuid.uuid4()}.{file_ext}"
+        
+        await bot.download_file(file_info.file_path, local_path)
+        
+        parsed_data = await gemini_service.parse_medicine_photo(local_path)
+        
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"Ошибка при обработке фото: {e}")
+        parsed_data = None
+        
+    await processing_msg.delete()
+    
+    active_ingredient = parsed_data.get("active_ingredient") if parsed_data else None
+    if not active_ingredient:
+        await message.answer(
+            "😔 Мне не удалось распознать действующее вещество на этой фотографии.\n"
+            "Пожалуйста, пришлите другое фото упаковки, введите вещество текстом или отправьте ссылку:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🧪 Ввести текстом", callback_data=f"set_active_ing:{med_id}")],
+                [InlineKeyboardButton(text="🔗 Скинуть ссылку", callback_data=f"set_active_link:{med_id}")]
+            ])
+        )
+        return
+        
+    # Обновляем МНН в БД
+    await database.update_medication_active_ingredient(med_id, active_ingredient)
+    
+    await message.answer(
+        f"✅ Действующее вещество для *{med['name']}* успешно распознано как **{active_ingredient}** и обновлено!",
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode="Markdown"
+    )
+    await state.clear()
+    
+    # Рекомендации
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str):
+        try:
+            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
+            if recommendations:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Рекомендации для {medicine_name} ({ingredient}):*\n{recommendations}",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
+            
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+
+
+@router.message(StateFilter(EditMedication.waiting_for_photo))
+async def process_input_active_photo_invalid(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    await message.answer(
+        "⚠️ Пожалуйста, пришлите именно фотографию упаковки лекарства или выберите другой способ ввода:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧪 Ввести текстом", callback_data=f"set_active_ing:{med_id}")],
+            [InlineKeyboardButton(text="🔗 Скинуть ссылку", callback_data=f"set_active_link:{med_id}")]
+        ])
+    )
+
+
+@router.message(StateFilter(EditMedication.waiting_for_link), F.text)
+async def process_input_active_link(message: Message, state: FSMContext, bot: Bot):
+    url = message.text.strip()
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    
+    if not (url.startswith("http://") or url.startswith("https://")):
+        await message.answer(
+            "❌ Неверный формат ссылки. Ссылка должна начинаться с `http://` или `https://`.\n"
+            "Пожалуйста, отправьте корректную ссылку или выберите другой способ:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🧪 Ввести вещество", callback_data=f"set_active_ing:{med_id}")],
+                [InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")]
+            ])
+        )
+        return
+        
+    med = await database.get_medication(med_id)
+    if not med:
+        await message.answer("Ошибка: лекарство не найдено в базе данных.", reply_markup=get_main_menu_keyboard())
+        await state.clear()
+        return
+        
+    processing_msg = await message.answer("🔍 *Мистер Таблетус анализирует веб-страницу...* 🌐", parse_mode="Markdown")
+    
+    active_ingredient = await gemini_service.extract_active_ingredient_from_url(url, med["name"])
+    await processing_msg.delete()
+    
+    if not active_ingredient:
+        await message.answer(
+            "😔 Мне не удалось найти действующее вещество по этой ссылке.\n"
+            "Пожалуйста, отправьте другую ссылку, введите действующее вещество текстом или пришлите фото упаковки:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🧪 Ввести вещество", callback_data=f"set_active_ing:{med_id}")],
+                [InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")]
+            ])
+        )
+        return
+        
+    # Обновляем МНН в БД
+    await database.update_medication_active_ingredient(med_id, active_ingredient)
+    
+    await message.answer(
+        f"✅ На основе веб-страницы действующее вещество для *{med['name']}* определено как **{active_ingredient}** и обновлено!",
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode="Markdown"
+    )
+    await state.clear()
+    
+    # Рекомендации
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str):
+        try:
+            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
+            if recommendations:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💡 *Рекомендации для {medicine_name} ({ingredient}):*\n{recommendations}",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
+            
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+
+
+@router.message(StateFilter(EditMedication.waiting_for_link))
+async def process_input_active_link_invalid(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    await message.answer(
+        "⚠️ Пожалуйста, отправьте ссылку в виде текста или выберите другой способ ввода:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧪 Ввести вещество", callback_data=f"set_active_ing:{med_id}")],
+            [InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")]
+        ])
+    )
+
 

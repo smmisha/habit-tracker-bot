@@ -423,5 +423,87 @@ async def classify_medicine_name(medicine_name: str) -> dict:
     return fallback
 
 
+async def extract_active_ingredient_from_url(url: str, medicine_name: str) -> Optional[str]:
+    """
+    Скачивает страницу по URL, очищает её от HTML-тегов и с помощью Gemini
+    пытается извлечь действующее вещество (МНН) для указанного лекарства.
+    """
+    if not GEMINI_API_KEY:
+        return None
+        
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    import asyncio
+    import urllib.request
+    import urllib.parse
+    from typing import Optional
+    
+    def fetch_url():
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.read().decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.error(f"Ошибка при скачивании URL {url}: {e}")
+            return None
+
+    loop = asyncio.get_event_loop()
+    html_content = await loop.run_in_executor(None, fetch_url)
+    if not html_content:
+        return None
+        
+    # Очищаем текст от скриптов, стилей и HTML-тегов
+    import re
+    cleaned_text = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', html_content, flags=re.IGNORECASE)
+    cleaned_text = re.sub(r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>', '', cleaned_text, flags=re.IGNORECASE)
+    cleaned_text = re.sub(r'<[^>]+>', ' ', cleaned_text)
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+    
+    # Ограничиваем объем текста для отправки в модель (например, первые 15000 символов)
+    truncated_text = cleaned_text[:15000]
+    
+    prompt = f"""
+    Проанализируй текст веб-страницы и найди действующее вещество (МНН - международное непатентованное наименование) для препарата "{medicine_name}".
+    Текст страницы:
+    "{truncated_text}"
+    
+    Верни строго JSON-объект следующего формата (без markdown разметки и лишних слов):
+    {{
+        "active_ingredient": "Название действующего вещества на русском языке, с большой буквы (например, 'Ибупрофен'). Если действующее вещество не найдено, верни null"
+    }}
+    """
+    
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        response = await asyncio.wait_for(
+            model.generate_content_async(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json"
+                )
+            ),
+            timeout=8.0
+        )
+        
+        result_text = response.text.strip()
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
+        result_text = result_text.strip()
+        
+        data = json.loads(result_text)
+        if isinstance(data, dict):
+            return data.get("active_ingredient")
+    except Exception as e:
+        logger.error(f"Ошибка извлечения МНН из URL через Gemini: {e}")
+        
+    return None
+
+
+
 
 
