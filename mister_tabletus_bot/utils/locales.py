@@ -393,6 +393,11 @@ TRANSLATIONS = {
         "ru": "Ввод времени отменен.",
         "en": "Time input canceled.",
         "uk": "Введення часу скасовано."
+    },
+    "taken_success": {
+        "ru": "✅ *Принято в {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Спасибо! Будьте здоровы! {mascot_msg}»{stock_warning}",
+        "en": "✅ *Taken at {time}!*\n\n💊 Medication: *{name}*\n🤖 *Mr. Tabletus:* 'Thank you! Stay healthy! {mascot_msg}'{stock_warning}",
+        "uk": "✅ *Прийнято о {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Містер Таблетус:* «Дякую! Будьте здорові! {mascot_msg}»{stock_warning}"
     }
 }
 
