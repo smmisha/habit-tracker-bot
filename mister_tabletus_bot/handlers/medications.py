@@ -256,11 +256,9 @@ async def get_medication_card_data(med: dict, idx: int, user: dict, lang: str):
         
     buttons = [
         InlineKeyboardButton(text="✏️", callback_data=f"edit_med:{med['id']}"),
-        InlineKeyboardButton(text="🗑️", callback_data=f"del_med:{med['id']}")
+        InlineKeyboardButton(text="🗑️", callback_data=f"del_med:{med['id']}"),
+        InlineKeyboardButton(text="💊", callback_data=f"take_med_cabinet:{med['id']}")
     ]
-    if has_untaken:
-        buttons.append(InlineKeyboardButton(text="💊", callback_data=f"take_med_cabinet:{med['id']}"))
-        
     keyboard = InlineKeyboardMarkup(inline_keyboard=[buttons])
     return med_text, keyboard
 
@@ -2094,6 +2092,18 @@ async def process_take_med_cabinet_start(callback: CallbackQuery, state: FSMCont
     user = await database.get_user(callback.from_user.id)
     lang = user.get("language") if user else "ru"
     
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+    now_local = datetime.now(user_tz)
+    target = await find_target_reminder_for_cabinet_take(med_id, user_tz, now_local)
+    if target is None:
+        msg = (
+            "Все приемы этого лекарства на сегодня уже выполнены!" if lang == "ru"
+            else "All intakes for this medication have already been completed today!" if lang == "en"
+            else "Всі прийоми цих ліків на сьогодні вже виконані!"
+        )
+        await callback.answer(msg, show_alert=True)
+        return
+        
     try:
         idx = int(callback.message.text.split(".")[0])
     except Exception:
