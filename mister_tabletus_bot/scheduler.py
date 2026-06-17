@@ -23,6 +23,9 @@ async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: in
         if not user or not med or not med['is_active']:
             return
 
+        user = dict(user)
+        med = dict(med)
+
         user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
         now_local = datetime.now(user_tz)
         
@@ -136,6 +139,8 @@ async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_ti
             status = await database.update_user_tamagotchi(user_id, health_delta=-15, xp_delta=0)
             
             med = await database.get_medication(med_id)
+            if med:
+                med = dict(med)
             med_name = med['name'] if med else "лекарство"
             
             # 3. Отправляем гневное/грустное сообщение пользователю
@@ -156,6 +161,8 @@ async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_ti
                 
             # 4. Оповещаем Бадди (друзей), если фича включена у пользователя
             user_info = await database.get_user(user_id)
+            if user_info:
+                user_info = dict(user_info)
             if user_info and user_info['buddies_enabled'] == 1:
                 buddies = await database.get_user_buddies(user_id)
                 user_name = user_info['first_name'] or "Ваш друг"

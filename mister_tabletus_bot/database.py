@@ -307,7 +307,7 @@ async def fetch_one(query_sqlite: str, query_pg: str, params: tuple = ()):
             db.row_factory = aiosqlite.Row
             async with db.execute(query_sqlite, processed_params) as cursor:
                 row = await cursor.fetchone()
-                return row
+                return dict(row) if row else None
 
 async def fetch_all(query_sqlite: str, query_pg: str, params: tuple = ()):
     processed_params = [json.dumps(p) if isinstance(p, (dict, list)) else p for p in params]
@@ -321,7 +321,7 @@ async def fetch_all(query_sqlite: str, query_pg: str, params: tuple = ()):
             db.row_factory = aiosqlite.Row
             async with db.execute(query_sqlite, processed_params) as cursor:
                 rows = await cursor.fetchall()
-                return rows
+                return [dict(r) for r in rows]
 
 
 

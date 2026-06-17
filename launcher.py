@@ -10,54 +10,61 @@ def main():
 
     # Формируем переменные окружения для Трекера привычек
     habits_db = os.getenv("HABITS_DATABASE_URL", "")
-    if habits_db.startswith("postgresql://"):
-        habits_db = habits_db.replace("postgresql://", "postgresql+asyncpg://", 1)
-        
+    habits_token = os.getenv("HABITS_BOT_TOKEN", "")
     habits_env = os.environ.copy()
-    habits_env["BOT_TOKEN"] = os.getenv("HABITS_BOT_TOKEN", "")
-    habits_env["DATABASE_URL"] = habits_db
-    
+    if habits_token:
+        habits_env["BOT_TOKEN"] = habits_token
+    if habits_db:
+        if habits_db.startswith("postgresql://"):
+            habits_db = habits_db.replace("postgresql://", "postgresql+asyncpg://", 1)
+        habits_env["DATABASE_URL"] = habits_db
+        
     # Формируем переменные окружения для Мистера Таблетуса
     tabletus_db = os.getenv("TABLETUS_DATABASE_URL", "")
-    if tabletus_db.startswith("postgresql+asyncpg://"):
-        tabletus_db = tabletus_db.replace("postgresql+asyncpg://", "postgresql://", 1)
-        
+    tabletus_token = os.getenv("TABLETUS_BOT_TOKEN", "")
     tabletus_env = os.environ.copy()
-    tabletus_env["BOT_TOKEN"] = os.getenv("TABLETUS_BOT_TOKEN", "")
-    tabletus_env["DATABASE_URL"] = tabletus_db
+    if tabletus_token:
+        tabletus_env["BOT_TOKEN"] = tabletus_token
+    if tabletus_db:
+        if tabletus_db.startswith("postgresql+asyncpg://"):
+            tabletus_db = tabletus_db.replace("postgresql+asyncpg://", "postgresql://", 1)
+        tabletus_env["DATABASE_URL"] = tabletus_db
 
-    print("=== LAUNCHER: Запуск ботов ===")
+    print("=== LAUNCHER: Start Bots ===")
     
     # Запуск бота Трекера привычек
-    print("Запуск Habit Tracker Bot...")
+    print("Starting Habit Tracker Bot...")
     p1 = subprocess.Popen([sys.executable, "main.py"], cwd=habits_dir, env=habits_env)
 
     # Запуск бота Мистера Таблетуса
-    print("Запуск Mister Tabletus Bot...")
-    p2 = subprocess.Popen([sys.executable, "main.py"], cwd=tabletus_dir, env=tabletus_env)
+    print("Starting Mister Tabletus Bot...")
+    tabletus_py = os.path.join(tabletus_dir, "venv", "Scripts", "python.exe")
+    if not os.path.exists(tabletus_py):
+        tabletus_py = sys.executable
+    p2 = subprocess.Popen([tabletus_py, "main.py"], cwd=tabletus_dir, env=tabletus_env)
 
     try:
         while True:
             # Проверяем состояние первого процесса
             if p1.poll() is not None:
-                print("⚠️ [Launcher] Habit Tracker Bot завершил работу. Перезапуск через 5 сек...")
+                print("[Launcher] Habit Tracker Bot stopped. Restarting in 5s...")
                 time.sleep(5)
                 p1 = subprocess.Popen([sys.executable, "main.py"], cwd=habits_dir, env=habits_env)
                 
             # Проверяем состояние второго процесса
             if p2.poll() is not None:
-                print("⚠️ [Launcher] Mister Tabletus Bot завершил работу. Перезапуск через 5 сек...")
+                print("[Launcher] Mister Tabletus Bot stopped. Restarting in 5s...")
                 time.sleep(5)
-                p2 = subprocess.Popen([sys.executable, "main.py"], cwd=tabletus_dir, env=tabletus_env)
+                p2 = subprocess.Popen([tabletus_py, "main.py"], cwd=tabletus_dir, env=tabletus_env)
                 
             time.sleep(1)
     except KeyboardInterrupt:
-        print("=== LAUNCHER: Останавливаем ботов... ===")
+        print("=== LAUNCHER: Stopping bots... ===")
         p1.terminate()
         p2.terminate()
         p1.wait()
         p2.wait()
-        print("=== LAUNCHER: Все процессы остановлены ===")
+        print("=== LAUNCHER: All processes stopped ===")
 
 if __name__ == "__main__":
     main()
