@@ -117,9 +117,19 @@ def get_cancel_keyboard(lang: str = "ru"):
 
 @router.message(StateFilter("*"), lambda m: m.text in [_T("menu_my_meds", "ru"), _T("menu_my_meds", "en"), _T("menu_my_meds", "uk")] if m.text else False)
 async def list_medications(message: Message, state: FSMContext = None, user_id: int = None):
+    new_msg_ids = []
     if state:
-        await state.clear()
+        state_data = await state.get_data()
+        old_ids = state_data.get("cabinet_msg_ids", [])
+        for old_id in old_ids:
+            try:
+                await message.bot.delete_message(chat_id=message.chat.id, message_id=old_id)
+            except Exception:
+                pass
         
+        # Add user's trigger message to cleanup list
+        new_msg_ids.append(message.message_id)
+
     if user_id is None:
         user_id = message.from_user.id
         
@@ -129,10 +139,13 @@ async def list_medications(message: Message, state: FSMContext = None, user_id: 
     # Получаем все лекарства с их напоминаниями за один запрос
     rows = await database.get_user_medications_with_reminders(user_id)
     if not rows:
-        await message.answer(
+        empty_msg = await message.answer(
             _T("cabinet_empty", lang),
             parse_mode="Markdown"
         )
+        new_msg_ids.append(empty_msg.message_id)
+        if state:
+            await state.update_data(cabinet_msg_ids=new_msg_ids)
         return
 
     # Группируем напоминания по лекарствам
@@ -157,20 +170,25 @@ async def list_medications(message: Message, state: FSMContext = None, user_id: 
             meds_dict[med_id]['times'].append(r['time_str'])
 
     # Отправляем заголовок
-    await message.answer(
+    header_msg = await message.answer(
         _T("active_cabinet", lang),
         parse_mode="Markdown"
     )
+    new_msg_ids.append(header_msg.message_id)
     
     user_record = await database.get_user(message.from_user.id)
     
     for idx, (med_id, med) in enumerate(meds_dict.items(), 1):
         med_text, keyboard = await get_medication_card_data(med, idx, user_record, lang)
-        await message.answer(
+        card_msg = await message.answer(
             med_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        new_msg_ids.append(card_msg.message_id)
+
+    if state:
+        await state.update_data(cabinet_msg_ids=new_msg_ids)
 
 
 async def get_medication_card_data(med: dict, idx: int, user: dict, lang: str):
@@ -246,7 +264,7 @@ async def get_medication_card_data(med: dict, idx: int, user: dict, lang: str):
 
 
 @router.callback_query(F.data.startswith("del_med:"))
-async def process_delete_medication(callback: CallbackQuery):
+async def process_delete_medication(callback: CallbackQuery, state: FSMContext):
     med_id = int(callback.data.split(":")[1])
     med = await database.get_medication(med_id)
     
@@ -269,7 +287,15 @@ async def process_delete_medication(callback: CallbackQuery):
     del_ok = "Лекарство удалено!" if lang == "ru" else "Medication deleted!" if lang == "en" else "Препарат видалено!"
     await callback.answer(del_ok)
     await callback.message.delete()
-    await callback.message.answer(_T("del_success", lang, name=med['name']), parse_mode="Markdown")
+    sent_msg = await callback.message.answer(_T("del_success", lang, name=med['name']), parse_mode="Markdown")
+    
+    # Update cabinet_msg_ids in FSM context
+    state_data = await state.get_data()
+    msg_ids = state_data.get("cabinet_msg_ids", [])
+    if callback.message.message_id in msg_ids:
+        msg_ids.remove(callback.message.message_id)
+    msg_ids.append(sent_msg.message_id)
+    await state.update_data(cabinet_msg_ids=msg_ids)
 
 @router.callback_query(F.data.startswith("edit_med:"))
 async def process_edit_medication(callback: CallbackQuery, state: FSMContext):
