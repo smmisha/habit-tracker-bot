@@ -9,12 +9,13 @@ from aiogram import Router, F, Bot
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 import database
 import scheduler
 from utils import gemini_service
 from handlers.start import get_main_menu_keyboard
+from utils.locales import _T
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -22,10 +23,6 @@ router = Router()
 async def download_searched_image(url: str) -> str:
     """Скачивает изображение по ссылке во временный файл и возвращает путь к нему"""
     import urllib.request
-    import os
-    import uuid
-    import asyncio
-    
     os.makedirs("photos", exist_ok=True)
     ext = url.split('.')[-1].split('?')[0].lower()
     if ext not in ['jpg', 'jpeg', 'png']:
@@ -57,6 +54,8 @@ class AddMedication(StatesGroup):
     waiting_for_times = State()         # Ручной ввод: время приемов
     waiting_for_stock = State()         # Ручной ввод: остаток в аптечке
     waiting_for_schedule_after_photo = State() # После фото: ожидание ввода графика текстом
+    waiting_for_duration = State()      # Ручной ввод: длительность курса
+
 
 class EditMedication(StatesGroup):
     waiting_for_active_ingredient = State()
@@ -64,18 +63,59 @@ class EditMedication(StatesGroup):
     waiting_for_link = State()
 
 
+def get_cancel_keyboard(lang: str = "ru"):
+    """Возвращает reply клавиатуру с кнопкой отмены"""
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text=_T("btn_cancel", lang))]
+    ], resize_keyboard=True)
+
+
+# --- ОБЩИЙ ОБРАБОТЧИК ОТМЕНЫ ---
+@router.message(
+    StateFilter(AddMedication, EditMedication),
+    lambda m: m.text and (m.text.strip().lower() in [
+        "отмена", "cancel", "скасувати",
+        "❌ отмена", "❌ cancel", "❌ скасувати",
+        "/cancel"
+    ])
+)
+async def process_cancel_wizard(message: Message, state: FSMContext):
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    # Очищаем локальные временные файлы
+    state_data = await state.get_data()
+    for key in ["parsed_data", "photo_data"]:
+        data = state_data.get(key, {})
+        if data and data.get("image_path") and os.path.exists(data["image_path"]):
+            try:
+                os.remove(data["image_path"])
+            except Exception:
+                pass
+                
+    await state.clear()
+    await message.answer(
+        _T("cancel_msg", lang),
+        reply_markup=get_main_menu_keyboard(lang),
+        parse_mode="Markdown"
+    )
+
+
 # --- СПИСОК ЛЕКАРСТВ ---
 
-@router.message(StateFilter("*"), F.text == "💊 Мои лекарства")
+@router.message(StateFilter("*"), lambda m: m.text in [_T("menu_my_meds", "ru"), _T("menu_my_meds", "en"), _T("menu_my_meds", "uk")] if m.text else False)
 async def list_medications(message: Message, state: FSMContext = None):
     if state:
         await state.clear()
         
-    # Получаем все лекарства с их напоминаниями за один запрос!
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    # Получаем все лекарства с их напоминаниями за один запрос
     rows = await database.get_user_medications_with_reminders(message.from_user.id)
     if not rows:
         await message.answer(
-            "📭 Ваша аптечка пуста. Нажмите *➕ Добавить лекарство*, чтобы внести первое средство.",
+            _T("cabinet_empty", lang),
             parse_mode="Markdown"
         )
         return
@@ -94,37 +134,57 @@ async def list_medications(message: Message, state: FSMContext = None):
                 'stock_count': r['stock_count'],
                 'stock_alert_threshold': r['stock_alert_threshold'],
                 'image_path': r['image_path'],
+                'start_date': r['start_date'],
+                'end_date': r['end_date'],
                 'times': []
             }
         if r['time_str']:
             meds_dict[med_id]['times'].append(r['time_str'])
 
-    # Формируем одно единое сообщение для всей аптечки
-    text = "📋 *Ваша active аптечка:*\n\n"
+    # Формируем сообщение
+    text = _T("active_cabinet", lang)
     keyboard_buttons = []
     
+    relation_keys = {
+        'before_meal': 'food_before',
+        'with_meal': 'food_with',
+        'after_meal': 'food_after',
+        'none': 'food_none'
+    }
+    
+    dosage_lbl = "⚖️ Дозировка" if lang == "ru" else "⚖️ Dosage" if lang == "en" else "⚖️ Дозування"
+    intake_lbl = "🍽️ Прием" if lang == "ru" else "🍽️ Intake" if lang == "en" else "🍽️ Прийом"
+    time_lbl = "⏰ Время" if lang == "ru" else "⏰ Time" if lang == "en" else "⏰ Час"
+    stock_lbl = "📦 Остаток" if lang == "ru" else "📦 Stock" if lang == "en" else "📦 Залишок"
+    threshold_lbl = "порог" if lang == "ru" else "threshold" if lang == "en" else "поріг"
+    pcs_lbl = "шт." if lang == "ru" else "pcs." if lang == "en" else "шт."
+    
     for idx, (med_id, med) in enumerate(meds_dict.items(), 1):
-        relation_text = {
-            'before_meal': 'до еды 🍽️',
-            'with_meal': 'во время еды 🍽️',
-            'after_meal': 'после еды 🍽️',
-            'none': 'без связи с едой'
-        }.get(med['food_relation'], 'нет данных')
+        rel_key = relation_keys.get(med['food_relation'], 'food_none')
+        relation_text = _T(rel_key, lang)
         
-        times_list = ", ".join(sorted(med['times'])) if med['times'] else "не задано"
+        times_list = ", ".join(sorted(med['times'])) if med['times'] else ("не задано" if lang == "ru" else "not set" if lang == "en" else "не задано")
         active_ing = f" ({med['active_ingredient']})" if med['active_ingredient'] else ""
         
+        # Данные по длительности курса
+        if med['start_date'] and med['end_date']:
+            course_text = _T("add_success", lang, name="", start=med['start_date'], end=med['end_date'])
+            course_info_line = [line for line in course_text.split("\n") if line.strip()][-1]
+            course_info = f"\n   {course_info_line}"
+        else:
+            course_info = f"\n   📅 {_T('btn_permanent', lang)}"
+            
         text += (
             f"{idx}. *{med['name']}*{active_ing}\n"
-            f"   ⚖️ Дозировка: {med['dosage'] or 'не указана'}\n"
-            f"   🍽️ Прием: {relation_text}\n"
-            f"   ⏰ Время: {times_list}\n"
-            f"   📦 Остаток: {med['stock_count']} шт. (порог: {med['stock_alert_threshold']})\n\n"
+            f"   {dosage_lbl}: {med['dosage'] or 'не указана'}\n"
+            f"   {intake_lbl}: {relation_text}\n"
+            f"   {time_lbl}: {times_list}\n"
+            f"   {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}\n\n"
         )
         
-        # Добавляем кнопку удаления для каждого лекарства в общий список
+        del_lbl = f"🗑️ Удалить {med['name']}" if lang == "ru" else f"🗑️ Delete {med['name']}" if lang == "en" else f"🗑️ Видалити {med['name']}"
         keyboard_buttons.append([
-            InlineKeyboardButton(text=f"🗑️ Удалить {med['name']}", callback_data=f"del_med:{med['id']}")
+            InlineKeyboardButton(text=del_lbl, callback_data=f"del_med:{med['id']}")
         ])
         
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
@@ -140,8 +200,13 @@ async def list_medications(message: Message, state: FSMContext = None):
 async def process_delete_medication(callback: CallbackQuery):
     med_id = int(callback.data.split(":")[1])
     med = await database.get_medication(med_id)
+    
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     if not med:
-        await callback.answer("Лекарство не найдено!")
+        err_msg = "Лекарство не найдено!" if lang == "ru" else "Medication not found!" if lang == "en" else "Препарат не знайдено!"
+        await callback.answer(err_msg)
         return
         
     # Удаляем напоминания из планировщика
@@ -152,36 +217,46 @@ async def process_delete_medication(callback: CallbackQuery):
     # Помечаем лекарство как неактивное
     await database.delete_medication(med_id)
     
-    await callback.answer("Лекарство удалено!")
+    del_ok = "Лекарство удалено!" if lang == "ru" else "Medication deleted!" if lang == "en" else "Препарат видалено!"
+    await callback.answer(del_ok)
     await callback.message.delete()
-    await callback.message.answer(f"🗑️ Лекарство *{med['name']}* успешно удалено из аптечки.", parse_mode="Markdown")
+    await callback.message.answer(_T("del_success", lang, name=med['name']), parse_mode="Markdown")
+
 
 # --- ДОБАВЛЕНИЕ ЛЕКАРСТВА ---
 
-@router.message(StateFilter("*"), F.text == "➕ Добавить лекарство")
+@router.message(StateFilter("*"), lambda m: m.text in [_T("menu_add_med", "ru"), _T("menu_add_med", "en"), _T("menu_add_med", "uk")] if m.text else False)
 async def start_add_medication(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(AddMedication.waiting_for_input)
     
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⌨️ Ввести вручную", callback_data="add_manual")]
+        [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
     ])
     
     await message.answer(
-        "➕ *Добавление нового лекарства*\n\n"
-        "Вы можете прислать мне:\n"
-        "1. 📸 *Фотографию упаковки* (я распознаю её с помощью ИИ).\n"
-        "2. 💬 *Описание текстом в свободной форме* (например: _«Парацетамол по 1 таблетке 2 раза в день после еды в 08:00 и 20:00 на 5 дней»_).\n\n"
-        "Или нажмите кнопку ниже для ручного ввода:",
+        _T("add_welcome", lang),
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+
 
 @router.callback_query(F.data == "add_manual")
 async def process_add_manual(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(AddMedication.waiting_for_name)
-    await callback.message.answer("Введите название лекарства (например, Аспирин):", reply_markup=ReplyKeyboardRemove())
+    
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    await callback.message.answer(
+        _T("prompt_name", lang),
+        reply_markup=get_cancel_keyboard(lang),
+        parse_mode="Markdown"
+    )
     try:
         await callback.message.delete()
     except Exception:
@@ -193,19 +268,24 @@ async def process_add_manual(callback: CallbackQuery, state: FSMContext):
 async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContext):
     name = callback.data.split(":", 1)[1]
     
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     await state.set_state(AddMedication.waiting_for_dosage)
     await state.update_data(name=name, active_ingredient=None)
     
-    # Отправляем сообщение-запрос дозировки моментально
     prompt_msg = await callback.message.answer(
-        f"Введите дозировку для *{name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
-        f"_(Загружаю варианты дозировок... если хотите, введите вручную прямо сейчас)_",
+        _T("prompt_dosage", lang, name=name) + "\n" +
+        ("_(Загружаю варианты дозировок... если хотите, введите вручную прямо сейчас)_" if lang == "ru" 
+         else "_(Loading dosage options... feel free to enter manually right now)_" if lang == "en" 
+         else "_(Завантажую варіанти дозування... якщо хочете, введіть вручну просто зараз)_"),
+        reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
     await callback.message.delete()
     
     # Запуск фонового подбора дозировок через Gemini
-    async def load_dosages_bg(msg_to_edit: Message, med_name: str):
+    async def load_dosages_bg(msg_to_edit: Message, med_name: str, user_lang: str):
         try:
             dosages = await gemini_service.suggest_dosage(med_name)
             keyboard_buttons = []
@@ -214,8 +294,10 @@ async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContex
             keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
             
             await msg_to_edit.edit_text(
-                f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
-                f"_(Или выберите один из вариантов ниже)_",
+                _T("prompt_dosage", user_lang, name=med_name) + "\n" +
+                ("_(Или выберите один из вариантов ниже)_" if user_lang == "ru" 
+                 else "_(Or select one of the options below)_" if user_lang == "en" 
+                 else "_(Або оберіть один з варіантів нижче)_"),
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
@@ -223,20 +305,22 @@ async def process_add_manual_prefilled(callback: CallbackQuery, state: FSMContex
             logger.error(f"Ошибка фоновой загрузки дозировок: {e}")
             try:
                 await msg_to_edit.edit_text(
-                    f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):",
+                    _T("prompt_dosage", user_lang, name=med_name),
                     parse_mode="Markdown"
                 )
             except Exception:
                 pass
                 
-    asyncio.create_task(load_dosages_bg(prompt_msg, name))
+    asyncio.create_task(load_dosages_bg(prompt_msg, name, lang))
 
 
 # --- Ввод текстом (NLP) ---
 @router.message(StateFilter(AddMedication.waiting_for_input), F.text)
 async def process_text_schedule(message: Message, state: FSMContext):
-    processing_msg = await message.answer("🔍 *Мистер Таблетус анализирует ваш текст...* 🤖", parse_mode="Markdown")
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
     
+    processing_msg = await message.answer(_T("analyzing_text", lang), parse_mode="Markdown")
     parsed_data = await gemini_service.parse_text_schedule(message.text)
     await processing_msg.delete()
     
@@ -245,101 +329,90 @@ async def process_text_schedule(message: Message, state: FSMContext):
         words = message.text.strip().split()
         detected_name = None
         for word in words:
-            # Убираем знаки препинания
             word_clean = re.sub(r"[^\w\-]", "", word).strip().lower()
             if not word_clean:
                 continue
-            # Быстрая проверка по БД (название из словаря)
             is_val = await gemini_service.validate_medicine_name(word_clean)
             if is_val:
                 detected_name = word_clean.capitalize()
                 break
                 
         if not detected_name and len(words) <= 2:
-            # Если слов мало, возьмем весь текст
             detected_name = message.text.strip().capitalize()
             
         if detected_name:
+            btn_txt = _T("btn_direct_manual", lang, name=detected_name)
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text=f"⌨️ Настроить {detected_name} вручную", 
-                        callback_data=f"add_manual_prefilled:{detected_name}"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_no")
-                ]
+                [InlineKeyboardButton(text=btn_txt, callback_data=f"add_manual_prefilled:{detected_name}")],
+                [InlineKeyboardButton(text=_T("btn_confirm_no", lang), callback_data="confirm_no")]
             ])
+            
             await message.answer(
-                f"🤖 *Мистер Таблетус:* «Я распознал название препарата **{detected_name}**, "
-                f"но не смог автоматически определить расписание (ИИ временно перегружен).\n\n"
-                f"Желаете настроить график для этого лекарства по шагам вручную?»",
+                _T("detected_name_only", lang, detected_name=detected_name),
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
             return
 
-        # Fallback if nothing was found at all
+        # Fallback
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
+        ])
         await message.answer(
-            "😔 К сожалению, мне не удалось распознать расписание. Попробуйте написать по-другому "
-            "(например: _«Нурофен 2 раза в день в 9:00 и 21:00»_) или введите данные вручную:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⌨️ Ввести вручную", callback_data="add_manual")]
-            ])
-        )
-        return
-
-
-    # Валидация распознанного названия лекарства через Gemini
-    processing_validation = await message.answer("🔍 *Проверяю распознанное название...* 🤖", parse_mode="Markdown")
-    is_valid = await gemini_service.validate_medicine_name(parsed_data["name"])
-    await processing_validation.delete()
-    
-    if not is_valid:
-        await message.answer(
-            f"😔 Кажется, в тексте указано некорректное название лекарства (распознано как *«{parsed_data['name']}»*).\n"
-            "Пожалуйста, попробуйте написать по-другому (например: _«Нурофен 2 раза в день в 9:00 и 21:00»_) или введите данные вручную:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⌨️ Ввести вручную", callback_data="add_manual")]
-            ]),
+            _T("invalid_schedule", lang),
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
         return
 
+    # Валидация названия
+    processing_validation = await message.answer(_T("verifying_name", lang), parse_mode="Markdown")
+    is_valid = await gemini_service.validate_medicine_name(parsed_data["name"])
+    await processing_validation.delete()
+    
+    if not is_valid:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
+        ])
+        await message.answer(
+            _T("invalid_med_name", lang, name=parsed_data['name']),
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        return
 
-    # Изображение по умолчанию
     parsed_data["image_path"] = None
 
     # Сохраняем распарсенные данные во временное хранилище FSM
     await state.update_data(parsed_data=parsed_data)
     await state.set_state(AddMedication.confirming_parsed)
     
-    relation_ru = {
-        'before_meal': 'до еды 🍽️',
-        'with_meal': 'во время еды 🍽️',
-        'after_meal': 'после еды 🍽️',
-        'none': 'без связи с едой'
-    }.get(parsed_data.get("food_relation"), 'без связи с едой')
+    relation_keys = {
+        'before_meal': 'food_before',
+        'with_meal': 'food_with',
+        'after_meal': 'food_after',
+        'none': 'food_none'
+    }
+    rel_key = relation_keys.get(parsed_data.get("food_relation"), 'food_none')
+    relation_localized = _T(rel_key, lang)
     
     times_str = ", ".join(parsed_data.get("times", []))
+    active_ing_str = f" ({parsed_data['active_ingredient']})" if parsed_data.get('active_ingredient') else ""
     
-    active_ing_ru = f" ({parsed_data['active_ingredient']})" if parsed_data.get('active_ingredient') else ""
-    confirm_text = (
-        f"🤖 *Я распознал следующие данные:*\n\n"
-        f"💊 Название: **{parsed_data['name']}**{active_ing_ru}\n"
-        f"⚖️ Дозировка: **{parsed_data.get('dosage') or '1 шт.'}**\n"
-        f"🍽️ Прием: **{relation_ru}**\n"
-        f"⏰ Время приемов: **{times_str}**\n"
-        f"📅 Расписание: **Ежедневно**\n"
-        f"📦 Остаток в аптечке: **{parsed_data.get('stock_count') or 20} шт.**\n\n"
-        f"Всё верно?"
+    confirm_text = _T(
+        "confirm_caption", 
+        lang, 
+        name=parsed_data['name'] + active_ing_str,
+        dosage=parsed_data.get('dosage') or "1 шт.",
+        relation=relation_localized,
+        times=times_str,
+        stock=parsed_data.get('stock_count') or 20
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✅ Да, всё верно", callback_data="confirm_yes"),
-            InlineKeyboardButton(text="❌ Нет, ввести заново", callback_data="confirm_no")
+            InlineKeyboardButton(text=_T("btn_confirm_yes", lang), callback_data="confirm_yes"),
+            InlineKeyboardButton(text=_T("btn_confirm_no", lang), callback_data="confirm_no")
         ]
     ])
     
@@ -359,17 +432,17 @@ async def process_text_schedule(message: Message, state: FSMContext):
         await message.answer(confirm_text, reply_markup=keyboard, parse_mode="Markdown")
 
 
-
 # --- Ввод фото (Vision OCR) ---
 @router.message(StateFilter(AddMedication.waiting_for_input), F.photo)
 async def process_photo_medication(message: Message, state: FSMContext, bot: Bot):
-    processing_msg = await message.answer("🔍 *Мистер Таблетус сканирует упаковку...* 📸", parse_mode="Markdown")
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
     
-    # Загружаем фото
+    processing_msg = await message.answer(_T("scanning_photo", lang), parse_mode="Markdown")
+    
     photo = message.photo[-1]
     file_info = await bot.get_file(photo.file_id)
     
-    # Создаем уникальный путь для файла
     os.makedirs("photos", exist_ok=True)
     file_ext = file_info.file_path.split(".")[-1]
     local_path = f"photos/{uuid.uuid4()}.{file_ext}"
@@ -381,65 +454,67 @@ async def process_photo_medication(message: Message, state: FSMContext, bot: Bot
     await processing_msg.delete()
     
     if not parsed_data or not parsed_data.get("name"):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
+        ])
         await message.answer(
-            "😔 Мне не удалось четко распознать коробку лекарства. Пожалуйста, сфотографируйте "
-            "крупнее лицевую сторону или введите данные вручную:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⌨️ Ввести вручную", callback_data="add_manual")]
-            ])
+            _T("invalid_photo_box", lang),
+            reply_markup=keyboard
         )
-        # Удаляем локальный файл
         if os.path.exists(local_path):
             os.remove(local_path)
         return
         
-    # Валидация названия лекарства с фото через Gemini
-    processing_validation = await message.answer("🔍 *Проверяю распознанное с фото название...* 🤖", parse_mode="Markdown")
+    # Валидация названия
+    processing_validation = await message.answer(_T("verifying_name", lang), parse_mode="Markdown")
     is_valid = await gemini_service.validate_medicine_name(parsed_data["name"])
     await processing_validation.delete()
     
     if not is_valid:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_T("btn_enter_manual", lang), callback_data="add_manual")]
+        ])
         await message.answer(
-            f"😔 Мне показалось, что на фото изображено *«{parsed_data['name']}»*, но это не похоже на настоящее лекарство или БАД.\n"
-            "Пожалуйста, сфотографируйте коробку крупнее с лицевой стороны или введите данные вручную:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⌨️ Ввести вручную", callback_data="add_manual")]
-            ]),
+            _T("invalid_photo_med", lang, name=parsed_data['name']),
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
         if os.path.exists(local_path):
             os.remove(local_path)
         return
 
-        
-    # Сохраняем путь к картинке и распознанные данные в FSM
     parsed_data["image_path"] = local_path
     await state.update_data(photo_data=parsed_data)
     await state.set_state(AddMedication.waiting_for_schedule_after_photo)
     
     await message.answer(
-        f"🤖 *Я распознал упаковку лекарства:*\n\n"
-        f"💊 Название: **{parsed_data['name']}**\n"
-        f"⚖️ Дозировка: **{parsed_data.get('dosage') or 'не определена'}**\n"
-        f"📦 Остаток (в пачке): **{parsed_data.get('quantity') or 20} шт.**\n\n"
-        f"✍️ Напишите текстом, как часто его нужно принимать (например: _«3 раза в день во время еды в 10:00, 14:00 и 20:00»_):",
+        _T(
+            "photo_recognized_text",
+            lang,
+            name=parsed_data['name'],
+            dosage=parsed_data.get("dosage") or ("не определена" if lang=="ru" else "not specified" if lang=="en" else "не визначена"),
+            quantity=parsed_data.get("quantity") or 20
+        ),
         parse_mode="Markdown"
     )
 
+
 @router.message(StateFilter(AddMedication.waiting_for_schedule_after_photo), F.text)
 async def process_schedule_after_photo(message: Message, state: FSMContext):
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     state_data = await state.get_data()
     photo_data = state_data.get("photo_data")
     
-    processing_msg = await message.answer("🔍 *Мистер Таблетус анализирует график...* 🤖", parse_mode="Markdown")
+    processing_msg = await message.answer(_T("analyzing_schedule", lang), parse_mode="Markdown")
     parsed_schedule = await gemini_service.parse_text_schedule(message.text)
     await processing_msg.delete()
     
     if not parsed_schedule:
-        await message.answer("Не удалось распознать график. Напишите еще раз (например: _«каждый день в 09:00»_):")
+        await message.answer(_T("invalid_photo_schedule", lang))
         return
         
-    # Объединяем данные из фото и текстового графика
     merged_data = {
         "name": photo_data["name"],
         "dosage": photo_data.get("dosage") or parsed_schedule.get("dosage") or "1 шт.",
@@ -447,6 +522,7 @@ async def process_schedule_after_photo(message: Message, state: FSMContext):
         "times": parsed_schedule.get("times") or ["09:00"],
         "schedule_type": parsed_schedule.get("schedule_type") or "daily",
         "schedule_data": parsed_schedule.get("schedule_data"),
+        "duration_days": parsed_schedule.get("duration_days"),
         "stock_count": photo_data.get("quantity") or parsed_schedule.get("stock_count") or 20,
         "image_path": photo_data.get("image_path")
     }
@@ -454,31 +530,32 @@ async def process_schedule_after_photo(message: Message, state: FSMContext):
     await state.update_data(parsed_data=merged_data)
     await state.set_state(AddMedication.confirming_parsed)
     
-    relation_ru = {
-        'before_meal': 'до еды 🍽️',
-        'with_meal': 'во время еды 🍽️',
-        'after_meal': 'после еды 🍽️',
-        'none': 'без связи с едой'
-    }.get(merged_data["food_relation"], 'без связи с едой')
+    relation_keys = {
+        'before_meal': 'food_before',
+        'with_meal': 'food_with',
+        'after_meal': 'food_after',
+        'none': 'food_none'
+    }
+    rel_key = relation_keys.get(merged_data["food_relation"], 'food_none')
+    relation_localized = _T(rel_key, lang)
     
     times_str = ", ".join(merged_data["times"])
+    active_ing_str = f" ({merged_data['active_ingredient']})" if merged_data.get('active_ingredient') else ""
     
-    active_ing_ru = f" ({merged_data['active_ingredient']})" if merged_data.get('active_ingredient') else ""
-    confirm_text = (
-        f"🤖 *Проверьте итоговую карточку:*\n\n"
-        f"💊 Название: **{merged_data['name']}**{active_ing_ru}\n"
-        f"⚖️ Дозировка: **{merged_data['dosage']}**\n"
-        f"🍽️ Прием: **{relation_ru}**\n"
-        f"⏰ Время приемов: **{times_str}**\n"
-        f"📅 Расписание: **Ежедневно**\n"
-        f"📦 Остаток в аптечке: **{merged_data['stock_count']} шт.**\n\n"
-        f"Всё верно?"
+    confirm_text = _T(
+        "confirm_caption",
+        lang,
+        name=merged_data['name'] + active_ing_str,
+        dosage=merged_data['dosage'],
+        relation=relation_localized,
+        times=times_str,
+        stock=merged_data['stock_count']
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✅ Да, всё верно", callback_data="confirm_yes"),
-            InlineKeyboardButton(text="❌ Нет, ввести заново", callback_data="confirm_no")
+            InlineKeyboardButton(text=_T("btn_confirm_yes", lang), callback_data="confirm_yes"),
+            InlineKeyboardButton(text=_T("btn_confirm_no", lang), callback_data="confirm_no")
         ]
     ])
     
@@ -505,6 +582,23 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
     state_data = await state.get_data()
     data = state_data.get("parsed_data")
     
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+    now_local = datetime.now(user_tz)
+    
+    start_date_str = now_local.strftime("%Y-%m-%d")
+    end_date_str = None
+    
+    duration_days = data.get("duration_days")
+    if duration_days:
+        try:
+            days = int(duration_days)
+            end_date = now_local.date() + timedelta(days=days - 1)
+            end_date_str = end_date.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
     # 1. Сохраняем в Базу Данных
     med_id = await database.add_medication(
         user_id=callback.from_user.id,
@@ -514,7 +608,9 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
         food_relation=data["food_relation"],
         stock_count=data.get("stock_count") or 20,
         stock_alert_threshold=5,
-        image_path=data.get("image_path")
+        image_path=data.get("image_path"),
+        start_date=start_date_str,
+        end_date=end_date_str
     )
     
     # 2. Добавляем напоминания в планировщик
@@ -526,16 +622,17 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
             schedule_data=data.get("schedule_data")
         )
         
-    # Перезагружаем задачи в планировщике
     await scheduler.setup_scheduler(bot)
-    
     await callback.message.delete()
     
-    success_text = f"🎉 Лекарство *{data['name']}* успешно добавлено в вашу аптечку!\n\n"
-    await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+    start_display = start_date_str
+    end_display = end_date_str if end_date_str else _T("course_no_limit", lang)
+    success_text = _T("add_success", lang, name=data["name"], start=start_display, end=end_display)
+    
+    await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
     await state.clear()
     
-    # Запускаем фоновый анализ и отправку рекомендаций
+    # Фоновый анализ рекомендаций
     asyncio.create_task(run_background_classification_and_rec(bot, callback.from_user.id, med_id, data["name"]))
 
 
@@ -543,7 +640,10 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
 async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
     state_data = await state.get_data()
     
-    # Удаляем фото из parsed_data, если оно было сохранено локально
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    # Очищаем временные файлы
     data = state_data.get("parsed_data", {})
     if data and data.get("image_path") and os.path.exists(data["image_path"]):
         try:
@@ -551,7 +651,6 @@ async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
         except Exception:
             pass
             
-    # Удаляем фото из photo_data, если оно было сохранено локально
     photo_data = state_data.get("photo_data", {})
     if photo_data and photo_data.get("image_path") and os.path.exists(photo_data["image_path"]):
         try:
@@ -564,14 +663,17 @@ async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
         await callback.message.delete()
     except Exception:
         pass
-    await callback.message.answer("Добавление отменено. Вы можете начать заново, нажав кнопку в меню.", reply_markup=get_main_menu_keyboard())
-    await callback.answer("Добавление отменено")
+    await callback.message.answer(_T("cancel_msg", lang), reply_markup=get_main_menu_keyboard(lang))
+    await callback.answer()
 
 
 # --- ПОШАГОВЫЙ РУЧНОЙ ВВОД ---
 
 @router.message(StateFilter(AddMedication.waiting_for_name))
 async def process_manual_name(message: Message, state: FSMContext):
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     raw_name = message.text.strip()
     match = re.match(r"([^(]+)\s*(?:\(([^)]+)\))?", raw_name)
     if match:
@@ -581,15 +683,14 @@ async def process_manual_name(message: Message, state: FSMContext):
         name = raw_name
         active_ingredient = None
         
-    # Валидация названия (теперь быстрая, Wiki-поиск в фоне)
-    processing_msg = await message.answer("🔍 *Мистер Таблетус проверяет название...* 🤖", parse_mode="Markdown")
+    # Валидация названия
+    processing_msg = await message.answer(_T("verifying_name", lang), parse_mode="Markdown")
     is_valid = await gemini_service.validate_medicine_name(name)
     await processing_msg.delete()
     
     if not is_valid:
         await message.answer(
-            "⚠️ *Мистер Таблетус:* «Похоже, это не название лекарства, витамина или БАДа. "
-            "Пожалуйста, проверьте написание и введите корректное название (например, _Аспирин_ или _Парацетамол_):»",
+            _T("prompt_name_invalid", lang),
             parse_mode="Markdown"
         )
         return
@@ -597,15 +698,17 @@ async def process_manual_name(message: Message, state: FSMContext):
     await state.update_data(name=name, active_ingredient=active_ingredient)
     await state.set_state(AddMedication.waiting_for_dosage)
     
-    # Отправляем сообщение-запрос дозировки моментально
     prompt_msg = await message.answer(
-        f"Введите дозировку для *{name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
-        f"_(Загружаю варианты дозировок... если хотите, введите вручную прямо сейчас)_",
+        _T("prompt_dosage", lang, name=name) + "\n" +
+        ("_(Загружаю варианты дозировок... если хотите, введите вручную прямо сейчас)_" if lang == "ru" 
+         else "_(Loading dosage options... feel free to enter manually right now)_" if lang == "en" 
+         else "_(Завантажую варіанти дозування... якщо хочете, введіть вручну просто зараз)_"),
+        reply_markup=get_cancel_keyboard(lang),
         parse_mode="Markdown"
     )
     
-    # Запуск фонового подбора дозировок через Gemini
-    async def load_dosages_bg(msg_to_edit: Message, med_name: str):
+    # Фоновый подбор дозировок через Gemini
+    async def load_dosages_bg(msg_to_edit: Message, med_name: str, user_lang: str):
         try:
             dosages = await gemini_service.suggest_dosage(med_name)
             keyboard_buttons = []
@@ -614,8 +717,10 @@ async def process_manual_name(message: Message, state: FSMContext):
             keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
             
             await msg_to_edit.edit_text(
-                f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):\n"
-                f"_(Или выберите один из вариантов ниже)_",
+                _T("prompt_dosage", user_lang, name=med_name) + "\n" +
+                ("_(Или выберите один из вариантов ниже)_" if user_lang == "ru" 
+                 else "_(Or select one of the options below)_" if user_lang == "en" 
+                 else "_(Або оберіть один з варіантів нижче)_"),
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
@@ -623,35 +728,41 @@ async def process_manual_name(message: Message, state: FSMContext):
             logger.error(f"Ошибка фоновой загрузки дозировок: {e}")
             try:
                 await msg_to_edit.edit_text(
-                    f"Введите дозировку для *{med_name}* (например: 1 таблетка, 500 мг, 10 мл):",
+                    _T("prompt_dosage", user_lang, name=med_name),
                     parse_mode="Markdown"
                 )
             except Exception:
                 pass
                 
-    asyncio.create_task(load_dosages_bg(prompt_msg, name))
-
+    asyncio.create_task(load_dosages_bg(prompt_msg, name, lang))
 
 
 @router.message(StateFilter(AddMedication.waiting_for_dosage))
 async def process_manual_dosage(message: Message, state: FSMContext):
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     await state.update_data(dosage=message.text)
     await state.set_state(AddMedication.waiting_for_food)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🍽️ До еды", callback_data="food:before_meal"),
-            InlineKeyboardButton(text="🥣 Во время еды", callback_data="food:with_meal")
+            InlineKeyboardButton(text=_T("food_before", lang), callback_data="food:before_meal"),
+            InlineKeyboardButton(text=_T("food_with", lang), callback_data="food:with_meal")
         ],
         [
-            InlineKeyboardButton(text="🍰 После еды", callback_data="food:after_meal"),
-            InlineKeyboardButton(text="🤷 Без связи с едой", callback_data="food:none")
+            InlineKeyboardButton(text=_T("food_after", lang), callback_data="food:after_meal"),
+            InlineKeyboardButton(text=_T("food_none", lang), callback_data="food:none")
         ]
     ])
-    await message.answer("Как принимать по отношению к еде?", reply_markup=keyboard)
+    await message.answer(_T("food_relation_q", lang), reply_markup=keyboard)
+
 
 @router.callback_query(StateFilter(AddMedication.waiting_for_dosage), F.data.startswith("dosage_suggest:"))
 async def process_dosage_suggest_callback(callback: CallbackQuery, state: FSMContext):
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     dosage = callback.data.split(":", 1)[1]
     await state.update_data(dosage=dosage)
     await state.set_state(AddMedication.waiting_for_food)
@@ -660,82 +771,140 @@ async def process_dosage_suggest_callback(callback: CallbackQuery, state: FSMCon
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🍽️ До еды", callback_data="food:before_meal"),
-            InlineKeyboardButton(text="🥣 Во время еды", callback_data="food:with_meal")
+            InlineKeyboardButton(text=_T("food_before", lang), callback_data="food:before_meal"),
+            InlineKeyboardButton(text=_T("food_with", lang), callback_data="food:with_meal")
         ],
         [
-            InlineKeyboardButton(text="🍰 После еды", callback_data="food:after_meal"),
-            InlineKeyboardButton(text="🤷 Без связи с едой", callback_data="food:none")
+            InlineKeyboardButton(text=_T("food_after", lang), callback_data="food:after_meal"),
+            InlineKeyboardButton(text=_T("food_none", lang), callback_data="food:none")
         ]
     ])
+    
+    title_text = f"Вы выбрали дозировку: *{dosage}*\n\n" if lang=="ru" else f"You selected dosage: *{dosage}*\n\n" if lang=="en" else f"Ви обрали дозування: *{dosage}*\n\n"
     await callback.message.answer(
-        f"Вы выбрали дозировку: *{dosage}*\n\nКак принимать по отношению к еде?",
+        title_text + _T("food_relation_q", lang),
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
 
 
-
 @router.callback_query(StateFilter(AddMedication.waiting_for_food), F.data.startswith("food:"))
 async def process_manual_food(callback: CallbackQuery, state: FSMContext):
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     food_relation = callback.data.split(":")[1]
     await state.update_data(food_relation=food_relation)
     await state.set_state(AddMedication.waiting_for_times)
     
     await callback.message.edit_text(
-        "Укажите время приемов через запятую или пробел в формате ЧЧ:ММ (например: *09:00, 21:00*):",
+        _T("prompt_times", lang),
         parse_mode="Markdown"
     )
 
+
 @router.message(StateFilter(AddMedication.waiting_for_times))
 async def process_manual_times(message: Message, state: FSMContext):
-    # Разбираем время
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     raw_times = message.text.replace(",", " ").split()
     times = []
     
     for t in raw_times:
         t = t.strip()
         try:
-            # Валидация формата времени
             datetime.strptime(t, "%H:%M")
             times.append(t)
         except ValueError:
-            await message.answer(f"❌ Некорректный формат времени: `{t}`. Введите время в формате ЧЧ:ММ (например, 08:30):", parse_mode="Markdown")
+            await message.answer(_T("invalid_time", lang, time=t), parse_mode="Markdown")
             return
             
     if not times:
-        await message.answer("Пожалуйста, введите хотя бы одно время (например, 14:00):")
+        await message.answer(_T("prompt_times_empty", lang))
         return
         
     await state.update_data(times=times)
     await state.set_state(AddMedication.waiting_for_stock)
-    await message.answer("Сколько таблеток/доз сейчас в аптечке (введите число, например, 30):")
+    await message.answer(_T("prompt_stock", lang))
+
 
 @router.message(StateFilter(AddMedication.waiting_for_stock))
-async def process_manual_stock(message: Message, state: FSMContext, bot: Bot):
+async def process_manual_stock(message: Message, state: FSMContext):
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     try:
         stock = int(message.text)
     except ValueError:
-        await message.answer("Пожалуйста, введите целое число (например, 20):")
+        await message.answer(_T("invalid_number", lang))
         return
         
+    await state.update_data(stock_count=stock)
+    await state.set_state(AddMedication.waiting_for_duration)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=_T("btn_permanent", lang), callback_data="duration_permanent")]
+    ])
+    
+    await message.answer(
+        _T("prompt_duration", lang),
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+@router.message(StateFilter(AddMedication.waiting_for_duration))
+async def process_manual_duration(message: Message, state: FSMContext, bot: Bot):
+    text = message.text.strip()
+    
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+    now_local = datetime.now(user_tz)
+    
+    start_date_str = now_local.strftime("%Y-%m-%d")
+    end_date_str = None
+    
+    # Проверка на количество дней
+    try:
+        days = int(text)
+        if days <= 0:
+            raise ValueError()
+        end_date = now_local.date() + timedelta(days=days - 1)
+        end_date_str = end_date.strftime("%Y-%m-%d")
+    except ValueError:
+        # Проверка на формат YYYY-MM-DD
+        try:
+            parsed_date = datetime.strptime(text, "%Y-%m-%d").date()
+            if parsed_date < now_local.date():
+                past_err = ("❌ Дата окончания не может быть в прошлом. Введите корректную дату:" if lang == "ru"
+                            else "❌ End date cannot be in the past. Enter a valid date:" if lang == "en"
+                            else "❌ Дата закінчення не може бути в минулому. Введіть коректну дату:")
+                await message.answer(past_err)
+                return
+            end_date_str = parsed_date.strftime("%Y-%m-%d")
+        except ValueError:
+            await message.answer(
+                _T("invalid_duration", lang),
+                parse_mode="Markdown"
+            )
+            return
+
     state_data = await state.get_data()
     
-    # Изображение по умолчанию
-    image_path = None
-        
-    # Формируем итоговые данные для сохранения
     med_id = await database.add_medication(
         user_id=message.from_user.id,
         name=state_data["name"],
         active_ingredient=state_data.get("active_ingredient"),
         dosage=state_data["dosage"],
         food_relation=state_data["food_relation"],
-        stock_count=stock,
+        stock_count=state_data["stock_count"],
         stock_alert_threshold=5,
-        image_path=image_path
+        image_path=None,
+        start_date=start_date_str,
+        end_date=end_date_str
     )
-
     
     for time_str in state_data["times"]:
         await database.add_reminder(
@@ -744,22 +913,70 @@ async def process_manual_stock(message: Message, state: FSMContext, bot: Bot):
             schedule_type='daily'
         )
         
-    # Настраиваем планировщик
     await scheduler.setup_scheduler(bot)
     
-    success_text = f"🎉 Лекарство *{state_data['name']}* успешно добавлено в аптечку!\n\n"
-    await message.answer(success_text, reply_markup=get_main_menu_keyboard(), parse_mode="Markdown")
+    start_display = start_date_str
+    end_display = end_date_str
+    success_text = _T("add_success", lang, name=state_data["name"], start=start_display, end=end_display)
+    
+    await message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
     await state.clear()
     
-    # Запускаем фоновый анализ и отправку рекомендаций
+    # Анализ лекарства
     asyncio.create_task(run_background_classification_and_rec(bot, message.from_user.id, med_id, state_data["name"]))
+
+
+@router.callback_query(StateFilter(AddMedication.waiting_for_duration), F.data == "duration_permanent")
+async def process_duration_permanent(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+    now_local = datetime.now(user_tz)
+    
+    start_date_str = now_local.strftime("%Y-%m-%d")
+    end_date_str = None
+    
+    state_data = await state.get_data()
+    
+    med_id = await database.add_medication(
+        user_id=callback.from_user.id,
+        name=state_data["name"],
+        active_ingredient=state_data.get("active_ingredient"),
+        dosage=state_data["dosage"],
+        food_relation=state_data["food_relation"],
+        stock_count=state_data["stock_count"],
+        stock_alert_threshold=5,
+        image_path=None,
+        start_date=start_date_str,
+        end_date=end_date_str
+    )
+    
+    for time_str in state_data["times"]:
+        await database.add_reminder(
+            medication_id=med_id,
+            time_str=time_str,
+            schedule_type='daily'
+        )
+        
+    await scheduler.setup_scheduler(bot)
+    
+    start_display = start_date_str
+    end_display = _T("course_no_limit", lang)
+    success_text = _T("add_success", lang, name=state_data["name"], start=start_display, end=end_display)
+    
+    await callback.message.delete()
+    await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+    await state.clear()
+    await callback.answer()
+    
+    # Анализ лекарства
+    asyncio.create_task(run_background_classification_and_rec(bot, callback.from_user.id, med_id, state_data["name"]))
 
 
 # --- ОБРАБОТКА ДЕЙСТВИЙ ИЗ УВЕДОМЛЕНИЙ (ПРИНЯЛ / ПРОПУСТИЛ) ---
 
 @router.callback_query(F.data.startswith("take:"))
 async def process_take_pill(callback: CallbackQuery, bot: Bot):
-    # take:med_id:expected_time_iso
     parts = callback.data.split(":")
     med_id = int(parts[1])
     expected_time_iso = ":".join(parts[2:])
@@ -769,7 +986,6 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
         await callback.answer("Лекарство не найдено!")
         return
         
-    # Проверяем историю, чтобы не кликали дважды
     status_history = await database.get_history_status(med_id, expected_time_iso)
     if status_history == 'taken':
         await callback.answer("Прием уже подтвержден!")
@@ -801,13 +1017,13 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
         f"{stock_warning}"
     )
     
-    # Редактируем сообщение, убирая кнопки и заменяя текст
     if callback.message.photo:
         await callback.message.edit_caption(caption=feedback_text, reply_markup=None, parse_mode="Markdown")
     else:
         await callback.message.edit_text(text=feedback_text, reply_markup=None, parse_mode="Markdown")
         
     await callback.answer("Прием подтвержден!")
+
 
 @router.callback_query(F.data.startswith("skip:"))
 async def process_skip_pill(callback: CallbackQuery):
@@ -820,7 +1036,6 @@ async def process_skip_pill(callback: CallbackQuery):
         await callback.answer("Лекарство не найдено!")
         return
         
-    # Проверяем историю
     status_history = await database.get_history_status(med_id, expected_time_iso)
     if status_history in ['taken', 'skipped']:
         await callback.answer("Прием уже обработан!")
@@ -846,6 +1061,7 @@ async def process_skip_pill(callback: CallbackQuery):
         
     await callback.answer("Прием пропущен.")
 
+
 @router.callback_query(F.data.startswith("snooze:"))
 async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
     parts = callback.data.split(":")
@@ -857,7 +1073,6 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
         await callback.answer("Лекарство не найдено!")
         return
         
-    # Изменяем сообщение
     snoozed_text = (
         f"⏰ *Напоминание отложено на 15 минут!*\n\n"
         f"💊 Препарат: *{med['name']}*\n"
@@ -869,13 +1084,9 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
     else:
         await callback.message.edit_text(text=snoozed_text, reply_markup=None, parse_mode="Markdown")
         
-    # Запускаем отложенный вызов в планировщике на +15 минут
     run_time = datetime.now() + timedelta(minutes=15)
-    
-    # Генерируем новый reminder_id для планировщика
     job_id = f"snooze_{med_id}_{int(run_time.timestamp())}"
     
-    # Задача отправки пуша
     scheduler.scheduler.add_job(
         scheduler.send_reminder_job,
         'date',
@@ -891,57 +1102,54 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
 
 async def run_background_classification_and_rec(bot: Bot, chat_id: int, med_id: int, medicine_name: str):
     try:
+        user = await database.get_user(chat_id)
+        lang = user.get("language") if user else "ru"
+        
         # 1. Классифицируем название препарата через Gemini
         classification = await gemini_service.classify_medicine_name(medicine_name)
         category = classification.get("category", "real")
         
         if category == "real":
-            # Реальное лекарство -> запрашиваем и отправляем рекомендации
             recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
             if recommendations:
+                caption = ("💡 *Рекомендации от Мистера Таблетуса для {name}:*\n{recs}" if lang == "ru"
+                           else "💡 *Mr. Tabletus recommendations for {name}:*\n{recs}" if lang == "en"
+                           else "💡 *Рекомендації від Містера Таблетуса для {name}:*\n{recs}")
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name}:*\n{recommendations}",
+                    text=caption.format(name=medicine_name, recs=recommendations),
                     parse_mode="Markdown"
                 )
         elif category == "plausible":
-            # Вымышленное/редкое название -> предлагаем ввести действующее вещество, отправить фото или скинуть ссылку
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="🧪 Указать вещество", callback_data=f"set_active_ing:{med_id}"),
-                    InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")
+                    InlineKeyboardButton(text=_T("btn_set_mnn", lang), callback_data=f"set_active_ing:{med_id}"),
+                    InlineKeyboardButton(text=_T("btn_send_photo", lang), callback_data=f"set_active_photo:{med_id}")
                 ],
                 [
-                    InlineKeyboardButton(text="🔗 Скинуть ссылку", callback_data=f"set_active_link:{med_id}")
+                    InlineKeyboardButton(text=_T("btn_send_link", lang), callback_data=f"set_active_link:{med_id}")
                 ]
             ])
             await bot.send_message(
                 chat_id=chat_id,
-                text=f"⚠️ *Мистер Таблетус:* «Я не нашел препарат **{medicine_name}** в медицинских справочниках.\n\n"
-                     f"Если это настоящее лекарство (например, новое или редкое), пожалуйста, предоставьте дополнительную информацию (укажите действующее вещество, пришлите фото упаковки или ссылку на описание), чтобы я мог подобрать рекомендации.»",
+                text=_T("plausible_warning", lang, name=medicine_name),
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
-        else: # nonsense (какашка, бред, стол и т.д.)
-            # Сначала получим напоминания, чтобы удалить их из планировщика в памяти
+        else: # nonsense
             reminders = await database.get_medication_reminders(med_id)
             for r in reminders:
                 scheduler.remove_reminder_from_scheduler(r['id'])
                 
-            # Помечаем лекарство как неактивное в БД
             await database.delete_medication(med_id)
-            
-            # Перезагружаем задачи в планировщике
             await scheduler.setup_scheduler(bot)
             
-            # Заведомо нелекарственное слово -> сообщаем об удалении и предлагаем ввести заново
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="➕ Добавить лекарство заново", callback_data="add_manual")]
+                [InlineKeyboardButton(text=_T("btn_add_again", lang), callback_data="add_manual")]
             ])
             await bot.send_message(
                 chat_id=chat_id,
-                text=f"⚠️ *Мистер Таблетус:* «Препарата с названием **{medicine_name}** не существует в медицинских справочниках.\n\n"
-                     f"Я удалил эту запись из вашей аптечки. Пожалуйста, введите корректное название лекарства заново.»",
+                text=_T("nonsense_warning", lang, name=medicine_name),
                 reply_markup=keyboard,
                 parse_mode="Markdown"
             )
@@ -953,6 +1161,10 @@ async def run_background_classification_and_rec(bot: Bot, chat_id: int, med_id: 
 async def process_set_active_ing_callback(callback: CallbackQuery, state: FSMContext):
     med_id = int(callback.data.split(":")[1])
     med = await database.get_medication(med_id)
+    
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     if not med:
         await callback.answer("Лекарство не найдено!")
         return
@@ -960,8 +1172,12 @@ async def process_set_active_ing_callback(callback: CallbackQuery, state: FSMCon
     await state.set_state(EditMedication.waiting_for_active_ingredient)
     await state.update_data(edit_med_id=med_id)
     
+    prompt = ("Введите действующее вещество для лекарства *{name}* (например: _Ибупрофен_):" if lang == "ru"
+              else "Enter the active ingredient for *{name}* (e.g., _Ibuprofen_):" if lang == "en"
+              else "Введіть діючу речовину для ліків *{name}* (наприклад: _Ібупрофен_):")
+              
     await callback.message.answer(
-        f"Введите действующее вещество для лекарства *{med['name']}* (например: _Ибупрофен_):",
+        prompt.format(name=med['name']),
         parse_mode="Markdown"
     )
     await callback.answer()
@@ -973,42 +1189,55 @@ async def process_input_active_ingredient(message: Message, state: FSMContext, b
     state_data = await state.get_data()
     med_id = state_data.get("edit_med_id")
     
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     med = await database.get_medication(med_id)
     if not med:
-        await message.answer("Ошибка: лекарство не найдено в базе данных.", reply_markup=get_main_menu_keyboard())
+        err_msg = "Ошибка: лекарство не найдено в базе данных." if lang == "ru" else "Error: medication not found in database." if lang == "en" else "Помилка: препарат не знайдено в базі даних."
+        await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
         await state.clear()
         return
         
-    # Обновляем действующее вещество в базе данных
     await database.update_medication_active_ingredient(med_id, active_ingredient)
     
+    success = ("✅ Действующее вещество для *{name}* успешно обновлено на **{ing}**!" if lang == "ru"
+               else "✅ Active ingredient for *{name}* has been successfully updated to **{ing}**!" if lang == "en"
+               else "✅ Діючу речовину для *{name}* успішно оновлено на **{ing}**!")
+               
     await message.answer(
-        f"✅ Действующее вещество для *{med['name']}* успешно обновлено на **{active_ingredient}**!",
-        reply_markup=get_main_menu_keyboard(),
+        success.format(name=med['name'], ing=active_ingredient),
+        reply_markup=get_main_menu_keyboard(lang),
         parse_mode="Markdown"
     )
     await state.clear()
     
-    # Заново запускаем отправку рекомендаций в фоне
-    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str):
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str, user_lang: str):
         try:
             recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
             if recommendations:
+                caption = ("💡 *Рекомендации для {name} ({ing}):*\n{recs}" if user_lang == "ru"
+                           else "💡 *Recommendations for {name} ({ing}):*\n{recs}" if user_lang == "en"
+                           else "💡 *Рекомендації для {name} ({ing}):*\n{recs}")
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"💡 *Рекомендации от Мистера Таблетуса для {medicine_name} ({ingredient}):*\n{recommendations}",
+                    text=caption.format(name=medicine_name, ing=ingredient, recs=recommendations),
                     parse_mode="Markdown"
                 )
         except Exception as e:
             logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
             
-    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient, lang))
 
 
 @router.callback_query(F.data.startswith("set_active_photo:"))
 async def process_set_active_photo_callback(callback: CallbackQuery, state: FSMContext):
     med_id = int(callback.data.split(":")[1])
     med = await database.get_medication(med_id)
+    
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     if not med:
         await callback.answer("Лекарство не найдено!")
         return
@@ -1016,8 +1245,12 @@ async def process_set_active_photo_callback(callback: CallbackQuery, state: FSMC
     await state.set_state(EditMedication.waiting_for_photo)
     await state.update_data(edit_med_id=med_id)
     
+    prompt = ("📸 Пожалуйста, пришлите фотографию упаковки лекарства *{name}* (я попробую распознать действующее вещество с помощью ИИ):" if lang == "ru"
+              else "📸 Please send a photo of the package for *{name}* (I will try to recognize the active ingredient using AI):" if lang == "en"
+              else "📸 Будь ласка, надішліть фотографію упаковки ліків *{name}* (я спробую розпізнати діючу речовину за допомогою ШІ):")
+              
     await callback.message.answer(
-        f"📸 Пожалуйста, пришлите фотографию упаковки лекарства *{med['name']}* (я попробую распознать действующее вещество с помощью ИИ):",
+        prompt.format(name=med['name']),
         parse_mode="Markdown"
     )
     await callback.answer()
@@ -1027,6 +1260,10 @@ async def process_set_active_photo_callback(callback: CallbackQuery, state: FSMC
 async def process_set_active_link_callback(callback: CallbackQuery, state: FSMContext):
     med_id = int(callback.data.split(":")[1])
     med = await database.get_medication(med_id)
+    
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     if not med:
         await callback.answer("Лекарство не найдено!")
         return
@@ -1034,8 +1271,12 @@ async def process_set_active_link_callback(callback: CallbackQuery, state: FSMCo
     await state.set_state(EditMedication.waiting_for_link)
     await state.update_data(edit_med_id=med_id)
     
+    prompt = ("🔗 Пожалуйста, отправьте ссылку на веб-страницу с описанием лекарства *{name}* (я прочитаю её и извлеку действующее вещество):" if lang == "ru"
+              else "🔗 Please send a URL link to a webpage describing *{name}* (I will read it and extract the active ingredient):" if lang == "en"
+              else "🔗 Будь ласка, надішліть посилання на веб-сторінку з описом ліків *{name}* (я прочитаю її та витягну діючу речовину):")
+              
     await callback.message.answer(
-        f"🔗 Пожалуйста, отправьте ссылку на веб-страницу с описанием лекарства *{med['name']}* (я прочитаю её и извлеку действующее вещество):",
+        prompt.format(name=med['name']),
         parse_mode="Markdown"
     )
     await callback.answer()
@@ -1046,13 +1287,17 @@ async def process_input_active_photo(message: Message, state: FSMContext, bot: B
     state_data = await state.get_data()
     med_id = state_data.get("edit_med_id")
     
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     med = await database.get_medication(med_id)
     if not med:
-        await message.answer("Ошибка: лекарство не найдено в базе данных.", reply_markup=get_main_menu_keyboard())
+        err_msg = "Ошибка: лекарство не найдено в базе данных." if lang == "ru" else "Error: medication not found in database." if lang == "en" else "Помилка: препарат не знайдено в базі даних."
+        await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
         await state.clear()
         return
         
-    processing_msg = await message.answer("🔍 *Мистер Таблетус анализирует фото упаковки...* 📸", parse_mode="Markdown")
+    processing_msg = await message.answer(_T("scanning_photo", lang), parse_mode="Markdown")
     
     try:
         photo = message.photo[-1]
@@ -1079,51 +1324,67 @@ async def process_input_active_photo(message: Message, state: FSMContext, bot: B
     
     active_ingredient = parsed_data.get("active_ingredient") if parsed_data else None
     if not active_ingredient:
+        failed_prompt = ("😔 Мне не удалось распознать действующее вещество на этой фотографии.\nПожалуйста, пришлите другое фото упаковки, введите вещество текстом или отправьте ссылку:" if lang == "ru"
+                         else "😔 I couldn't recognize the active ingredient in this photo.\nPlease send another photo, enter it as text, or send a link:" if lang == "en"
+                         else "😔 Мені не вдалося розпізнати діючу речовину на цій фотографії.\nБудь ласка, надішліть інше фото упаковки, введіть речовину текстом або надішліть посилання:")
         await message.answer(
-            "😔 Мне не удалось распознать действующее вещество на этой фотографии.\n"
-            "Пожалуйста, пришлите другое фото упаковки, введите вещество текстом или отправьте ссылку:",
+            failed_prompt,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🧪 Ввести текстом", callback_data=f"set_active_ing:{med_id}")],
-                [InlineKeyboardButton(text="🔗 Скинуть ссылку", callback_data=f"set_active_link:{med_id}")]
+                [InlineKeyboardButton(text=_T("btn_set_mnn", lang), callback_data=f"set_active_ing:{med_id}")],
+                [InlineKeyboardButton(text=_T("btn_send_link", lang), callback_data=f"set_active_link:{med_id}")]
             ])
         )
         return
         
-    # Обновляем МНН в БД
     await database.update_medication_active_ingredient(med_id, active_ingredient)
     
+    success = ("✅ Действующее вещество для *{name}* успешно распознано как **{ing}** и обновлено!" if lang == "ru"
+               else "✅ Active ingredient for *{name}* has been successfully recognized as **{ing}** and updated!" if lang == "en"
+               else "✅ Діючу речовину для *{name}* успішно розпізнано як **{ing}** та оновлено!")
+               
     await message.answer(
-        f"✅ Действующее вещество для *{med['name']}* успешно распознано как **{active_ingredient}** и обновлено!",
-        reply_markup=get_main_menu_keyboard(),
+        success.format(name=med['name'], ing=active_ingredient),
+        reply_markup=get_main_menu_keyboard(lang),
         parse_mode="Markdown"
     )
     await state.clear()
     
     # Рекомендации
-    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str):
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str, user_lang: str):
         try:
             recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
             if recommendations:
+                caption = ("💡 *Рекомендации для {name} ({ing}):*\n{recs}" if user_lang == "ru"
+                           else "💡 *Recommendations for {name} ({ing}):*\n{recs}" if user_lang == "en"
+                           else "💡 *Рекомендації для {name} ({ing}):*\n{recs}")
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"💡 *Рекомендации для {medicine_name} ({ingredient}):*\n{recommendations}",
+                    text=caption.format(name=medicine_name, ing=ingredient, recs=recommendations),
                     parse_mode="Markdown"
                 )
         except Exception as e:
             logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
             
-    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient, lang))
 
 
 @router.message(StateFilter(EditMedication.waiting_for_photo))
 async def process_input_active_photo_invalid(message: Message, state: FSMContext):
     state_data = await state.get_data()
     med_id = state_data.get("edit_med_id")
+    
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    prompt = ("⚠️ Пожалуйста, пришлите именно фотографию упаковки лекарства или выберите другой способ ввода:" if lang == "ru"
+              else "⚠️ Please send an actual photo of the medication package or choose another input method:" if lang == "en"
+              else "⚠️ Будь ласка, надішліть саме фотографію упаковки ліків або оберіть інший спосіб введення:")
+              
     await message.answer(
-        "⚠️ Пожалуйста, пришлите именно фотографию упаковки лекарства или выберите другой способ ввода:",
+        prompt,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🧪 Ввести текстом", callback_data=f"set_active_ing:{med_id}")],
-            [InlineKeyboardButton(text="🔗 Скинуть ссылку", callback_data=f"set_active_link:{med_id}")]
+            [InlineKeyboardButton(text=_T("btn_set_mnn", lang), callback_data=f"set_active_ing:{med_id}")],
+            [InlineKeyboardButton(text=_T("btn_send_link", lang), callback_data=f"set_active_link:{med_id}")]
         ])
     )
 
@@ -1134,74 +1395,101 @@ async def process_input_active_link(message: Message, state: FSMContext, bot: Bo
     state_data = await state.get_data()
     med_id = state_data.get("edit_med_id")
     
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
     if not (url.startswith("http://") or url.startswith("https://")):
+        invalid_format = ("❌ Неверный формат ссылки. Ссылка должна начинаться с `http://` или `https://`.\nПожалуйста, отправьте корректную ссылку или выберите другой способ:" if lang == "ru"
+                          else "❌ Invalid URL format. The link must start with `http://` or `https://`.\nPlease send a valid link or choose another method:" if lang == "en"
+                          else "❌ Невірний формат посилання. Посилання має починатися з `http://` або `https://`.\nБудь ласка, надішліть коректне посилання або оберіть інший спосіб:")
         await message.answer(
-            "❌ Неверный формат ссылки. Ссылка должна начинаться с `http://` или `https://`.\n"
-            "Пожалуйста, отправьте корректную ссылку или выберите другой способ:",
+            invalid_format,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🧪 Ввести вещество", callback_data=f"set_active_ing:{med_id}")],
-                [InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")]
+                [InlineKeyboardButton(text=_T("btn_set_mnn", lang), callback_data=f"set_active_ing:{med_id}")],
+                [InlineKeyboardButton(text=_T("btn_send_photo", lang), callback_data=f"set_active_photo:{med_id}")]
             ])
         )
         return
         
     med = await database.get_medication(med_id)
     if not med:
-        await message.answer("Ошибка: лекарство не найдено в базе данных.", reply_markup=get_main_menu_keyboard())
+        err_msg = "Ошибка: лекарство не найдено в базе данных." if lang == "ru" else "Error: medication not found in database." if lang == "en" else "Помилка: препарат не знайдено в базі даних."
+        await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
         await state.clear()
         return
         
-    processing_msg = await message.answer("🔍 *Мистер Таблетус анализирует веб-страницу...* 🌐", parse_mode="Markdown")
+    processing_msg = await message.answer(
+        "🔍 *Мистер Таблетус анализирует веб-страницу...* 🌐" if lang == "ru"
+        else "🔍 *Mr. Tabletus is analyzing the webpage...* 🌐" if lang == "en"
+        else "🔍 *Містер Таблетус аналізує веб-сторінку...* 🌐",
+        parse_mode="Markdown"
+    )
     
     active_ingredient = await gemini_service.extract_active_ingredient_from_url(url, med["name"])
     await processing_msg.delete()
     
     if not active_ingredient:
+        failed_link = ("😔 Мне не удалось найти действующее вещество по этой ссылке.\nПожалуйста, отправьте другую ссылку, введите действующее вещество текстом или пришлите фото упаковки:" if lang == "ru"
+                       else "😔 I couldn't find the active ingredient at this link.\nPlease send another link, enter the active ingredient as text, or send a package photo:" if lang == "en"
+                       else "😔 Мені не вдалося знайти діючу речовину за цим посиланням.\nБудь ласка, надішліть інше посилання, введіть діючу речовину текстом або надішліть фото упаковки:")
         await message.answer(
-            "😔 Мне не удалось найти действующее вещество по этой ссылке.\n"
-            "Пожалуйста, отправьте другую ссылку, введите действующее вещество текстом или пришлите фото упаковки:",
+            failed_link,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🧪 Ввести вещество", callback_data=f"set_active_ing:{med_id}")],
-                [InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")]
+                [InlineKeyboardButton(text=_T("btn_set_mnn", lang), callback_data=f"set_active_ing:{med_id}")],
+                [InlineKeyboardButton(text=_T("btn_send_photo", lang), callback_data=f"set_active_photo:{med_id}")]
             ])
         )
         return
         
-    # Обновляем МНН в БД
     await database.update_medication_active_ingredient(med_id, active_ingredient)
     
+    success = ("✅ На основе веб-страницы действующее вещество для *{name}* определено как **{ing}** и обновлено!" if lang == "ru"
+               else "✅ Based on the webpage, the active ingredient for *{name}* is determined as **{ing}** and updated!" if lang == "en"
+               else "✅ На основі веб-сторінки діючу речовину для *{name}* визначено як **{ing}** та оновлено!")
+               
     await message.answer(
-        f"✅ На основе веб-страницы действующее вещество для *{med['name']}* определено как **{active_ingredient}** и обновлено!",
-        reply_markup=get_main_menu_keyboard(),
+        success.format(name=med['name'], ing=active_ingredient),
+        reply_markup=get_main_menu_keyboard(lang),
         parse_mode="Markdown"
     )
     await state.clear()
     
     # Рекомендации
-    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str):
+    async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str, user_lang: str):
         try:
             recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
             if recommendations:
+                caption = ("💡 *Рекомендации для {name} ({ing}):*\n{recs}" if user_lang == "ru"
+                           else "💡 *Recommendations for {name} ({ing}):*\n{recs}" if user_lang == "en"
+                           else "💡 *Рекомендації для {name} ({ing}):*\n{recs}")
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"💡 *Рекомендации для {medicine_name} ({ingredient}):*\n{recommendations}",
+                    text=caption.format(name=medicine_name, ing=ingredient, recs=recommendations),
                     parse_mode="Markdown"
                 )
         except Exception as e:
             logger.error(f"Ошибка фоновой отправки рекомендаций: {e}")
             
-    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient))
+    asyncio.create_task(send_recommendations_bg(bot, message.from_user.id, med["name"], active_ingredient, lang))
 
 
 @router.message(StateFilter(EditMedication.waiting_for_link))
 async def process_input_active_link_invalid(message: Message, state: FSMContext):
     state_data = await state.get_data()
     med_id = state_data.get("edit_med_id")
+    
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    prompt = ("⚠️ Пожалуйста, отправьте ссылку в виде текста или выберите другой способ ввода:" if lang == "ru"
+              else "⚠️ Please send the URL as text or choose another input method:" if lang == "en"
+              else "⚠️ Будь ласка, надішліть посилання у вигляді тексту або оберіть інший спосіб введення:")
+              
     await message.answer(
-        "⚠️ Пожалуйста, отправьте ссылку в виде текста или выберите другой способ ввода:",
+        prompt,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🧪 Ввести вещество", callback_data=f"set_active_ing:{med_id}")],
-            [InlineKeyboardButton(text="📸 Прислать фото", callback_data=f"set_active_photo:{med_id}")]
+            [InlineKeyboardButton(text=_T("btn_set_mnn", lang), callback_data=f"set_active_ing:{med_id}")],
+            [InlineKeyboardButton(text=_T("btn_send_photo", lang), callback_data=f"set_active_photo:{med_id}")]
         ])
     )
 
@@ -1215,36 +1503,38 @@ async def process_direct_medicine_name(message: Message, state: FSMContext):
     if text.startswith("/"):
         return
         
-    menu_buttons = [
-        "💊 Мои лекарства",
-        "➕ Добавить лекарство",
-        "🤖 Мистер Таблетус (Тамагочи)",
-        "👥 Мои Бадди",
-        "⚙️ Сменить часовой пояс"
-    ]
+    langs = ["ru", "en", "uk"]
+    menu_buttons = []
+    for l in langs:
+        menu_buttons.extend([
+            _T("menu_my_meds", l),
+            _T("menu_add_med", l),
+            _T("menu_tamagotchi", l),
+            _T("menu_buddies", l),
+            _T("menu_change_tz", l)
+        ])
+        
     if text in menu_buttons:
         return
         
     detected_name = text.capitalize()
     
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    btn_txt = _T("btn_direct_manual", lang, name=detected_name)
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(
-                text=f"⌨️ Настроить {detected_name} вручную", 
-                callback_data=f"add_manual_prefilled:{detected_name}"
-            )
+            InlineKeyboardButton(text=btn_txt, callback_data=f"add_manual_prefilled:{detected_name}")
         ],
         [
-            InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_no")
+            InlineKeyboardButton(text=_T("btn_confirm_no", lang), callback_data="confirm_no")
         ]
     ])
     
     await message.answer(
-        f"🤖 *Мистер Таблетус:* «Я заметил, что вы ввели название **{detected_name}**.\n\n"
-        f"Желаете настроить расписание приема для этого лекарства по шагам?»",
+        _T("direct_add_prompt", lang, name=detected_name),
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
-
-
-

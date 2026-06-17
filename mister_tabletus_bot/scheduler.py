@@ -26,6 +26,21 @@ async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: in
         user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
         now_local = datetime.now(user_tz)
         
+        # Check course end date
+        if med.get('end_date'):
+            try:
+                end_date = datetime.strptime(med['end_date'], "%Y-%m-%d").date()
+                if now_local.date() > end_date:
+                    # Course completed! Soft delete and remove reminders
+                    await database.delete_medication(med_id)
+                    reminders = await database.get_medication_reminders(med_id)
+                    for r in reminders:
+                        remove_reminder_from_scheduler(r['id'])
+                    logger.info(f"Medication {med_id} ({med['name']}) course ended on {med['end_date']}. Soft deleted.")
+                    return
+            except Exception as date_err:
+                logger.error(f"Error checking end_date for med {med_id}: {date_err}")
+
         # Уникальный идентификатор конкретного приёма (дата + ожидаемое время)
         expected_time_iso = now_local.replace(
             hour=int(expected_time_str.split(':')[0]),

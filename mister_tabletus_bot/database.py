@@ -138,6 +138,20 @@ async def init_db():
                     dosages TEXT
                 )
             """)
+            
+            # Миграции для добавления языка и дат курса (PostgreSQL)
+            try:
+                await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'ru'")
+            except Exception:
+                pass
+            try:
+                await conn.execute("ALTER TABLE medications ADD COLUMN IF NOT EXISTS start_date TEXT")
+            except Exception:
+                pass
+            try:
+                await conn.execute("ALTER TABLE medications ADD COLUMN IF NOT EXISTS end_date TEXT")
+            except Exception:
+                pass
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             # Таблица пользователей
@@ -226,6 +240,24 @@ async def init_db():
                 )
             """)
             await db.commit()
+            
+            # Миграции для добавления языка и дат курса (SQLite)
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru'")
+                await db.commit()
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE medications ADD COLUMN start_date TEXT")
+                await db.commit()
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE medications ADD COLUMN end_date TEXT")
+                await db.commit()
+            except Exception:
+                pass
+
 
 async def close_db():
     global pg_pool
@@ -316,6 +348,14 @@ async def update_user_timezone(user_id: int, timezone: str):
         (timezone, user_id)
     )
 
+async def update_user_language(user_id: int, language: str):
+    await execute(
+        "UPDATE users SET language = ? WHERE id = ?",
+        "UPDATE users SET language = $1 WHERE id = $2",
+        (language, user_id)
+    )
+
+
 async def update_user_tamagotchi(user_id: int, health_delta: int, xp_delta: int):
     user = await get_user(user_id)
     if not user:
@@ -342,14 +382,15 @@ async def update_user_tamagotchi(user_id: int, health_delta: int, xp_delta: int)
 
 # --- Лекарства ---
 
-async def add_medication(user_id: int, name: str, active_ingredient: str, dosage: str, food_relation: str, stock_count: int, stock_alert_threshold: int, image_path: str = None) -> int:
+async def add_medication(user_id: int, name: str, active_ingredient: str, dosage: str, food_relation: str, stock_count: int, stock_alert_threshold: int, image_path: str = None, start_date: str = None, end_date: str = None) -> int:
     return await execute_insert(
-        """INSERT INTO medications (user_id, name, active_ingredient, dosage, food_relation, stock_count, stock_alert_threshold, image_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        """INSERT INTO medications (user_id, name, active_ingredient, dosage, food_relation, stock_count, stock_alert_threshold, image_path)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
-        (user_id, name, active_ingredient, dosage, food_relation, stock_count, stock_alert_threshold, image_path)
+        """INSERT INTO medications (user_id, name, active_ingredient, dosage, food_relation, stock_count, stock_alert_threshold, image_path, start_date, end_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO medications (user_id, name, active_ingredient, dosage, food_relation, stock_count, stock_alert_threshold, image_path, start_date, end_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+        (user_id, name, active_ingredient, dosage, food_relation, stock_count, stock_alert_threshold, image_path, start_date, end_date)
     )
+
 
 async def get_medication(med_id: int):
     return await fetch_one(
@@ -382,7 +423,7 @@ async def update_medication_stock(med_id: int, delta: int):
 async def get_user_medications_with_reminders(user_id: int):
     query = """
         SELECT 
-            m.id as med_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path,
+            m.id as med_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path, m.start_date, m.end_date,
             r.id as reminder_id, r.time_str, r.schedule_type, r.schedule_data
         FROM medications m
         LEFT JOIN reminders r ON m.id = r.medication_id
@@ -391,7 +432,7 @@ async def get_user_medications_with_reminders(user_id: int):
     """
     query_sqlite = """
         SELECT 
-            m.id as med_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path,
+            m.id as med_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path, m.start_date, m.end_date,
             r.id as reminder_id, r.time_str, r.schedule_type, r.schedule_data
         FROM medications m
         LEFT JOIN reminders r ON m.id = r.medication_id
@@ -399,6 +440,7 @@ async def get_user_medications_with_reminders(user_id: int):
         ORDER BY m.id ASC, r.time_str ASC
     """
     return await fetch_all(query_sqlite, query, (user_id,))
+
 
 
 # --- Напоминания ---
