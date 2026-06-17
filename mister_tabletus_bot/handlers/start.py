@@ -46,9 +46,9 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🇷🇺 Русский", callback_data="set_lang:ru"),
-            InlineKeyboardButton(text="🇺🇸 English", callback_data="set_lang:en"),
-            InlineKeyboardButton(text="🇺🇦 Українська", callback_data="set_lang:uk")
+            InlineKeyboardButton(text="💬 Русский", callback_data="set_lang:ru"),
+            InlineKeyboardButton(text="💬 English", callback_data="set_lang:en"),
+            InlineKeyboardButton(text="💬 Українська", callback_data="set_lang:uk")
         ]
     ])
     
