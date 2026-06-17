@@ -80,6 +80,17 @@ def get_main_menu_keyboard(lang: str = "ru"):
     ], resize_keyboard=True)
     return keyboard
 
+@router.message(Command("help"))
+async def cmd_help(message: Message, state: FSMContext = None):
+    if state:
+        await state.clear()
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    await message.answer(
+        _T("help_text", lang),
+        parse_mode="Markdown"
+    )
+
 @router.message(Command("start"))
 async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: FSMContext):
     # Добавляем пользователя в базу данных
