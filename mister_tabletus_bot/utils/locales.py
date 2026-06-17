@@ -360,9 +360,9 @@ TRANSLATIONS = {
         "uk": "⏳ Зараз"
     },
     "taken_late_success": {
-        "ru": "✅ *Принято с опозданием в {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Спасибо! Это лучше, чем совсем пропустить, но постарайтесь в следующий раз вовремя! {mascot_msg}»{stock_warning}",
-        "en": "✅ *Taken late at {time}!*\n\n💊 Medication: *{name}*\n🤖 *Mr. Tabletus:* 'Thank you! It is better than skipping entirely, but try to be on time next time! {mascot_msg}'{stock_warning}",
-        "uk": "✅ *Прийнято з запізненням о {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Містер Таблетус:* «Дякую! Це краще, ніж зовсім пропустити, але постарайтеся наступного разу вчасно! {mascot_msg}»{stock_warning}"
+        "ru": "✅ *Принято с опозданием в {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Спасибо! Это лучше, чем пропустить. Но даже при небольшом опоздании (до 4 ч.) желательно проконсультироваться с лечащим врачом. Постарайтесь в следующий раз вовремя! {mascot_msg}»{stock_warning}",
+        "en": "✅ *Taken late at {time}!*\n\n💊 Medication: *{name}*\n🤖 *Mr. Tabletus:* 'Thank you! It is better than skipping. However, even with a small delay (up to 4 hrs), it is advisable to check with your doctor. Try to be on time next time! {mascot_msg}'{stock_warning}",
+        "uk": "✅ *Прийнято з запізненням о {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Містер Таблетус:* «Дякую! Це краще, ніж зовсім пропустити. Проте навіть при невеликому запізненні (до 4 год.) бажано проконсультуватися з лікарем. Постарайтеся наступного разу вчасно! {mascot_msg}»{stock_warning}"
     },
     "overlap_warning_msg": {
         "ru": "⚠️ *Внимание!* Вы указали время приема *{time}* (опоздание на {delay_hours:.1f} ч.).\n\nВам необходимо проконсультироваться с лечащим врачом по поводу возможного наложения дозировок!\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Будьте осторожны! Здоровье маскота восстановлено. {mascot_msg}»{stock_warning}",
