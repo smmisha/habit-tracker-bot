@@ -159,8 +159,9 @@ async def parse_ocr_text_locally(ocr_text: str) -> Optional[dict]:
     dosage = dosage_match.group(1).strip() if dosage_match else None
     
     # Quantity regex
-    quantity_match = re.search(r'(\d+)\s*(?:таб|капс|шт|таблеток|капсул|pcs|tablets|capsules|амп|amp)', combined, re.IGNORECASE)
+    quantity_match = re.search(r'(\d+)\s*(?:таб|капс|шт|таблеток|капсул|pcs|tablets|capsules|kapsuł|kapsulek|kapsułek|tabl|амп|amp)', combined, re.IGNORECASE)
     quantity = int(quantity_match.group(1)) if quantity_match else None
+
     
     return {
         "name": matched_name,
