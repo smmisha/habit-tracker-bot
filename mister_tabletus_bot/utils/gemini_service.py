@@ -276,7 +276,7 @@ async def suggest_dosage(medicine_name: str) -> list:
         
     return fallback_dosages
 
-async def get_medicine_recommendations(medicine_name: str) -> str:
+async def get_medicine_recommendations(medicine_name: str, lang: str = "ru") -> str:
     """
     Возвращает рекомендации по приему лекарства (например, чем запивать, с чем не сочетать)
     на основе названия препарата с помощью локальной базы или Gemini с таймаутом.
@@ -285,12 +285,13 @@ async def get_medicine_recommendations(medicine_name: str) -> str:
     if not cleaned_name:
         return ""
         
-    # 1. Проверяем в локальном кэше рекомендаций
+    # 1. Проверяем в локальном кэше рекомендаций (с учетом языка)
     import database
     import asyncio
     
+    cache_key = f"{cleaned_name}:{lang}"
     try:
-        cached_rec = await database.get_medication_rec(cleaned_name)
+        cached_rec = await database.get_medication_rec(cache_key)
         if cached_rec:
             return cached_rec
     except Exception as e:
@@ -298,16 +299,34 @@ async def get_medicine_recommendations(medicine_name: str) -> str:
         
     # 2. Если нет в кэше, опрашиваем Gemini с таймаутом 4 секунды
     if not GEMINI_API_KEY:
-        return "Принимайте лекарство согласно инструкции. Запивайте достаточным количеством воды."
-        
+        fallbacks = {
+            "ru": "Принимайте лекарство согласно инструкции. Запивайте достаточным количеством воды.",
+            "en": "Take the medication according to the instructions. Drink plenty of water.",
+            "uk": "Приймайте ліки згідно з інструкцією. Запивайте достатньою кількістю води."
+        }
+        return fallbacks.get(lang, fallbacks["ru"])
+    
+    lang_instructions = {
+        "ru": 'Ответь на русском языке.',
+        "en": 'Answer in English.',
+        "uk": 'Відповідай українською мовою.'
+    }
+    lang_instruction = lang_instructions.get(lang, lang_instructions["ru"])
+    
     prompt = f"""
     Дай краткую рекомендацию по приему лекарства/БАДа "{medicine_name}" (буквально 2-3 предложения).
     Расскажи, как его правильно принимать (например, до/после еды, чем лучше запивать, с чем нельзя сочетать, например, с алкоголем или молоком).
     Используй дружелюбный тон от лица заботливого медицинского маскота "Мистера Таблетуса".
     Не давай дисклеймеров, пиши сразу суть.
+    {lang_instruction}
     """
     
-    fallback = "Рекомендуется принимать согласно инструкции на упаковке. Запивайте чистой водой, избегайте приема алкоголя во время курса лечения."
+    fallbacks = {
+        "ru": "Рекомендуется принимать согласно инструкции на упаковке. Запивайте чистой водой, избегайте приема алкоголя во время курса лечения.",
+        "en": "Take according to the package instructions. Drink with water, avoid alcohol during the course of treatment.",
+        "uk": "Рекомендується приймати згідно з інструкцією на упаковці. Запивайте чистою водою, уникайте вживання алкоголю під час курсу лікування."
+    }
+    fallback = fallbacks.get(lang, fallbacks["ru"])
     
     try:
         model = genai.GenerativeModel("gemini-3.5-flash")
@@ -322,9 +341,9 @@ async def get_medicine_recommendations(medicine_name: str) -> str:
         rec_text = response.text.strip()
         
         if rec_text:
-            # Кэшируем результат
+            # Кэшируем результат (с языковым ключом)
             try:
-                await database.add_medication_rec(cleaned_name, rec_text)
+                await database.add_medication_rec(cache_key, rec_text)
             except Exception as cache_err:
                 logger.error(f"Не удалось кэшировать рекомендации: {cache_err}")
             return rec_text

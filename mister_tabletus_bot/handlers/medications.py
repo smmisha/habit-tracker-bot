@@ -2367,7 +2367,7 @@ async def run_background_classification_and_rec(bot: Bot, chat_id: int, med_id: 
         category = classification.get("category", "real")
         
         if category == "real":
-            recommendations = await gemini_service.get_medicine_recommendations(medicine_name)
+            recommendations = await gemini_service.get_medicine_recommendations(medicine_name, lang)
             if recommendations:
                 caption = ("💡 *Рекомендации от Мистера Таблетуса для {name}:*\n{recs}" if lang == "ru"
                            else "💡 *Mr. Tabletus recommendations for {name}:*\n{recs}" if lang == "en"
@@ -2471,7 +2471,7 @@ async def process_input_active_ingredient(message: Message, state: FSMContext, b
     
     async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str, user_lang: str):
         try:
-            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
+            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})", user_lang)
             if recommendations:
                 caption = ("💡 *Рекомендации для {name} ({ing}):*\n{recs}" if user_lang == "ru"
                            else "💡 *Recommendations for {name} ({ing}):*\n{recs}" if user_lang == "en"
@@ -2609,7 +2609,7 @@ async def process_input_active_photo(message: Message, state: FSMContext, bot: B
     # Рекомендации
     async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str, user_lang: str):
         try:
-            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
+            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})", user_lang)
             if recommendations:
                 caption = ("💡 *Рекомендации для {name} ({ing}):*\n{recs}" if user_lang == "ru"
                            else "💡 *Recommendations for {name} ({ing}):*\n{recs}" if user_lang == "en"
@@ -2714,7 +2714,7 @@ async def process_input_active_link(message: Message, state: FSMContext, bot: Bo
     # Рекомендации
     async def send_recommendations_bg(bot: Bot, chat_id: int, medicine_name: str, ingredient: str, user_lang: str):
         try:
-            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})")
+            recommendations = await gemini_service.get_medicine_recommendations(f"{medicine_name} ({ingredient})", user_lang)
             if recommendations:
                 caption = ("💡 *Рекомендации для {name} ({ing}):*\n{recs}" if user_lang == "ru"
                            else "💡 *Recommendations for {name} ({ing}):*\n{recs}" if user_lang == "en"
