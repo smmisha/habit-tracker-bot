@@ -239,9 +239,13 @@ async def get_medication_card_data(med: dict, idx: int, user: dict, lang: str):
         now_local = datetime.now(user_tz)
         for r in reminders:
             hour, minute = map(int, r['time_str'].split(':'))
-            expected_dt = datetime.combine(now_local.date(), datetime.min.time()).replace(
-                hour=hour, minute=minute, tzinfo=user_tz
+            naive_dt = datetime.combine(now_local.date(), datetime.min.time()).replace(
+                hour=hour, minute=minute
             )
+            if hasattr(user_tz, 'localize'):
+                expected_dt = user_tz.localize(naive_dt)
+            else:
+                expected_dt = naive_dt.replace(tzinfo=user_tz)
             # check status
             status = await database.get_history_status(med['id'], expected_dt.isoformat())
             if status not in ['taken', 'taken_late']:
