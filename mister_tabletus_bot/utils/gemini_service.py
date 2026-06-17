@@ -226,52 +226,16 @@ async def query_openfda_api(english_name: str) -> Optional[dict]:
         }
     return None
 
-_paddle_ocr_instance = None
-
-def get_paddle_ocr():
-    global _paddle_ocr_instance
-    if _paddle_ocr_instance is None:
-        from paddleocr import PaddleOCR
-        # Initialize PaddleOCR with Russian/English support and disable logging to keep console clean
-        _paddle_ocr_instance = PaddleOCR(use_angle_cls=True, lang='ru', show_log=False)
-    return _paddle_ocr_instance
-
-async def ocr_image_paddleocr(image_path: str) -> Optional[str]:
-    """
-    Выполняет OCR над изображением с помощью локального PaddleOCR.
-    Возвращает объединенный текст, распознанный на картинке.
-    """
-    import asyncio
-    
-    def run_paddle():
-        try:
-            ocr = get_paddle_ocr()
-            result = ocr.ocr(image_path, cls=True)
-            if not result or not result[0]:
-                return None
-            
-            texts = []
-            for line in result[0]:
-                text = line[1][0]
-                texts.append(text)
-            return "\n".join(texts)
-        except Exception as e:
-            logger.error(f"Ошибка выполнения PaddleOCR: {e}")
-            return None
-            
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, run_paddle)
-
 async def parse_medicine_photo(image_path: str) -> dict:
     """
-    Распознает лекарство по фотографии упаковки с помощью локального PaddleOCR + Gemini,
+    Распознает лекарство по фотографии упаковки с помощью Google Vision OCR + Gemini,
     с автоматическим фоллбэком на чистый Gemini Vision при необходимости.
     """
     import asyncio
     
-    # 1. Попытка использовать локальный PaddleOCR
+    # 1. Попытка использовать Google Cloud Vision API (очень точный, легкий и не требующий зависимостей)
     try:
-        ocr_text = await ocr_image_paddleocr(image_path)
+        ocr_text = await ocr_image_google_vision(image_path)
         if ocr_text:
             # Пробуем разобрать локально (быстро, без вызовов AI при нагрузке)
             local_match = await parse_ocr_text_locally(ocr_text)
@@ -326,7 +290,8 @@ async def parse_medicine_photo(image_path: str) -> dict:
                     data["name"] = local_match["name"]
                 return data
     except Exception as ocr_err:
-        logger.error(f"Ошибка парсинга через PaddleOCR + Gemini text: {ocr_err}. Фоллбэк на Gemini Vision...")
+        logger.error(f"Ошибка парсинга через Google Vision OCR + Gemini text: {ocr_err}. Фоллбэк на Gemini Vision...")
+
         
     # 2. Фоллбэк: прямой вызов Gemini Vision к картинке
     if not GEMINI_API_KEY:
