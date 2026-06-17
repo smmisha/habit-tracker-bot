@@ -131,10 +131,10 @@ async def list_medications(message: Message, state: FSMContext = None):
         'none': 'food_none'
     }
     
-    dosage_lbl = "⚖️ Дозировка" if lang == "ru" else "⚖️ Dosage" if lang == "en" else "⚖️ Дозування"
-    intake_lbl = "🍽️ Прием" if lang == "ru" else "🍽️ Intake" if lang == "en" else "🍽️ Прийом"
-    time_lbl = "⏰ Время" if lang == "ru" else "⏰ Time" if lang == "en" else "⏰ Час"
-    stock_lbl = "📦 Остаток" if lang == "ru" else "📦 Stock" if lang == "en" else "📦 Залишок"
+    dosage_lbl = "Дозировка" if lang == "ru" else "Dosage" if lang == "en" else "Дозування"
+    intake_lbl = "Прием" if lang == "ru" else "Intake" if lang == "en" else "Прийом"
+    time_lbl = "Время" if lang == "ru" else "Time" if lang == "en" else "Час"
+    stock_lbl = "Остаток" if lang == "ru" else "Stock" if lang == "en" else "Залишок"
     threshold_lbl = "порог" if lang == "ru" else "threshold" if lang == "en" else "поріг"
     pcs_lbl = "шт." if lang == "ru" else "pcs." if lang == "en" else "шт."
     
@@ -147,18 +147,18 @@ async def list_medications(message: Message, state: FSMContext = None):
         
         # Данные по длительности курса
         if med['start_date'] and med['end_date']:
-            course_text = _T("add_success", lang, name="", start=med['start_date'], end=med['end_date'])
-            course_info_line = [line for line in course_text.split("\n") if line.strip()][-1]
-            course_info = f"\n   {course_info_line}"
+            course_lbl = "Срок курса" if lang == "ru" else "Course duration" if lang == "en" else "Термін курсу"
+            course_info = f"\n   • {course_lbl}: с {med['start_date']} по {med['end_date']}"
         else:
-            course_info = f"\n   📅 {_T('btn_permanent', lang)}"
+            course_lbl = "Срок" if lang == "ru" else "Duration" if lang == "en" else "Термін"
+            course_info = f"\n   • {course_lbl}: {_T('btn_permanent', lang)}"
             
         med_text = (
-            f"{idx}. *{med['name']}*{active_ing}\n"
-            f"   {dosage_lbl}: {med['dosage'] or 'не указана'}\n"
-            f"   {intake_lbl}: {relation_text}\n"
-            f"   {time_lbl}: {times_list}\n"
-            f"   {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}"
+            f"💊 *{idx}. {med['name']}*{active_ing}\n"
+            f"   • {dosage_lbl}: {med['dosage'] or 'не указана'}\n"
+            f"   • {intake_lbl}: {relation_text}\n"
+            f"   • {time_lbl}: {times_list}\n"
+            f"   • {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}"
         )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
