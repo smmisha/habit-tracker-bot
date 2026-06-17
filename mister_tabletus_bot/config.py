@@ -12,6 +12,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DB_FILE = os.getenv("DB_FILE", "tabletus.db")
 DATABASE_URL = os.getenv("DATABASE_URL")
+GOOGLE_VISION_API_KEY = os.getenv("GOOGLE_VISION_API_KEY")
+
 
 
 ALLOWED_USERS = []

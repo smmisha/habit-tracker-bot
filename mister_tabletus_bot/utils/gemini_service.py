@@ -2,7 +2,8 @@ import json
 import logging
 from PIL import Image
 import google.generativeai as genai
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, GOOGLE_VISION_API_KEY
+
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +66,237 @@ async def parse_text_schedule(text: str) -> dict:
         logger.error(f"Ошибка парсинга текста через Gemini: {e}")
         return None
 
-async def parse_medicine_photo(image_path: str) -> dict:
+async def ocr_image_google_vision(image_path: str) -> Optional[str]:
     """
-    Распознает лекарство по фотографии упаковки с помощью Gemini Vision.
-    Возвращает название, дозировку и количество таблеток в пачке.
+    Выполняет OCR над изображением с помощью Google Cloud Vision API REST-запроса.
+    Возвращает объединенный текст, распознанный на картинке.
     """
-    if not GEMINI_API_KEY:
+    if not GOOGLE_VISION_API_KEY:
         return None
     
+    import base64
+    import aiohttp
+    
+    try:
+        with open(image_path, "rb") as image_file:
+            image_content = base64.b64encode(image_file.read()).decode("utf-8")
+            
+        url = f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_VISION_API_KEY}"
+        payload = {
+            "requests": [
+                {
+                    "image": {
+                        "content": image_content
+                    },
+                    "features": [
+                        {"type": "TEXT_DETECTION"}
+                    ]
+                }
+            ]
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=8.0) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    responses = result.get("responses", [])
+                    if responses and "fullTextAnnotation" in responses[0]:
+                        return responses[0]["fullTextAnnotation"]["text"]
+                else:
+                    logger.error(f"Google Vision API вернул код {response.status}: {await response.text()}")
+    except Exception as e:
+        logger.error(f"Ошибка вызова Google Vision API: {e}")
+    return None
+
+async def parse_ocr_text_locally(ocr_text: str) -> Optional[dict]:
+    import re
+    import database
+    from utils.local_recommendations import DRUG_RECS
+    
+    if not ocr_text:
+        return None
+        
+    cleaned_lines = [line.strip().lower() for line in ocr_text.split('\n') if line.strip()]
+    
+    matched_name = None
+    
+    # 1. Match local recommendations triggers (fast offline matching)
+    for item in DRUG_RECS:
+        for trigger in item["triggers"]:
+            for line in cleaned_lines:
+                if trigger in line:
+                    matched_name = trigger.capitalize()
+                    break
+            if matched_name:
+                break
+        if matched_name:
+            break
+            
+    # 2. Match database medication_dict (known drugs)
+    if not matched_name:
+        try:
+            words = []
+            for line in cleaned_lines:
+                for w in re.split(r'[^a-zA-Zа-яА-ЯёЁіІїЇєЄґҐ]', line):
+                    if len(w) > 3:
+                        words.append(w.strip().lower())
+            
+            for w in words:
+                if await database.check_medication_dict(w):
+                    matched_name = w.capitalize()
+                    break
+        except Exception as e:
+            logger.error(f"Error checking medication_dict during local OCR parse: {e}")
+            
+    if not matched_name:
+        return None
+        
+    # We found a match! Let's extract dosage and quantity using regex
+    combined = " " + " ".join(cleaned_lines) + " "
+    
+    # Dosage regex
+    dosage_match = re.search(r'(\d+(?:\.\d+)?\s*(?:мг|г|мл|мкг|mg|g|ml|mcg|ед|units))', combined, re.IGNORECASE)
+    dosage = dosage_match.group(1).strip() if dosage_match else None
+    
+    # Quantity regex
+    quantity_match = re.search(r'(\d+)\s*(?:таб|капс|шт|таблеток|капсул|pcs|tablets|capsules|амп|amp)', combined, re.IGNORECASE)
+    quantity = int(quantity_match.group(1)) if quantity_match else None
+    
+    return {
+        "name": matched_name,
+        "active_ingredient": None,
+        "dosage": dosage,
+        "quantity": quantity
+    }
+
+async def translate_to_english_via_gemini(name: str) -> Optional[str]:
+    if not GEMINI_API_KEY:
+        return None
+    import asyncio
+    prompt = f"Translate the medicine name '{name}' to its English brand name or standard generic name. Return ONLY the translated name in English, without any punctuation, explanations, or extra words."
+    try:
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        response = await asyncio.wait_for(
+            model.generate_content_async(prompt),
+            timeout=5.0
+        )
+        translated = response.text.strip().strip('"').strip("'")
+        return translated if translated else None
+    except Exception as e:
+        logger.error(f"Error translating drug name via Gemini: {e}")
+        return None
+
+async def query_openfda_api(english_name: str) -> Optional[dict]:
+    import urllib.request
+    import urllib.parse
+    import json
+    import asyncio
+    
+    query = urllib.parse.quote(f'openfda.brand_name:"{english_name}"')
+    url = f"https://api.fda.gov/drug/label.json?search={query}&limit=1"
+    headers = {'User-Agent': 'MisterTabletusBot/1.0'}
+    
+    async def fetch(api_url):
+        try:
+            req = urllib.request.Request(api_url, headers=headers)
+            def run_fetch():
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    return json.loads(resp.read().decode('utf-8'))
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, run_fetch)
+        except Exception:
+            return None
+            
+    # Try brand name search first
+    data = await fetch(url)
+    if not data or not data.get("results"):
+        # Try generic name search
+        query_generic = urllib.parse.quote(f'openfda.generic_name:"{english_name}"')
+        url_generic = f"https://api.fda.gov/drug/label.json?search={query_generic}&limit=1"
+        data = await fetch(url_generic)
+        
+    if data and data.get("results"):
+        result = data["results"][0]
+        openfda = result.get("openfda", {})
+        return {
+            "brand_name": openfda.get("brand_name", [None])[0],
+            "generic_name": openfda.get("generic_name", [None])[0],
+            "dosage": result.get("dosage_and_administration", [None])[0],
+            "warnings": result.get("warnings", [None])[0]
+        }
+    return None
+
+async def parse_medicine_photo(image_path: str) -> dict:
+    """
+    Распознает лекарство по фотографии упаковки с помощью Google Vision OCR + Gemini,
+    с автоматическим фоллбэком на чистый Gemini Vision при необходимости.
+    """
+    import asyncio
+    
+    # 1. Попытка использовать Google Cloud Vision OCR
+    if GOOGLE_VISION_API_KEY:
+        try:
+            ocr_text = await ocr_image_google_vision(image_path)
+            if ocr_text:
+                # Пробуем разобрать локально (быстро, без вызовов AI при нагрузке)
+                local_match = await parse_ocr_text_locally(ocr_text)
+                if local_match and local_match.get("name") and local_match.get("dosage"):
+                    logger.info(f"Найдено локальное совпадение OCR: {local_match}")
+                    return local_match
+                
+                # Если локальный разбор неполный, используем Gemini для парсинга OCR текста (это быстро и дешево)
+                if GEMINI_API_KEY:
+                    prompt = f"""
+                    Проанализируй распознанный OCR-текст с упаковки лекарства и определи:
+                    1. Название препарата на русском языке (или оригинальное, если оно импортное, например, 'Но-шпа' или 'Нурофен').
+                    2. Действующее вещество препарата (МНН, на русском языке, например, 'Дротаверин' или 'Ибупрофен'). Если не написано в тексте, определи по своей базе знаний для этого бренда.
+                    3. Дозировку одной таблетки/дозы (например, '400 мг', '10 мг/мл', если есть).
+                    4. Общее количество таблеток/капсул/объем в упаковке (целое число, если указано, например, 20 или 50).
+                    
+                    OCR текст:
+                    "{ocr_text}"
+                    
+                    Верни строго JSON-объект следующего формата:
+                    {{
+                        "name": "Название лекарства (коммерческое название)",
+                        "active_ingredient": "Действующее вещество (МНН, на русском языке, например, 'Ибупрофен')",
+                        "dosage": "Дозировка лекарства (например, '400 мг' или null, если не найдено)",
+                        "quantity": "Количество таблеток/доз в упаковке (целое число или null, если не найдено)"
+                    }}
+                    
+                    Обязательно верни только валидный JSON, без оборачивания в ```json и без лишних слов.
+                    """
+                    model = genai.GenerativeModel("gemini-3.5-flash")
+                    response = await asyncio.wait_for(
+                        model.generate_content_async(
+                            prompt,
+                            generation_config=genai.GenerationConfig(
+                                temperature=0.1,
+                                response_mime_type="application/json"
+                            )
+                        ),
+                        timeout=5.0
+                    )
+                    
+                    result_text = response.text.strip()
+                    if result_text.startswith("```json"):
+                        result_text = result_text[7:]
+                    if result_text.endswith("```"):
+                        result_text = result_text[:-3]
+                    result_text = result_text.strip()
+                    
+                    data = json.loads(result_text)
+                    # Если локальный парсер нашел название, но Gemini вернул кривое название, доверяем локальному
+                    if local_match and local_match.get("name") and not data.get("name"):
+                        data["name"] = local_match["name"]
+                    return data
+        except Exception as ocr_err:
+            logger.error(f"Ошибка парсинга через Google OCR + Gemini text: {ocr_err}. Фоллбэк на Gemini Vision...")
+            
+    # 2. Фоллбэк: прямой вызов Gemini Vision к картинке
+    if not GEMINI_API_KEY:
+        return None
+        
     prompt = """
     Внимательно посмотри на это фото упаковки лекарства.
     Определи:
@@ -275,16 +499,21 @@ async def suggest_dosage(medicine_name: str) -> list:
         logger.error(f"Ошибка получения рекомендации дозировок от ИИ: {e}")
         
     return fallback_dosages
-
 async def get_medicine_recommendations(medicine_name: str, lang: str = "ru") -> str:
     """
     Возвращает рекомендации по приему лекарства (например, чем запивать, с чем не сочетать)
-    на основе названия препарата с помощью локальной базы или Gemini с таймаутом.
+    на основе названия препарата с помощью локальной базы, OpenFDA или Gemini с таймаутом.
     """
     cleaned_name = medicine_name.strip().lower()
     if not cleaned_name:
         return ""
         
+    # 0. Проверяем в локальном словаре популярных лекарств (мгновенно, 0 вызовов к API)
+    from utils import local_recommendations
+    local_rec = local_recommendations.get_local_recommendation(cleaned_name, lang)
+    if local_rec:
+        return local_rec
+
     # 1. Проверяем в локальном кэше рекомендаций (с учетом языка)
     import database
     import asyncio
@@ -297,7 +526,61 @@ async def get_medicine_recommendations(medicine_name: str, lang: str = "ru") -> 
     except Exception as e:
         logger.error(f"Ошибка чтения кэша рекомендаций: {e}")
         
-    # 2. Если нет в кэше, опрашиваем Gemini с таймаутом 4 секунды
+    # 2. Если нет в кэше, опрашиваем OpenFDA
+    fda_data = None
+    try:
+        # Убираем скобки с действующим веществом, если они есть, для чистого поиска
+        import re
+        search_name = re.sub(r'\(.*?\)', '', cleaned_name).strip()
+        
+        # Проверяем, есть ли кириллица
+        is_cyrillic = bool(re.search(r'[а-яА-ЯёЁіІїЇєЄґҐ]', search_name))
+        english_name = search_name
+        if is_cyrillic and GEMINI_API_KEY:
+            english_name = await translate_to_english_via_gemini(search_name)
+            
+        if english_name:
+            fda_data = await query_openfda_api(english_name)
+    except Exception as fda_err:
+        logger.error(f"Ошибка поиска в OpenFDA: {fda_err}")
+
+    # Если нашли данные в OpenFDA, форматируем и переводим с помощью Gemini
+    if fda_data and GEMINI_API_KEY:
+        try:
+            lang_names = {"ru": "русский", "uk": "украинский", "en": "английский"}
+            lang_name = lang_names.get(lang, "русский")
+            
+            prompt = f"""
+            У меня есть официальные данные по лекарству из базы FDA (на английском языке).
+            Название: {fda_data.get('brand_name')} ({fda_data.get('generic_name')})
+            Инструкция по применению: {fda_data.get('dosage')}
+            Предупреждения/противопоказания: {fda_data.get('warnings')}
+            
+            Сформулируй краткую рекомендацию по приему этого лекарства на языке: {lang_name} (буквально 2-3 предложения).
+            Расскажи суть: как правильно принимать (до/после еды, чем запивать, с чем не сочетать).
+            Используй дружелюбный тон от лица заботливого медицинского маскота "Мистера Таблетуса".
+            Не давай дисклеймеров, пиши сразу суть.
+            """
+            
+            model = genai.GenerativeModel("gemini-3.5-flash")
+            response = await asyncio.wait_for(
+                model.generate_content_async(
+                    prompt,
+                    generation_config=genai.GenerationConfig(temperature=0.3)
+                ),
+                timeout=5.0
+            )
+            rec_text = response.text.strip()
+            if rec_text:
+                try:
+                    await database.add_medication_rec(cache_key, rec_text)
+                except Exception as cache_err:
+                    logger.error(f"Не удалось кэшировать рекомендации: {cache_err}")
+                return rec_text
+        except Exception as trans_err:
+            logger.error(f"Ошибка перевода OpenFDA данных: {trans_err}")
+
+    # 3. Полный фоллбэк на генерацию через Gemini
     if not GEMINI_API_KEY:
         fallbacks = {
             "ru": "Принимайте лекарство согласно инструкции. Запивайте достаточным количеством воды.",
@@ -330,7 +613,6 @@ async def get_medicine_recommendations(medicine_name: str, lang: str = "ru") -> 
     
     try:
         model = genai.GenerativeModel("gemini-3.5-flash")
-        # Оборачиваем запрос в таймаут 4 секунды
         response = await asyncio.wait_for(
             model.generate_content_async(
                 prompt,
@@ -341,7 +623,6 @@ async def get_medicine_recommendations(medicine_name: str, lang: str = "ru") -> 
         rec_text = response.text.strip()
         
         if rec_text:
-            # Кэшируем результат (с языковым ключом)
             try:
                 await database.add_medication_rec(cache_key, rec_text)
             except Exception as cache_err:
@@ -354,6 +635,7 @@ async def get_medicine_recommendations(medicine_name: str, lang: str = "ru") -> 
         logger.error(f"Ошибка получения рекомендаций через Gemini: {e}")
         
     return fallback
+
 
 
 async def search_medicine_image(medicine_name: str) -> str:
