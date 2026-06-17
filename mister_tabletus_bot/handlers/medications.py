@@ -583,7 +583,10 @@ async def process_edit_value_inline(callback: CallbackQuery, state: FSMContext, 
             
             await delete_wizard_msgs(bot, callback.message.chat.id, state)
             await state.clear()
-            await callback.message.delete()
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
             await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
             await callback.answer()
             
@@ -1736,7 +1739,10 @@ async def process_duration_permanent(callback: CallbackQuery, state: FSMContext,
     success_text = _T("add_success", lang, name=state_data["name"], start=start_display, end=end_display)
     
     await delete_wizard_msgs(bot, callback.message.chat.id, state)
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.message.answer(success_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
     await state.clear()
     await callback.answer()
