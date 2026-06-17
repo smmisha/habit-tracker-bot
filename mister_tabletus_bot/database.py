@@ -145,6 +145,10 @@ async def init_db():
             except Exception:
                 pass
             try:
+                await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS cabinet_msg_ids TEXT")
+            except Exception:
+                pass
+            try:
                 await conn.execute("ALTER TABLE medications ADD COLUMN IF NOT EXISTS start_date TEXT")
             except Exception:
                 pass
@@ -244,6 +248,11 @@ async def init_db():
             # Миграции для добавления языка и дат курса (SQLite)
             try:
                 await db.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru'")
+                await db.commit()
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN cabinet_msg_ids TEXT")
                 await db.commit()
             except Exception:
                 pass
@@ -353,6 +362,24 @@ async def update_user_language(user_id: int, language: str):
         "UPDATE users SET language = ? WHERE id = ?",
         "UPDATE users SET language = $1 WHERE id = $2",
         (language, user_id)
+    )
+
+
+async def get_user_cabinet_msg_ids(user_id: int) -> list[int]:
+    user = await get_user(user_id)
+    if not user or not user.get("cabinet_msg_ids"):
+        return []
+    try:
+        return [int(x) for x in user["cabinet_msg_ids"].split(",") if x.strip()]
+    except Exception:
+        return []
+
+async def update_user_cabinet_msg_ids(user_id: int, msg_ids: list[int]):
+    val = ",".join(str(x) for x in msg_ids)
+    await execute(
+        "UPDATE users SET cabinet_msg_ids = ? WHERE id = ?",
+        "UPDATE users SET cabinet_msg_ids = $1 WHERE id = $2",
+        (val, user_id)
     )
 
 

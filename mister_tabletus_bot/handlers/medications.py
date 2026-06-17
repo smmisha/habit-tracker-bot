@@ -101,6 +101,7 @@ class EditMedication(StatesGroup):
 class EditMedDetails(StatesGroup):
     waiting_for_field_selection = State()
     waiting_for_new_value = State()
+    waiting_for_times = State()
 
 
 def get_cancel_keyboard(lang: str = "ru"):
@@ -118,17 +119,16 @@ def get_cancel_keyboard(lang: str = "ru"):
 @router.message(StateFilter("*"), lambda m: m.text in [_T("menu_my_meds", "ru"), _T("menu_my_meds", "en"), _T("menu_my_meds", "uk")] if m.text else False)
 async def list_medications(message: Message, state: FSMContext = None, user_id: int = None):
     new_msg_ids = []
-    if state:
-        state_data = await state.get_data()
-        old_ids = state_data.get("cabinet_msg_ids", [])
-        for old_id in old_ids:
-            try:
-                await message.bot.delete_message(chat_id=message.chat.id, message_id=old_id)
-            except Exception:
-                pass
-        
-        # Add user's trigger message to cleanup list
-        new_msg_ids.append(message.message_id)
+    u_id = user_id or message.from_user.id
+    old_ids = await database.get_user_cabinet_msg_ids(u_id)
+    for old_id in old_ids:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=old_id)
+        except Exception:
+            pass
+    
+    # Add user's trigger message to cleanup list
+    new_msg_ids.append(message.message_id)
 
     if user_id is None:
         user_id = message.from_user.id
@@ -144,8 +144,7 @@ async def list_medications(message: Message, state: FSMContext = None, user_id: 
             parse_mode="Markdown"
         )
         new_msg_ids.append(empty_msg.message_id)
-        if state:
-            await state.update_data(cabinet_msg_ids=new_msg_ids)
+        await database.update_user_cabinet_msg_ids(user_id or message.from_user.id, new_msg_ids)
         return
 
     # Группируем напоминания по лекарствам
@@ -187,8 +186,7 @@ async def list_medications(message: Message, state: FSMContext = None, user_id: 
         )
         new_msg_ids.append(card_msg.message_id)
 
-    if state:
-        await state.update_data(cabinet_msg_ids=new_msg_ids)
+    await database.update_user_cabinet_msg_ids(user_id or message.from_user.id, new_msg_ids)
 
 
 async def get_medication_card_data(med: dict, idx: int, user: dict, lang: str):
@@ -289,13 +287,15 @@ async def process_delete_medication(callback: CallbackQuery, state: FSMContext):
     await callback.message.delete()
     sent_msg = await callback.message.answer(_T("del_success", lang, name=med['name']), parse_mode="Markdown")
     
-    # Update cabinet_msg_ids in FSM context
-    state_data = await state.get_data()
-    msg_ids = state_data.get("cabinet_msg_ids", [])
+    # Update cabinet_msg_ids in database
+    msg_ids = await database.get_user_cabinet_msg_ids(callback.from_user.id)
     if callback.message.message_id in msg_ids:
-        msg_ids.remove(callback.message.message_id)
+        try:
+            msg_ids.remove(callback.message.message_id)
+        except ValueError:
+            pass
     msg_ids.append(sent_msg.message_id)
-    await state.update_data(cabinet_msg_ids=msg_ids)
+    await database.update_user_cabinet_msg_ids(callback.from_user.id, msg_ids)
 
 @router.callback_query(F.data.startswith("edit_med:"))
 async def process_edit_medication(callback: CallbackQuery, state: FSMContext):
@@ -536,29 +536,29 @@ async def process_edit_value_inline(callback: CallbackQuery, state: FSMContext, 
         return
         
     if field == "food":
-        await database.update_medication_food_relation(med_id, value)
+        await state.update_data(edit_med_id=med_id, edit_food_relation=value)
+        await state.set_state(EditMedDetails.waiting_for_times)
         
-        relation_keys = {
-            'before_meal': 'food_before',
-            'with_meal': 'food_with',
-            'after_meal': 'food_after',
-            'none': 'food_none'
-        }
-        rel_key = relation_keys.get(value, 'food_none')
-        rel_localized = _T(rel_key, lang)
-        
-        success = (
-            f"✅ Способ приема для лекарства *{med['name']}* успешно изменен на: **{rel_localized}**"
+        prompt = (
+            f"🍽️ *Способ приема выбран.* Теперь укажите количество приемов в день и время для лекарства *{med['name']}*.\n\n"
+            f"Выберите вариант ниже или введите время в формате ЧЧ:ММ через пробел/запятую (например, _08:00, 20:00_):"
         ) if lang == "ru" else (
-            f"✅ Intake option for *{med['name']}* successfully changed to: **{rel_localized}**"
+            f"🍽️ *Intake option selected.* Now specify the number of intakes per day and their times for *{med['name']}*.\n\n"
+            f"Select an option below or enter times in HH:MM format separated by space/comma (e.g., _08:00, 20:00_):"
         ) if lang == "en" else (
-            f"✅ Спосіб прийому для ліків *{med['name']}* успішно змінено на: **{rel_localized}**"
+            f"🍽️ *Спосіб прийому обрано.* Тепер вкажіть кількість прийомів на день та час для ліків *{med['name']}*.\n\n"
+            f"Оберіть варіант нижче або введіть час у форматі ГГ:ХХ через пробіл/кому (наприклад, _08:00, 20:00_):"
         )
         
-        await delete_wizard_msgs(bot, callback.message.chat.id, state)
-        await state.clear()
-        await callback.message.delete()
-        await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_T("preset_1_day", lang), callback_data="edit_times_preset:09:00")],
+            [InlineKeyboardButton(text=_T("preset_2_day", lang), callback_data="edit_times_preset:09:00,21:00")],
+            [InlineKeyboardButton(text=_T("preset_3_day", lang), callback_data="edit_times_preset:08:00,14:00,20:00")],
+            [InlineKeyboardButton(text="❌ Отмена" if lang == "ru" else "❌ Cancel" if lang == "en" else "❌ Скасувати", callback_data="edit_cancel")]
+        ])
+        
+        await save_wizard_msg(state, callback.message.message_id)
+        await callback.message.edit_text(prompt, reply_markup=keyboard, parse_mode="Markdown")
         await callback.answer()
         
     elif field == "duration":
@@ -773,6 +773,156 @@ async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot
         await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
         await complete_wizard(message, state, bot)
         await state.clear()
+
+
+@router.callback_query(StateFilter(EditMedDetails.waiting_for_times), F.data.startswith("edit_times_preset:"))
+async def process_edit_times_preset(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    preset_data = callback.data.split(":")[1]
+    times = [t.strip() for t in preset_data.split(",")]
+    
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    food_relation = state_data.get("edit_food_relation")
+    
+    med = await database.get_medication(med_id)
+    if not med:
+        err_msg = "Лекарство не найдено!" if lang == "ru" else "Medication not found!" if lang == "en" else "Препарат не знайдено!"
+        await callback.answer(err_msg)
+        await state.clear()
+        return
+        
+    await database.update_medication_food_relation(med_id, food_relation)
+    await database.delete_medication_reminders(med_id)
+    for time_str in times:
+        await database.add_reminder(
+            medication_id=med_id,
+            time_str=time_str,
+            schedule_type='daily'
+        )
+        
+    await scheduler.setup_scheduler(bot)
+    
+    relation_keys = {
+        'before_meal': 'food_before',
+        'with_meal': 'food_with',
+        'after_meal': 'food_after',
+        'none': 'food_none'
+    }
+    rel_key = relation_keys.get(food_relation, 'food_none')
+    rel_localized = _T(rel_key, lang)
+    
+    success = (
+        f"✅ Настройки приема для лекарства *{med['name']}* успешно обновлены!\n"
+        f"🍽️ Способ приема: **{rel_localized}**\n"
+        f"⏰ Время приемов: **{', '.join(times)}**"
+    ) if lang == "ru" else (
+        f"✅ Intake settings for *{med['name']}* have been successfully updated!\n"
+        f"🍽️ Intake option: **{rel_localized}**\n"
+        f"⏰ Intake times: **{', '.join(times)}**"
+    ) if lang == "en" else (
+        f"✅ Налаштування прийому для ліків *{med['name']}* успішно оновлено!\n"
+        f"🍽️ Спосіб прийому: **{rel_localized}**\n"
+        f"⏰ Час прийомів: **{', '.join(times)}**"
+    )
+    
+    await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+    await complete_wizard(callback.message, state, bot)
+    await state.clear()
+    await callback.answer()
+
+
+@router.message(StateFilter(EditMedDetails.waiting_for_times))
+async def process_edit_manual_times(message: Message, state: FSMContext, bot: Bot):
+    await save_wizard_msg(state, message.message_id)
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    raw_times = re.split(r"[,\s;]+", message.text)
+    times = []
+    time_regex = re.compile(r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    
+    for t in raw_times:
+        t = t.strip()
+        if not t:
+            continue
+        if not time_regex.match(t):
+            parts = t.split(":")
+            if len(parts) == 2:
+                try:
+                    h = int(parts[0])
+                    m = int(parts[1])
+                    if 0 <= h < 24 and 0 <= m < 60:
+                        t = f"{h:02d}:{m:02d}"
+                except ValueError:
+                    pass
+        
+        if time_regex.match(t):
+            times.append(t)
+        else:
+            err_msg = await message.answer(_T("invalid_time", lang, time=t), parse_mode="Markdown")
+            await save_wizard_msg(state, err_msg.message_id)
+            return
+            
+    if not times:
+        err_msg = await message.answer(
+            "Время не распознано. Введите время в формате ЧЧ:ММ через пробел:" if lang == "ru"
+            else "No times recognized. Enter times in HH:MM format separated by space:" if lang == "en"
+            else "Час не розпізнано. Введіть час у форматі ГГ:ХХ через пробіл:"
+        )
+        await save_wizard_msg(state, err_msg.message_id)
+        return
+        
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    food_relation = state_data.get("edit_food_relation")
+    
+    med = await database.get_medication(med_id)
+    if not med:
+        err_msg = "Лекарство не найдено!" if lang == "ru" else "Medication not found!" if lang == "en" else "Препарат не знайдено!"
+        await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
+        await state.clear()
+        return
+        
+    await database.update_medication_food_relation(med_id, food_relation)
+    await database.delete_medication_reminders(med_id)
+    for time_str in times:
+        await database.add_reminder(
+            medication_id=med_id,
+            time_str=time_str,
+            schedule_type='daily'
+        )
+        
+    await scheduler.setup_scheduler(bot)
+    
+    relation_keys = {
+        'before_meal': 'food_before',
+        'with_meal': 'food_with',
+        'after_meal': 'food_after',
+        'none': 'food_none'
+    }
+    rel_key = relation_keys.get(food_relation, 'food_none')
+    rel_localized = _T(rel_key, lang)
+    
+    success = (
+        f"✅ Настройки приема для лекарства *{med['name']}* успешно обновлены!\n"
+        f"🍽️ Способ приема: **{rel_localized}**\n"
+        f"⏰ Время приемов: **{', '.join(times)}**"
+    ) if lang == "ru" else (
+        f"✅ Intake settings for *{med['name']}* have been successfully updated!\n"
+        f"🍽️ Intake option: **{rel_localized}**\n"
+        f"⏰ Intake times: **{', '.join(times)}**"
+    ) if lang == "en" else (
+        f"✅ Налаштування прийому для ліків *{med['name']}* успішно оновлено!\n"
+        f"🍽️ Спосіб прийому: **{rel_localized}**\n"
+        f"⏰ Час прийомів: **{', '.join(times)}**"
+    )
+    
+    await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+    await complete_wizard(message, state, bot)
+    await state.clear()
 
 
 # --- ДОБАВЛЕНИЕ ЛЕКАРСТВА ---
