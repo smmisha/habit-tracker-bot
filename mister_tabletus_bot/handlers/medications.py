@@ -118,9 +118,11 @@ async def list_medications(message: Message, state: FSMContext = None):
         if r['time_str']:
             meds_dict[med_id]['times'].append(r['time_str'])
 
-    # Формируем сообщение
-    text = _T("active_cabinet", lang)
-    keyboard_buttons = []
+    # Отправляем заголовок
+    await message.answer(
+        _T("active_cabinet", lang),
+        parse_mode="Markdown"
+    )
     
     relation_keys = {
         'before_meal': 'food_before',
@@ -151,26 +153,26 @@ async def list_medications(message: Message, state: FSMContext = None):
         else:
             course_info = f"\n   📅 {_T('btn_permanent', lang)}"
             
-        text += (
+        med_text = (
             f"{idx}. *{med['name']}*{active_ing}\n"
             f"   {dosage_lbl}: {med['dosage'] or 'не указана'}\n"
             f"   {intake_lbl}: {relation_text}\n"
             f"   {time_lbl}: {times_list}\n"
-            f"   {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}\n\n"
+            f"   {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}"
         )
         
-        keyboard_buttons.append([
-            InlineKeyboardButton(text="✏️", callback_data=f"edit_med:{med['id']}"),
-            InlineKeyboardButton(text="🗑️", callback_data=f"del_med:{med['id']}")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✏️", callback_data=f"edit_med:{med['id']}"),
+                InlineKeyboardButton(text="🗑️", callback_data=f"del_med:{med['id']}")
+            ]
         ])
         
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-    
-    await message.answer(
-        text,
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
+        await message.answer(
+            med_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
 
 
 @router.callback_query(F.data.startswith("del_med:"))
