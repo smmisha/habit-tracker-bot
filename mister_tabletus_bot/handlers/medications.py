@@ -1206,3 +1206,45 @@ async def process_input_active_link_invalid(message: Message, state: FSMContext)
     )
 
 
+# --- Обработчик свободного ввода названия лекарства (быстрый старт добавления) ---
+@router.message(StateFilter(None), F.text)
+async def process_direct_medicine_name(message: Message, state: FSMContext):
+    text = message.text.strip()
+    
+    # Игнорируем команды и кнопки меню
+    if text.startswith("/"):
+        return
+        
+    menu_buttons = [
+        "💊 Мои лекарства",
+        "➕ Добавить лекарство",
+        "🤖 Мистер Таблетус (Тамагочи)",
+        "👥 Мои Бадди",
+        "⚙️ Сменить часовой пояс"
+    ]
+    if text in menu_buttons:
+        return
+        
+    detected_name = text.capitalize()
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text=f"⌨️ Настроить {detected_name} вручную", 
+                callback_data=f"add_manual_prefilled:{detected_name}"
+            )
+        ],
+        [
+            InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_no")
+        ]
+    ])
+    
+    await message.answer(
+        f"🤖 *Мистер Таблетус:* «Я заметил, что вы ввели название **{detected_name}**.\n\n"
+        f"Желаете настроить расписание приема для этого лекарства по шагам?»",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+
