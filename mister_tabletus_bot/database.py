@@ -35,12 +35,23 @@ pg_pool = None
 def is_postgres() -> bool:
     return bool(DATABASE_URL)
 
+async def get_pg_pool():
+    global pg_pool
+    if is_postgres() and not pg_pool:
+        pg_pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=10,
+            statement_cache_size=0,
+            command_timeout=15.0
+        )
+    return pg_pool
+
 async def init_db():
     if is_postgres():
-        global pg_pool
-        if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
-        async with pg_pool.acquire() as conn:
+        pool = await get_pg_pool()
+        async with pool.acquire(timeout=5.0) as conn:
+
             # Таблица пользователей
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
@@ -227,10 +238,8 @@ async def close_db():
 async def execute(query_sqlite: str, query_pg: str, params: tuple = ()):
     processed_params = [json.dumps(p) if isinstance(p, (dict, list)) else p for p in params]
     if is_postgres():
-        global pg_pool
-        if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
-        async with pg_pool.acquire() as conn:
+        pool = await get_pg_pool()
+        async with pool.acquire(timeout=5.0) as conn:
             return await conn.execute(query_pg, *processed_params)
     else:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -241,13 +250,11 @@ async def execute(query_sqlite: str, query_pg: str, params: tuple = ()):
 async def execute_insert(query_sqlite: str, query_pg: str, params: tuple = ()):
     processed_params = [json.dumps(p) if isinstance(p, (dict, list)) else p for p in params]
     if is_postgres():
-        global pg_pool
-        if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
+        pool = await get_pg_pool()
         actual_pg_query = query_pg
         if "returning" not in query_pg.lower():
             actual_pg_query += " RETURNING id"
-        async with pg_pool.acquire() as conn:
+        async with pool.acquire(timeout=5.0) as conn:
             val = await conn.fetchval(actual_pg_query, *processed_params)
             return val
     else:
@@ -259,10 +266,8 @@ async def execute_insert(query_sqlite: str, query_pg: str, params: tuple = ()):
 async def fetch_one(query_sqlite: str, query_pg: str, params: tuple = ()):
     processed_params = [json.dumps(p) if isinstance(p, (dict, list)) else p for p in params]
     if is_postgres():
-        global pg_pool
-        if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
-        async with pg_pool.acquire() as conn:
+        pool = await get_pg_pool()
+        async with pool.acquire(timeout=5.0) as conn:
             row = await conn.fetchrow(query_pg, *processed_params)
             return dict(row) if row else None
     else:
@@ -275,10 +280,8 @@ async def fetch_one(query_sqlite: str, query_pg: str, params: tuple = ()):
 async def fetch_all(query_sqlite: str, query_pg: str, params: tuple = ()):
     processed_params = [json.dumps(p) if isinstance(p, (dict, list)) else p for p in params]
     if is_postgres():
-        global pg_pool
-        if not pg_pool:
-            pg_pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
-        async with pg_pool.acquire() as conn:
+        pool = await get_pg_pool()
+        async with pool.acquire(timeout=5.0) as conn:
             rows = await conn.fetch(query_pg, *processed_params)
             return [dict(r) for r in rows]
     else:
@@ -287,6 +290,7 @@ async def fetch_all(query_sqlite: str, query_pg: str, params: tuple = ()):
             async with db.execute(query_sqlite, processed_params) as cursor:
                 rows = await cursor.fetchall()
                 return rows
+
 
 
 # --- Пользователи ---
@@ -375,8 +379,30 @@ async def update_medication_stock(med_id: int, delta: int):
         (delta, med_id)
     )
 
+async def get_user_medications_with_reminders(user_id: int):
+    query = """
+        SELECT 
+            m.id as med_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path,
+            r.id as reminder_id, r.time_str, r.schedule_type, r.schedule_data
+        FROM medications m
+        LEFT JOIN reminders r ON m.id = r.medication_id
+        WHERE m.user_id = $1 AND m.is_active = 1
+        ORDER BY m.id ASC, r.time_str ASC
+    """
+    query_sqlite = """
+        SELECT 
+            m.id as med_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path,
+            r.id as reminder_id, r.time_str, r.schedule_type, r.schedule_data
+        FROM medications m
+        LEFT JOIN reminders r ON m.id = r.medication_id
+        WHERE m.user_id = ? AND m.is_active = 1
+        ORDER BY m.id ASC, r.time_str ASC
+    """
+    return await fetch_all(query_sqlite, query, (user_id,))
+
 
 # --- Напоминания ---
+
 
 async def add_reminder(medication_id: int, time_str: str, schedule_type: str = 'daily', schedule_data: list = None):
     # schedule_data в хелперах сериализуется автоматически, если это list/dict

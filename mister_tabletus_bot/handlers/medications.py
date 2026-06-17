@@ -70,16 +70,40 @@ class EditMedication(StatesGroup):
 async def list_medications(message: Message, state: FSMContext = None):
     if state:
         await state.clear()
-    meds = await database.get_user_medications(message.from_user.id)
-    if not meds:
+        
+    # Получаем все лекарства с их напоминаниями за один запрос!
+    rows = await database.get_user_medications_with_reminders(message.from_user.id)
+    if not rows:
         await message.answer(
             "📭 Ваша аптечка пуста. Нажмите *➕ Добавить лекарство*, чтобы внести первое средство.",
             parse_mode="Markdown"
         )
         return
-        
+
+    # Группируем напоминания по лекарствам
+    meds_dict = {}
+    for r in rows:
+        med_id = r['med_id']
+        if med_id not in meds_dict:
+            meds_dict[med_id] = {
+                'id': med_id,
+                'name': r['med_name'],
+                'active_ingredient': r['active_ingredient'],
+                'dosage': r['dosage'],
+                'food_relation': r['food_relation'],
+                'stock_count': r['stock_count'],
+                'stock_alert_threshold': r['stock_alert_threshold'],
+                'image_path': r['image_path'],
+                'times': []
+            }
+        if r['time_str']:
+            meds_dict[med_id]['times'].append(r['time_str'])
+
+    # Формируем одно единое сообщение для всей аптечки
     text = "📋 *Ваша active аптечка:*\n\n"
-    for idx, med in enumerate(meds, 1):
+    keyboard_buttons = []
+    
+    for idx, (med_id, med) in enumerate(meds_dict.items(), 1):
         relation_text = {
             'before_meal': 'до еды 🍽️',
             'with_meal': 'во время еды 🍽️',
@@ -87,47 +111,30 @@ async def list_medications(message: Message, state: FSMContext = None):
             'none': 'без связи с едой'
         }.get(med['food_relation'], 'нет данных')
         
-        # Получим время напоминаний
-        reminders = await database.get_medication_reminders(med['id'])
-        times_list = ", ".join([r['time_str'] for r in reminders]) if reminders else "не задано"
-        
+        times_list = ", ".join(sorted(med['times'])) if med['times'] else "не задано"
         active_ing = f" ({med['active_ingredient']})" if med['active_ingredient'] else ""
+        
         text += (
             f"{idx}. *{med['name']}*{active_ing}\n"
             f"   ⚖️ Дозировка: {med['dosage'] or 'не указана'}\n"
             f"   🍽️ Прием: {relation_text}\n"
             f"   ⏰ Время: {times_list}\n"
-            f"   📦 Остаток: {med['stock_count']} шт. (порог: {med['stock_alert_threshold']})\n"
+            f"   📦 Остаток: {med['stock_count']} шт. (порог: {med['stock_alert_threshold']})\n\n"
         )
         
-        # Добавляем кнопку удаления для каждого лекарства
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"del_med:{med['id']}")
-            ]
+        # Добавляем кнопку удаления для каждого лекарства в общий список
+        keyboard_buttons.append([
+            InlineKeyboardButton(text=f"🗑️ Удалить {med['name']}", callback_data=f"del_med:{med['id']}")
         ])
         
-        image_path = med['image_path']
-        if not image_path or not os.path.exists(image_path):
-            image_path = "photos/default_pill.png"
-            
-        if os.path.exists(image_path):
-            from aiogram.types import FSInputFile
-            await message.answer_photo(
-                photo=FSInputFile(image_path),
-                caption=text,
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
-        else:
-            await message.answer(
-                text,
-                reply_markup=keyboard,
-                parse_mode="Markdown"
-            )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    await message.answer(
+        text,
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
 
-        # Сбрасываем текст для следующего лекарства
-        text = ""
 
 @router.callback_query(F.data.startswith("del_med:"))
 async def process_delete_medication(callback: CallbackQuery):
@@ -532,17 +539,34 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext, bot: B
     asyncio.create_task(run_background_classification_and_rec(bot, callback.from_user.id, med_id, data["name"]))
 
 
-@router.callback_query(StateFilter(AddMedication.confirming_parsed), F.data == "confirm_no")
+@router.callback_query(F.data == "confirm_no")
 async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
     state_data = await state.get_data()
+    
+    # Удаляем фото из parsed_data, если оно было сохранено локально
     data = state_data.get("parsed_data", {})
-    # Удаляем фото, если оно было сохранено локально
-    if data.get("image_path") and os.path.exists(data["image_path"]):
-        os.remove(data["image_path"])
+    if data and data.get("image_path") and os.path.exists(data["image_path"]):
+        try:
+            os.remove(data["image_path"])
+        except Exception:
+            pass
+            
+    # Удаляем фото из photo_data, если оно было сохранено локально
+    photo_data = state_data.get("photo_data", {})
+    if photo_data and photo_data.get("image_path") and os.path.exists(photo_data["image_path"]):
+        try:
+            os.remove(photo_data["image_path"])
+        except Exception:
+            pass
         
     await state.clear()
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.message.answer("Добавление отменено. Вы можете начать заново, нажав кнопку в меню.", reply_markup=get_main_menu_keyboard())
+    await callback.answer("Добавление отменено")
+
 
 # --- ПОШАГОВЫЙ РУЧНОЙ ВВОД ---
 
