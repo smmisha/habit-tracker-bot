@@ -75,35 +75,7 @@ def get_cancel_keyboard(lang: str = "ru"):
     ], resize_keyboard=True)
 
 
-# --- ОБЩИЙ ОБРАБОТЧИК ОТМЕНЫ ---
-@router.message(
-    StateFilter("*"),
-    lambda m: m.text and (m.text.strip().lower() in [
-        "отмена", "cancel", "скасувати",
-        "❌ отмена", "❌ cancel", "❌ скасувати",
-        "/cancel"
-    ])
-)
-async def process_cancel_wizard(message: Message, state: FSMContext):
-    user = await database.get_user(message.from_user.id)
-    lang = user.get("language") if user else "ru"
-    
-    # Очищаем локальные временные файлы
-    state_data = await state.get_data()
-    for key in ["parsed_data", "photo_data"]:
-        data = state_data.get(key, {})
-        if data and data.get("image_path") and os.path.exists(data["image_path"]):
-            try:
-                os.remove(data["image_path"])
-            except Exception:
-                pass
-                
-    await state.clear()
-    await message.answer(
-        _T("cancel_msg", lang),
-        reply_markup=get_main_menu_keyboard(lang),
-        parse_mode="Markdown"
-    )
+
 
 
 # --- СПИСОК ЛЕКАРСТВ ---
