@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 import database
+from utils.locales import _T
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,17 @@ async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_ti
                 med = dict(med)
             med_name = med['name'] if med else "лекарство"
             
+            user_info = await database.get_user(user_id)
+            if user_info:
+                user_info = dict(user_info)
+            lang = user_info.get("language") if user_info else "ru"
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text=_T("btn_take_late", lang), callback_data=f"take_late:{med_id}:{expected_time_iso}")
+                ]
+            ])
+            
             # 3. Отправляем гневное/грустное сообщение пользователю
             health_msg = f"💔 Моё здоровье упало до {status['health']}%!" if status else ""
             await bot.send_message(
@@ -150,6 +162,7 @@ async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_ti
                 text=f"🚨 *Пропущен прием лекарства!*\n\n"
                      f"Вы не подтвердили прием *{med_name}* вовремя (прошло 45 минут).\n\n"
                      f"🤢 *Мистер Таблетус:* «Ай! Мне стало хуже... Пожалуйста, не забывайте о своем здоровье и обо мне! {health_msg}»",
+                reply_markup=keyboard,
                 parse_mode="Markdown"
             )
             
@@ -160,9 +173,6 @@ async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_ti
                 pass
                 
             # 4. Оповещаем Бадди (друзей), если фича включена у пользователя
-            user_info = await database.get_user(user_id)
-            if user_info:
-                user_info = dict(user_info)
             if user_info and user_info['buddies_enabled'] == 1:
                 buddies = await database.get_user_buddies(user_id)
                 user_name = user_info['first_name'] or "Ваш друг"

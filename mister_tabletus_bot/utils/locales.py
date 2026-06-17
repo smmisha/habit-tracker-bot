@@ -333,6 +333,66 @@ TRANSLATIONS = {
         "ru": "Пожалуйста, введите хотя бы одно время (например, 14:00):",
         "en": "Please enter at least one time (e.g., 14:00):",
         "uk": "Будь ласка, введіть хоча б один час (наприклад, 14:00):"
+    },
+    "preset_1_day": {
+        "ru": "1 раз в день (09:00)",
+        "en": "1 time a day (09:00)",
+        "uk": "1 раз на день (09:00)"
+    },
+    "preset_2_day": {
+        "ru": "2 раза в день (09:00, 21:00)",
+        "en": "2 times a day (09:00, 21:00)",
+        "uk": "2 рази на день (09:00, 21:00)"
+    },
+    "preset_3_day": {
+        "ru": "3 раза в день (08:00, 14:00, 20:00)",
+        "en": "3 times a day (08:00, 14:00, 20:00)",
+        "uk": "3 рази на день (08:00, 14:00, 20:00)"
+    },
+    "btn_take_late": {
+        "ru": "✅ Принять с опозданием",
+        "en": "✅ Take late",
+        "uk": "✅ Прийняти з запізненням"
+    },
+    "btn_now": {
+        "ru": "⏳ Сейчас",
+        "en": "⏳ Now",
+        "uk": "⏳ Зараз"
+    },
+    "taken_late_success": {
+        "ru": "✅ *Принято с опозданием в {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Спасибо! Это лучше, чем совсем пропустить, но постарайтесь в следующий раз вовремя! {mascot_msg}»{stock_warning}",
+        "en": "✅ *Taken late at {time}!*\n\n💊 Medication: *{name}*\n🤖 *Mr. Tabletus:* 'Thank you! It is better than skipping entirely, but try to be on time next time! {mascot_msg}'{stock_warning}",
+        "uk": "✅ *Прийнято з запізненням о {time}!*\n\n💊 Препарат: *{name}*\n🤖 *Містер Таблетус:* «Дякую! Це краще, ніж зовсім пропустити, але постарайтеся наступного разу вчасно! {mascot_msg}»{stock_warning}"
+    },
+    "overlap_warning_msg": {
+        "ru": "⚠️ *Внимание!* Вы указали время приема *{time}* (опоздание на {delay_hours:.1f} ч.).\n\nВам необходимо проконсультироваться с лечащим врачом по поводу возможного наложения дозировок!\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Будьте осторожны! Здоровье маскота восстановлено. {mascot_msg}»{stock_warning}",
+        "en": "⚠️ *Warning!* You specified intake time *{time}* (delay of {delay_hours:.1f} hrs).\n\nYou must consult your treating doctor regarding potential dosage overlapping!\n\n💊 Medication: *{name}*\n🤖 *Mr. Tabletus:* 'Be careful! Mascot health is recovered. {mascot_msg}'{stock_warning}",
+        "uk": "⚠️ *Увага!* Ви вказали час прийому *{time}* (запізнення на {delay_hours:.1f} год.).\n\nВам необхідно проконсультуватися з лікарем щодо можливого накладання дозувань!\n\n💊 Препарат: *{name}*\n🤖 *Містер Таблетус:* «Будьте обережні! Здоров'я маскота відновлено. {mascot_msg}»{stock_warning}"
+    },
+    "overlap_danger_alert": {
+        "ru": "🚨 *Критическое опоздание!*\n\nВы указали время приема *{time}* (опоздание на {delay_hours:.1f} ч. при интервале {interval:.1f} ч.).\n\n**Вам необходимо в срочном порядке обратиться к вашему лечащему врачу за консультацией!**\n\n💊 Препарат: *{name}*\n🤖 *Мистер Таблетус:* «Очень опасное опоздание. Здоровье маскота не восстанавливается. Берегите себя!»{stock_warning}",
+        "en": "🚨 *Critical Delay!*\n\nYou specified intake time *{time}* (delay of {delay_hours:.1f} hrs with interval {interval:.1f} hrs).\n\n**You must urgently contact your treating doctor for consultation!**\n\n💊 Medication: *{name}*\n🤖 *Mr. Tabletus:* 'Very dangerous delay. Mascot health is not recovered. Take care of yourself!'{stock_warning}",
+        "uk": "🚨 *Критичне запізнення!*\n\nВи вказали час прийому *{time}* (запізнення на {delay_hours:.1f} год. при інтервалі {interval:.1f} год.).\n\n**Вам необхідно в терміновому порядку звернутися до вашого лікаря за консультацією!**\n\n💊 Препарат: *{name}*\n🤖 *Містер Таблетус:* «Дуже небезпечне запізнення. Здоров'я маскота не відновлюється. Бережіть себе!»{stock_warning}"
+    },
+    "prompt_actual_time": {
+        "ru": "⏰ *Фактическое время приема*\n\nВведите время, когда вы фактически приняли лекарство, в формате **ЧЧ:ММ** (например, `13:30`).\n\nИли нажмите кнопку «Сейчас», чтобы использовать текущее время:",
+        "en": "⏰ *Actual Intake Time*\n\nEnter the time you actually took the medication in **HH:MM** format (e.g., `13:30`).\n\nOr click the 'Now' button to use the current time:",
+        "uk": "⏰ *Фактичний час прийому*\n\nВведіть час, коли ви фактично прийняли ліки, у форматі **ГГ:ХХ** (наприклад, `13:30`).\n\nАбо натисніть кнопку «Зараз», щоб використати поточний час:"
+    },
+    "invalid_actual_time": {
+        "ru": "❌ Некорректный формат времени: `{time}`. Пожалуйста, введите время в формате ЧЧ:ММ (например, 13:30):",
+        "en": "❌ Invalid time format: `{time}`. Please enter time in HH:MM format (e.g., 13:30):",
+        "uk": "❌ Некоректний формат часу: `{time}`. Будь ласка, введіть час у форматі ГГ:ХХ (наприклад, 13:30):"
+    },
+    "future_time_error": {
+        "ru": "❌ Нельзя отмечать прием наперед! Введите прошедшее или текущее время (например, {now}):",
+        "en": "❌ Cannot mark intake in advance! Enter a past or current time (e.g., {now}):",
+        "uk": "❌ Не можна відмічати прийом наперед! Введіть минулий або поточний час (наприклад, {now}):"
+    },
+    "take_late_canceled": {
+        "ru": "Ввод времени отменен.",
+        "en": "Time input canceled.",
+        "uk": "Введення часу скасовано."
     }
 }
 

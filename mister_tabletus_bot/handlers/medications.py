@@ -1330,10 +1330,35 @@ async def process_manual_food(callback: CallbackQuery, state: FSMContext):
     await state.update_data(food_relation=food_relation)
     await state.set_state(AddMedication.waiting_for_times)
     
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=_T("preset_1_day", lang), callback_data="times_preset:09:00")],
+        [InlineKeyboardButton(text=_T("preset_2_day", lang), callback_data="times_preset:09:00,21:00")],
+        [InlineKeyboardButton(text=_T("preset_3_day", lang), callback_data="times_preset:08:00,14:00,20:00")]
+    ])
+    
     await callback.message.edit_text(
         _T("prompt_times", lang),
+        reply_markup=keyboard,
         parse_mode="Markdown"
     )
+
+
+@router.callback_query(StateFilter(AddMedication.waiting_for_times), F.data.startswith("times_preset:"))
+async def process_times_preset(callback: CallbackQuery, state: FSMContext):
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    preset_data = callback.data.split(":")[1]
+    times = [t.strip() for t in preset_data.split(",")]
+    
+    await state.update_data(times=times)
+    await state.set_state(AddMedication.waiting_for_stock)
+    
+    await callback.message.edit_text(
+        _T("prompt_stock", lang),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
 
 @router.message(StateFilter(AddMedication.waiting_for_times))
@@ -1641,6 +1666,270 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
     )
     
     await callback.answer("Отложено на 15 минут!")
+
+
+# --- ОБРАБОТКА ПОЗДНЕГО ПРИЕМА ЛЕКАРСТВ ---
+
+class TakeLateState(StatesGroup):
+    waiting_for_time = State()
+
+def calculate_next_dose_interval(target_time_str: str, all_times: list) -> float:
+    if not all_times or len(all_times) <= 1:
+        return 24.0
+    sorted_times = sorted(all_times)
+    if target_time_str not in sorted_times:
+        return 24.0 / len(all_times)
+    idx = sorted_times.index(target_time_str)
+    next_idx = (idx + 1) % len(sorted_times)
+    next_time_str = sorted_times[next_idx]
+    try:
+        t1 = datetime.strptime(target_time_str, "%H:%M")
+        t2 = datetime.strptime(next_time_str, "%H:%M")
+        diff = t2 - t1
+        if diff.total_seconds() <= 0:
+            diff += timedelta(days=1)
+        return diff.total_seconds() / 3600.0
+    except Exception:
+        return 24.0 / len(all_times)
+
+def resolve_actual_datetime(entered_time_str: str, expected_dt: datetime, now_dt: datetime) -> Optional[datetime]:
+    try:
+        hour, minute = map(int, entered_time_str.split(':'))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+    except ValueError:
+        return None
+    
+    candidates = []
+    for day_offset in [-1, 0, 1]:
+        base_date = (expected_dt + timedelta(days=day_offset)).date()
+        dt = datetime.combine(base_date, datetime.min.time()).replace(
+            hour=hour, minute=minute, tzinfo=expected_dt.tzinfo
+        )
+        candidates.append(dt)
+    
+    valid_candidates = [c for c in candidates if c <= now_dt]
+    if not valid_candidates:
+        return None
+        
+    return min(valid_candidates, key=lambda c: abs((c - expected_dt).total_seconds()))
+
+async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_iso: str, actual_time: datetime, msg_id: int, callback: Optional[CallbackQuery] = None, state: Optional[FSMContext] = None):
+    user = await database.get_user(user_id)
+    if not user:
+        return
+    lang = user.get("language") if user else "ru"
+    
+    status_history = await database.get_history_status(med_id, expected_time_iso)
+    if status_history in ['taken', 'taken_late']:
+        if callback:
+            await callback.answer("Прием уже подтвержден!")
+        return
+        
+    expected_time = datetime.fromisoformat(expected_time_iso)
+    delay_seconds = (actual_time - expected_time).total_seconds()
+    delay_hours = max(0.0, delay_seconds / 3600.0)
+    
+    reminders = await database.get_medication_reminders(med_id)
+    all_times = [r['time_str'] for r in reminders]
+    interval = calculate_next_dose_interval(expected_time.strftime("%H:%M"), all_times)
+    
+    safe_limit = min(4.0, interval * 0.25)
+    
+    med = await database.get_medication(med_id)
+    if not med:
+        return
+    med_name = med['name']
+    
+    # 1. Update history status
+    await database.update_history_status(med_id, expected_time_iso, 'taken_late', actual_time.isoformat())
+    
+    # 2. Update stock
+    await database.update_medication_stock(med_id, -1)
+    updated_med = await database.get_medication(med_id)
+    
+    stock_warning = ""
+    if updated_med and updated_med['stock_count'] <= updated_med['stock_alert_threshold']:
+        stock_warning = f"\n⚠️ *Внимание:* в аптечке осталось всего {updated_med['stock_count']} шт.!"
+        
+    actual_time_str = actual_time.strftime("%H:%M")
+    
+    # 3. Determine window and apply Tamagotchi health
+    if delay_hours <= safe_limit:
+        status = await database.update_user_tamagotchi(user_id, health_delta=5, xp_delta=5)
+        mascot_msg = f"❤️ Моё здоровье: {status['health']}% (+5%) | ⭐ Уровень: {status['level']}" if status else ""
+        if status and status.get("level_up"):
+            mascot_msg += "\n🎉 **LEVEL UP!** Мистер Таблетус повысил свой уровень!"
+        feedback_text = _T("taken_late_success", lang, time=actual_time_str, name=med_name, mascot_msg=mascot_msg, stock_warning=stock_warning)
+    elif delay_hours <= interval / 2.0:
+        status = await database.update_user_tamagotchi(user_id, health_delta=5, xp_delta=5)
+        mascot_msg = f"❤️ Моё здоровье: {status['health']}% (+5%) | ⭐ Уровень: {status['level']}" if status else ""
+        if status and status.get("level_up"):
+            mascot_msg += "\n🎉 **LEVEL UP!** Мистер Таблетус повысил свой уровень!"
+        feedback_text = _T("overlap_warning_msg", lang, time=actual_time_str, delay_hours=delay_hours, name=med_name, mascot_msg=mascot_msg, stock_warning=stock_warning)
+    else:
+        # Critical warning
+        feedback_text = _T("overlap_danger_alert", lang, time=actual_time_str, delay_hours=delay_hours, interval=interval, name=med_name, stock_warning=stock_warning)
+        
+    try:
+        await bot.edit_message_text(
+            chat_id=user_id,
+            message_id=msg_id,
+            text=feedback_text,
+            reply_markup=None,
+            parse_mode="Markdown"
+        )
+    except Exception as edit_err:
+        logger.error(f"Error editing message in perform_take_late: {edit_err}")
+        
+    if callback:
+        await callback.answer("Прием подтвержден с опозданием!")
+        
+    if state:
+        await state.clear()
+
+@router.callback_query(F.data.startswith("take_late:"))
+async def process_take_late_start(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    med_id = int(parts[1])
+    expected_time_iso = ":".join(parts[2:])
+    
+    status_history = await database.get_history_status(med_id, expected_time_iso)
+    if status_history in ['taken', 'taken_late']:
+        await callback.answer("Прием уже подтвержден!")
+        return
+        
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    await state.set_state(TakeLateState.waiting_for_time)
+    await state.update_data(
+        late_med_id=med_id,
+        late_expected_time_iso=expected_time_iso,
+        late_msg_id=callback.message.message_id
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=_T("btn_now", lang), callback_data="take_late_now"),
+            InlineKeyboardButton(text=_T("btn_cancel", lang), callback_data="take_late_cancel")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        _T("prompt_actual_time", lang),
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(TakeLateState.waiting_for_time, F.data == "take_late_now")
+async def process_take_late_now(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    user = await database.get_user(callback.from_user.id)
+    if not user:
+        await callback.answer()
+        return
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+    now_local = datetime.now(user_tz)
+    
+    state_data = await state.get_data()
+    med_id = state_data.get("late_med_id")
+    expected_time_iso = state_data.get("late_expected_time_iso")
+    msg_id = state_data.get("late_msg_id")
+    
+    await perform_take_late(bot, callback.from_user.id, med_id, expected_time_iso, now_local, msg_id, callback=callback, state=state)
+
+@router.callback_query(TakeLateState.waiting_for_time, F.data == "take_late_cancel")
+async def process_take_late_cancel(callback: CallbackQuery, state: FSMContext):
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    state_data = await state.get_data()
+    med_id = state_data.get("late_med_id")
+    expected_time_iso = state_data.get("late_expected_time_iso")
+    
+    med = await database.get_medication(med_id)
+    med_name = med['name'] if med else "лекарство"
+    health_msg = f"💔 Моё здоровье упало до {user['mascot_health']}%!" if user else ""
+    
+    text = (
+        f"🚨 *Пропущен прием лекарства!*\n\n"
+        f"Вы не подтвердили прием *{med_name}* вовремя (прошло 45 минут).\n\n"
+        f"🤢 *Мистер Таблетус:* «Ай! Мне стало хуже... Пожалуйста, не забывайте о своем здоровье и обо мне! {health_msg}»"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=_T("btn_take_late", lang), callback_data=f"take_late:{med_id}:{expected_time_iso}")
+        ]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await state.clear()
+    await callback.answer(_T("take_late_canceled", lang))
+
+@router.message(StateFilter(TakeLateState.waiting_for_time))
+async def process_take_late_input(message: Message, state: FSMContext, bot: Bot):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+        
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+    now_local = datetime.now(user_tz)
+    
+    time_text = message.text.strip()
+    if not re.match(r"^\d{1,2}:\d{2}$", time_text):
+        state_data = await state.get_data()
+        msg_id = state_data.get("late_msg_id")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=_T("btn_now", lang), callback_data="take_late_now"),
+                InlineKeyboardButton(text=_T("btn_cancel", lang), callback_data="take_late_cancel")
+            ]
+        ])
+        try:
+            await bot.edit_message_text(
+                chat_id=message.from_user.id,
+                message_id=msg_id,
+                text=f"{_T('prompt_actual_time', lang)}\n\n{_T('invalid_actual_time', lang, time=time_text)}",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        return
+        
+    state_data = await state.get_data()
+    med_id = state_data.get("late_med_id")
+    expected_time_iso = state_data.get("late_expected_time_iso")
+    msg_id = state_data.get("late_msg_id")
+    
+    expected_time = datetime.fromisoformat(expected_time_iso)
+    actual_time = resolve_actual_datetime(time_text, expected_time, now_local)
+    
+    if actual_time is None:
+        now_time_str = now_local.strftime("%H:%M")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=_T("btn_now", lang), callback_data="take_late_now"),
+                InlineKeyboardButton(text=_T("btn_cancel", lang), callback_data="take_late_cancel")
+            ]
+        ])
+        try:
+            await bot.edit_message_text(
+                chat_id=message.from_user.id,
+                message_id=msg_id,
+                text=f"{_T('prompt_actual_time', lang)}\n\n{_T('future_time_error', lang, now=now_time_str)}",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        return
+        
+    await perform_take_late(bot, message.from_user.id, med_id, expected_time_iso, actual_time, msg_id, state=state)
 
 
 # --- ФОНОВАЯ КЛАССИФИКАЦИЯ И РЕКОМЕНДАЦИИ ИИ ---
