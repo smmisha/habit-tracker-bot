@@ -63,6 +63,11 @@ class EditMedication(StatesGroup):
     waiting_for_link = State()
 
 
+class EditMedDetails(StatesGroup):
+    waiting_for_field_selection = State()
+    waiting_for_new_value = State()
+
+
 def get_cancel_keyboard(lang: str = "ru"):
     """Возвращает reply клавиатуру с кнопкой отмены"""
     return ReplyKeyboardMarkup(keyboard=[
@@ -72,7 +77,7 @@ def get_cancel_keyboard(lang: str = "ru"):
 
 # --- ОБЩИЙ ОБРАБОТЧИК ОТМЕНЫ ---
 @router.message(
-    StateFilter(AddMedication, EditMedication),
+    StateFilter(AddMedication, EditMedication, EditMedDetails),
     lambda m: m.text and (m.text.strip().lower() in [
         "отмена", "cancel", "скасувати",
         "❌ отмена", "❌ cancel", "❌ скасувати",
@@ -182,9 +187,9 @@ async def list_medications(message: Message, state: FSMContext = None):
             f"   {stock_lbl}: {med['stock_count']} {pcs_lbl} ({threshold_lbl}: {med['stock_alert_threshold']}){course_info}\n\n"
         )
         
-        del_lbl = f"🗑️ Удалить {med['name']}" if lang == "ru" else f"🗑️ Delete {med['name']}" if lang == "en" else f"🗑️ Видалити {med['name']}"
         keyboard_buttons.append([
-            InlineKeyboardButton(text=del_lbl, callback_data=f"del_med:{med['id']}")
+            InlineKeyboardButton(text="✏️", callback_data=f"edit_med:{med['id']}"),
+            InlineKeyboardButton(text="🗑️", callback_data=f"del_med:{med['id']}")
         ])
         
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
@@ -221,6 +226,456 @@ async def process_delete_medication(callback: CallbackQuery):
     await callback.answer(del_ok)
     await callback.message.delete()
     await callback.message.answer(_T("del_success", lang, name=med['name']), parse_mode="Markdown")
+
+@router.callback_query(F.data.startswith("edit_med:"))
+async def process_edit_medication(callback: CallbackQuery, state: FSMContext):
+    med_id = int(callback.data.split(":")[1])
+    med = await database.get_medication(med_id)
+    
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    if not med:
+        err_msg = "Лекарство не найдено!" if lang == "ru" else "Medication not found!" if lang == "en" else "Препарат не знайдено!"
+        await callback.answer(err_msg)
+        return
+        
+    await state.set_state(EditMedDetails.waiting_for_field_selection)
+    await state.update_data(edit_med_id=med_id)
+    
+    prompt_text = (
+        f"📝 *Что вы хотите изменить в лекарстве {med['name']}?*\n\n"
+        f"Выберите поле для изменения:"
+    ) if lang == "ru" else (
+        f"📝 *What do you want to change in {med['name']}?*\n\n"
+        f"Select a field to modify:"
+    ) if lang == "en" else (
+        f"📝 *Що ви хочете змінити в ліках {med['name']}?*\n\n"
+        f"Оберіть поле для зміни:"
+    )
+    
+    btn_dosage = "⚖️ Дозировка" if lang == "ru" else "⚖️ Dosage" if lang == "en" else "⚖️ Дозування"
+    btn_food = "🍽️ Прием" if lang == "ru" else "🍽️ Intake" if lang == "en" else "🍽️ Прийом"
+    btn_time = "⏰ Время приемов" if lang == "ru" else "⏰ Intake times" if lang == "en" else "⏰ Час прийомів"
+    btn_stock = "📦 Остаток" if lang == "ru" else "📦 Stock" if lang == "en" else "📦 Залишок"
+    btn_duration = "📅 Срок курса" if lang == "ru" else "📅 Course duration" if lang == "en" else "📅 Термін курсу"
+    btn_cancel = "❌ Отмена" if lang == "ru" else "❌ Cancel" if lang == "en" else "❌ Скасувати"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=btn_dosage, callback_data=f"edit_sel:dosage:{med_id}"),
+            InlineKeyboardButton(text=btn_food, callback_data=f"edit_sel:food:{med_id}")
+        ],
+        [
+            InlineKeyboardButton(text=btn_time, callback_data=f"edit_sel:times:{med_id}"),
+            InlineKeyboardButton(text=btn_stock, callback_data=f"edit_sel:stock:{med_id}")
+        ],
+        [
+            InlineKeyboardButton(text=btn_duration, callback_data=f"edit_sel:duration:{med_id}")
+        ],
+        [
+            InlineKeyboardButton(text=btn_cancel, callback_data="edit_cancel")
+        ]
+    ])
+    
+    await callback.message.edit_text(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "edit_cancel")
+async def process_edit_cancel(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    await list_medications(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit_sel:"))
+async def process_edit_field_selection(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    field = parts[1]
+    med_id = int(parts[2])
+    
+    med = await database.get_medication(med_id)
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    if not med:
+        err_msg = "Лекарство не найдено!" if lang == "ru" else "Medication not found!" if lang == "en" else "Препарат не знайдено!"
+        await callback.answer(err_msg)
+        return
+        
+    await state.update_data(edit_med_id=med_id, edit_field=field)
+    
+    if field == "dosage":
+        await state.set_state(EditMedDetails.waiting_for_new_value)
+        prompt = (
+            f"⚖️ *Редактирование дозировки для {med['name']}*\n\n"
+            f"Текущая дозировка: `{med['dosage'] or 'не указана'}`\n\n"
+            f"Введите новую дозировку (например, _1 таблетка_ или _50 мг_):"
+        ) if lang == "ru" else (
+            f"⚖️ *Editing dosage for {med['name']}*\n\n"
+            f"Current dosage: `{med['dosage'] or 'not set'}`\n\n"
+            f"Enter new dosage (e.g., _1 tablet_ or _50 mg_):"
+        ) if lang == "en" else (
+            f"⚖️ *Редагування дозування для {med['name']}*\n\n"
+            f"Поточне дозування: `{med['dosage'] or 'не вказано'}`\n\n"
+            f"Введіть нове дозування (наприклад, _1 таблетка_ або _50 мг_):"
+        )
+        
+        await callback.message.delete()
+        await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        await callback.answer()
+        
+    elif field == "stock":
+        await state.set_state(EditMedDetails.waiting_for_new_value)
+        prompt = (
+            f"📦 *Редактирование остатка для {med['name']}*\n\n"
+            f"Текущий остаток: `{med['stock_count']} шт.`\n\n"
+            f"Введите новое количество упаковок/таблеток в аптечке (целое число):"
+        ) if lang == "ru" else (
+            f"📦 *Editing stock for {med['name']}*\n\n"
+            f"Current stock: `{med['stock_count']} pcs.`\n\n"
+            f"Enter the new count of doses/pills in your cabinet (whole number):"
+        ) if lang == "en" else (
+            f"📦 *Редагування залишку для {med['name']}*\n\n"
+            f"Поточний залишок: `{med['stock_count']} шт.`\n\n"
+            f"Введіть нову кількість доз/таблеток в аптечці (ціле число):"
+        )
+        await callback.message.delete()
+        await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        await callback.answer()
+        
+    elif field == "times":
+        await state.set_state(EditMedDetails.waiting_for_new_value)
+        reminders = await database.get_medication_reminders(med_id)
+        current_times = ", ".join(sorted([r['time_str'] for r in reminders])) if reminders else "не задано"
+        
+        prompt = (
+            f"⏰ *Редактирование времени приемов для {med['name']}*\n\n"
+            f"Текущее время приемов: `{current_times}`\n\n"
+            f"Введите новое время приемов через запятую или пробел в формате ЧЧ:ММ (например: _08:00, 20:00_):"
+        ) if lang == "ru" else (
+            f"⏰ *Editing intake times for {med['name']}*\n\n"
+            f"Current times: `{current_times}`\n\n"
+            f"Enter new intake times separated by commas or spaces in HH:MM format (e.g., _08:00, 20:00_):"
+        ) if lang == "en" else (
+            f"⏰ *Редагування часу прийомів для {med['name']}*\n\n"
+            f"Поточний час прийомів: `{current_times}`\n\n"
+            f"Введіть новий час прийомів через кому або пробіл у форматі ГГ:ХХ (наприклад: _08:00, 20:00_):"
+        )
+        await callback.message.delete()
+        await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+        await callback.answer()
+        
+    elif field == "food":
+        prompt = (
+            f"🍽️ *Редактирование отношения к еде для {med['name']}*\n\n"
+            f"Выберите новый вариант приема:"
+        ) if lang == "ru" else (
+            f"🍽️ *Editing relation to meals for {med['name']}*\n\n"
+            f"Select a new intake option:"
+        ) if lang == "en" else (
+            f"🍽️ *Редагування відношення до їжі для {med['name']}*\n\n"
+            f"Оберіть новий варіант прийому:"
+        )
+        
+        btn_before = _T("food_before", lang)
+        btn_with = _T("food_with", lang)
+        btn_after = _T("food_after", lang)
+        btn_none = _T("food_none", lang)
+        btn_cancel = "❌ Отмена" if lang == "ru" else "❌ Cancel" if lang == "en" else "❌ Скасувати"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=btn_before, callback_data=f"edit_val:food:before_meal:{med_id}"),
+                InlineKeyboardButton(text=btn_with, callback_data=f"edit_val:food:with_meal:{med_id}")
+            ],
+            [
+                InlineKeyboardButton(text=btn_after, callback_data=f"edit_val:food:after_meal:{med_id}"),
+                InlineKeyboardButton(text=btn_none, callback_data=f"edit_val:food:none:{med_id}")
+            ],
+            [
+                InlineKeyboardButton(text=btn_cancel, callback_data="edit_cancel")
+            ]
+        ])
+        await callback.message.edit_text(prompt, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.answer()
+        
+    elif field == "duration":
+        prompt = (
+            f"📅 *Редактирование длительности курса для {med['name']}*\n\n"
+            f"Выберите тип курса:"
+        ) if lang == "ru" else (
+            f"📅 *Editing course duration for {med['name']}*\n\n"
+            f"Select course type:"
+        ) if lang == "en" else (
+            f"📅 *Редагування тривалості курсу для {med['name']}*\n\n"
+            f"Оберіть тип курсу:"
+        )
+        
+        btn_permanent = _T("btn_permanent", lang)
+        btn_custom = "✏️ Задать количество дней" if lang == "ru" else "✏️ Set number of days" if lang == "en" else "✏️ Вказати кількість днів"
+        btn_cancel = "❌ Отмена" if lang == "ru" else "❌ Cancel" if lang == "en" else "❌ Скасувати"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=btn_permanent, callback_data=f"edit_val:duration:permanent:{med_id}")
+            ],
+            [
+                InlineKeyboardButton(text=btn_custom, callback_data=f"edit_val:duration:custom:{med_id}")
+            ],
+            [
+                InlineKeyboardButton(text=btn_cancel, callback_data="edit_cancel")
+            ]
+        ])
+        await callback.message.edit_text(prompt, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit_val:"))
+async def process_edit_value_inline(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    parts = callback.data.split(":")
+    field = parts[1]
+    value = parts[2]
+    med_id = int(parts[3])
+    
+    med = await database.get_medication(med_id)
+    user = await database.get_user(callback.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    if not med:
+        err_msg = "Лекарство не найдено!" if lang == "ru" else "Medication not found!" if lang == "en" else "Препарат не знайдено!"
+        await callback.answer(err_msg)
+        return
+        
+    if field == "food":
+        await database.update_medication_food_relation(med_id, value)
+        
+        relation_keys = {
+            'before_meal': 'food_before',
+            'with_meal': 'food_with',
+            'after_meal': 'food_after',
+            'none': 'food_none'
+        }
+        rel_key = relation_keys.get(value, 'food_none')
+        rel_localized = _T(rel_key, lang)
+        
+        success = (
+            f"✅ Способ приема для лекарства *{med['name']}* успешно изменен на: **{rel_localized}**"
+        ) if lang == "ru" else (
+            f"✅ Intake option for *{med['name']}* successfully changed to: **{rel_localized}**"
+        ) if lang == "en" else (
+            f"✅ Спосіб прийому для ліків *{med['name']}* успішно змінено на: **{rel_localized}**"
+        )
+        
+        await state.clear()
+        await callback.message.delete()
+        await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await callback.answer()
+        
+    elif field == "duration":
+        if value == "permanent":
+            user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+            now_local = datetime.now(user_tz)
+            start_date_str = now_local.strftime("%Y-%m-%d")
+            end_date_str = None
+            
+            await database.update_medication_duration(med_id, start_date_str, end_date_str)
+            await scheduler.setup_scheduler(bot)
+            
+            success = (
+                f"✅ Курс приема лекарства *{med['name']}* изменен на бессрочный!"
+            ) if lang == "ru" else (
+                f"✅ Course for *{med['name']}* has been successfully updated to permanent!"
+            ) if lang == "en" else (
+                f"✅ Курс прийому ліків *{med['name']}* змінено на безстроковий!"
+            )
+            
+            await state.clear()
+            await callback.message.delete()
+            await callback.message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+            await callback.answer()
+            
+        elif value == "custom":
+            await state.update_data(edit_med_id=med_id, edit_field="duration_days")
+            await state.set_state(EditMedDetails.waiting_for_new_value)
+            
+            prompt = (
+                f"📅 *Редактирование длительности курса для {med['name']}*\n\n"
+                f"Укажите количество дней приема (целое число, например, `7` или `30`) или введите конечную дату в формате **ГГГГ-ММ-ДД** (например, `2026-06-25`):"
+            ) if lang == "ru" else (
+                f"📅 *Editing course duration for {med['name']}*\n\n"
+                f"Enter the number of days of intake (whole number, e.g., `7` or `30`) or enter the end date in **YYYY-MM-DD** format (e.g., `2026-06-25`):"
+            ) if lang == "en" else (
+                f"📅 *Редагування тривалості курсу для {med['name']}*\n\n"
+                f"Вкажіть кількість днів прийому (ціле число, наприклад, `7` або `30`) або введіть кінцеву дату у форматі **РРРР-ММ-ДД** (наприклад, `2026-06-25`):"
+            )
+            
+            await callback.message.delete()
+            await callback.message.answer(prompt, reply_markup=get_cancel_keyboard(lang), parse_mode="Markdown")
+            await callback.answer()
+
+
+@router.message(StateFilter(EditMedDetails.waiting_for_new_value))
+async def process_edit_value_input(message: Message, state: FSMContext, bot: Bot):
+    state_data = await state.get_data()
+    med_id = state_data.get("edit_med_id")
+    field = state_data.get("edit_field")
+    
+    user = await database.get_user(message.from_user.id)
+    lang = user.get("language") if user else "ru"
+    
+    med = await database.get_medication(med_id)
+    if not med:
+        err_msg = "Ошибка: лекарство не найдено в базе данных." if lang == "ru" else "Error: medication not found in database." if lang == "en" else "Помилка: препарат не знайдено в базі даних."
+        await message.answer(err_msg, reply_markup=get_main_menu_keyboard(lang))
+        await state.clear()
+        return
+        
+    text = message.text.strip()
+    
+    if field == "dosage":
+        if not text:
+            await message.answer("Пожалуйста, введите корректное значение:" if lang == "ru" else "Please enter a valid value:" if lang == "en" else "Будь ласка, введіть коректне значення:")
+            return
+            
+        await database.update_medication_dosage(med_id, text)
+        
+        success = (
+            f"✅ Дозировка лекарства *{med['name']}* успешно обновлена на: **{text}**"
+        ) if lang == "ru" else (
+            f"✅ Dosage for *{med['name']}* has been successfully updated to: **{text}**"
+        ) if lang == "en" else (
+            f"✅ Дозування препарату *{med['name']}* успішно оновлено на: **{text}**"
+        )
+        
+        await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await state.clear()
+        
+    elif field == "stock":
+        try:
+            stock = int(text)
+            if stock < 0:
+                raise ValueError()
+        except ValueError:
+            await message.answer(_T("invalid_number", lang))
+            return
+            
+        await database.set_medication_stock(med_id, stock)
+        
+        success = (
+            f"✅ Остаток лекарства *{med['name']}* успешно изменен на: **{stock} шт.**"
+        ) if lang == "ru" else (
+            f"✅ Stock count for *{med['name']}* has been successfully updated to: **{stock} pcs.**"
+        ) if lang == "en" else (
+            f"✅ Залишок ліків *{med['name']}* успішно змінено на: **{stock} шт.**"
+        )
+        
+        await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await state.clear()
+        
+    elif field == "times":
+        times = re.split(r"[,\s;]+", text)
+        cleaned_times = []
+        time_regex = re.compile(r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+        
+        for t in times:
+            t = t.strip()
+            if not t:
+                continue
+            if not time_regex.match(t):
+                parts = t.split(":")
+                if len(parts) == 2:
+                    try:
+                        h = int(parts[0])
+                        m = int(parts[1])
+                        if 0 <= h < 24 and 0 <= m < 60:
+                            t = f"{h:02d}:{m:02d}"
+                    except ValueError:
+                        pass
+            
+            if time_regex.match(t):
+                cleaned_times.append(t)
+            else:
+                await message.answer(_T("invalid_time", lang, time=t))
+                return
+                
+        if not cleaned_times:
+            await message.answer(
+                "Время не распознано. Введите время в формате ЧЧ:ММ через пробел:" if lang == "ru"
+                else "No times recognized. Enter times in HH:MM format separated by space:" if lang == "en"
+                else "Час не розпізнано. Введіть час у форматі ГГ:ХХ через пробіл:"
+            )
+            return
+            
+        await database.delete_medication_reminders(med_id)
+        for time_str in cleaned_times:
+            await database.add_reminder(
+                medication_id=med_id,
+                time_str=time_str,
+                schedule_type='daily'
+            )
+            
+        await scheduler.setup_scheduler(bot)
+        
+        success = (
+            f"✅ Время приемов для *{med['name']}* успешно обновлено на: **{', '.join(cleaned_times)}**"
+        ) if lang == "ru" else (
+            f"✅ Intake times for *{med['name']}* have been successfully updated to: **{', '.join(cleaned_times)}**"
+        ) if lang == "en" else (
+            f"✅ Час прийомів для *{med['name']}* успішно оновлено на: **{', '.join(cleaned_times)}**"
+        )
+        
+        await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await state.clear()
+        
+    elif field == "duration_days":
+        user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+        now_local = datetime.now(user_tz)
+        start_date_str = now_local.strftime("%Y-%m-%d")
+        end_date_str = None
+        
+        try:
+            days = int(text)
+            if days <= 0:
+                raise ValueError()
+            end_date = now_local.date() + timedelta(days=days - 1)
+            end_date_str = end_date.strftime("%Y-%m-%d")
+        except ValueError:
+            try:
+                parsed_date = datetime.strptime(text, "%Y-%m-%d").date()
+                if parsed_date < now_local.date():
+                    past_err = ("❌ Дата окончания не может быть в прошлом. Введите корректную дату:" if lang == "ru"
+                                else "❌ End date cannot be in the past. Enter a valid date:" if lang == "en"
+                                else "❌ Дата закінчення не може бути в минулому. Введіть коректну дату:")
+                    await message.answer(past_err)
+                    return
+                end_date_str = parsed_date.strftime("%Y-%m-%d")
+            except ValueError:
+                await message.answer(
+                    _T("invalid_duration", lang),
+                    parse_mode="Markdown"
+                )
+                return
+                
+        await database.update_medication_duration(med_id, start_date_str, end_date_str)
+        await scheduler.setup_scheduler(bot)
+        
+        success = (
+            f"✅ Курс приема лекарства *{med['name']}* успешно обновлен!\nПериод: с {start_date_str} по {end_date_str or 'бессрочно'}"
+        ) if lang == "ru" else (
+            f"✅ Course for *{med['name']}* has been successfully updated!\nPeriod: from {start_date_str} to {end_date_str or 'permanent'}"
+        ) if lang == "en" else (
+            f"✅ Курс прийому ліків *{med['name']}* успішно оновлено!\nПеріод: з {start_date_str} по {end_date_str or 'безстроково'}"
+        )
+        
+        await message.answer(success, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
+        await state.clear()
 
 
 # --- ДОБАВЛЕНИЕ ЛЕКАРСТВА ---

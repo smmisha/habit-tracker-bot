@@ -632,3 +632,38 @@ async def update_medication_active_ingredient(med_id: int, active_ingredient: st
         "UPDATE medications SET active_ingredient = $1 WHERE id = $2",
         (active_ingredient, med_id)
     )
+
+async def update_medication_dosage(med_id: int, dosage: str):
+    await execute(
+        "UPDATE medications SET dosage = ? WHERE id = ?",
+        "UPDATE medications SET dosage = $1 WHERE id = $2",
+        (dosage, med_id)
+    )
+
+async def update_medication_food_relation(med_id: int, food_relation: str):
+    await execute(
+        "UPDATE medications SET food_relation = ? WHERE id = ?",
+        "UPDATE medications SET food_relation = $1 WHERE id = $2",
+        (food_relation, med_id)
+    )
+
+async def update_medication_duration(med_id: int, start_date: str, end_date: str):
+    await execute(
+        "UPDATE medications SET start_date = ?, end_date = ? WHERE id = ?",
+        "UPDATE medications SET start_date = $1, end_date = $2 WHERE id = $3",
+        (start_date, end_date, med_id)
+    )
+
+async def delete_medication_reminders(med_id: int):
+    await execute(
+        "DELETE FROM reminders WHERE medication_id = ?",
+        "DELETE FROM reminders WHERE medication_id = $1",
+        (med_id,)
+    )
+
+async def set_medication_stock(med_id: int, stock: int):
+    await execute(
+        "UPDATE medications SET stock_count = ? WHERE id = ?",
+        "UPDATE medications SET stock_count = $1 WHERE id = $2",
+        (stock, med_id)
+    )

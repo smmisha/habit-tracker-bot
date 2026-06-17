@@ -2,7 +2,7 @@ import logging
 import pytz
 from aiogram import Router, F, Bot
 from aiogram.filters import Command, CommandObject, StateFilter
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import database
@@ -119,18 +119,9 @@ async def process_set_lang(callback: CallbackQuery, state: FSMContext, bot: Bot)
         except Exception as e:
             logger.error(f"Ошибка разбора диплинка бадди: {e}")
             
-    # Если диплинка нет, присылаем приветствие и проверяем таймзону
-    user = await database.get_user(user_id)
+    # Если диплинка нет, присылаем приветствие и главное меню
     welcome_text = _T("welcome", lang, name=callback.from_user.first_name)
-    
-    if user and user['timezone']:
-        # Если часовой пояс уже настроен
-        await callback.message.answer(welcome_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
-    else:
-        # Если часовой пояс не настроен
-        welcome_text += "\n\n" + _T("set_tz_prompt", lang)
-        await state.set_state(SetTimezone.waiting_for_timezone)
-        await callback.message.answer(welcome_text, parse_mode="Markdown")
+    await callback.message.answer(welcome_text, reply_markup=get_main_menu_keyboard(lang), parse_mode="Markdown")
 
 
 # --- Обработчики подтверждения Бадди ---
