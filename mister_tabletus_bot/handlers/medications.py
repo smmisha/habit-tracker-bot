@@ -77,7 +77,7 @@ def get_cancel_keyboard(lang: str = "ru"):
 
 # --- ОБЩИЙ ОБРАБОТЧИК ОТМЕНЫ ---
 @router.message(
-    StateFilter(AddMedication, EditMedication, EditMedDetails),
+    StateFilter("*"),
     lambda m: m.text and (m.text.strip().lower() in [
         "отмена", "cancel", "скасувати",
         "❌ отмена", "❌ cancel", "❌ скасувати",

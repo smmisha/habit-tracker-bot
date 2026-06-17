@@ -84,9 +84,14 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(medications.router)
     dp.include_router(buddy.router)
+    # Настройка команд меню бота
+    logger.info("Настройка команд меню бота...")
+    from aiogram.types import BotCommand
+    await bot.set_my_commands([
+        BotCommand(command="start", description="🌐 Смена языка / Change language"),
+        BotCommand(command="cancel", description="❌ Отменить операцию / Cancel")
+    ])
 
-
-    
     logger.info("Настройка планировщика напоминаний...")
     await scheduler.setup_scheduler(bot)
     
