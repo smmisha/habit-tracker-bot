@@ -1924,14 +1924,12 @@ async def process_input_active_link_invalid(message: Message, state: FSMContext)
 
 
 # --- Обработчик свободного ввода названия лекарства (быстрый старт добавления) ---
-@router.message(StateFilter(None), F.text)
-async def process_direct_medicine_name(message: Message, state: FSMContext):
+def is_not_menu_button(message: Message) -> bool:
+    if not message.text:
+        return False
     text = message.text.strip()
-    
-    # Игнорируем команды и кнопки меню
     if text.startswith("/"):
-        return
-        
+        return False
     langs = ["ru", "en", "uk"]
     menu_buttons = []
     for l in langs:
@@ -1942,9 +1940,11 @@ async def process_direct_medicine_name(message: Message, state: FSMContext):
             _T("menu_buddies", l),
             _T("menu_change_tz", l)
         ])
-        
-    if text in menu_buttons:
-        return
+    return text not in menu_buttons
+
+@router.message(StateFilter(None), F.text, is_not_menu_button)
+async def process_direct_medicine_name(message: Message, state: FSMContext):
+    text = message.text.strip()
         
     detected_name = text.capitalize()
     
