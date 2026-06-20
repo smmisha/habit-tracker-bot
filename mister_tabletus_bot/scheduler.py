@@ -192,12 +192,37 @@ async def check_unconfirmed_job(bot: Bot, user_id: int, med_id: int, expected_ti
     except Exception as e:
         logger.error(f"Ошибка в check_unconfirmed_job: {e}", exc_info=True)
 
+async def write_heartbeat_job():
+    """Записывает текущее время в базу данных для подтверждения активности бота"""
+    try:
+        from datetime import datetime
+        now_str = datetime.utcnow().isoformat()
+        await database.execute(
+            "INSERT INTO bot_status (name, last_ping) VALUES ('mister_tabletus', ?) ON CONFLICT (name) DO UPDATE SET last_ping = EXCLUDED.last_ping",
+            "INSERT INTO bot_status (name, last_ping) VALUES ('mister_tabletus', $1) ON CONFLICT (name) DO UPDATE SET last_ping = EXCLUDED.last_ping",
+            (now_str,)
+        )
+    except Exception as e:
+        logger.error(f"Ошибка в write_heartbeat_job: {e}", exc_info=True)
+
 async def setup_scheduler(bot: Bot):
     """Инициализация и запуск планировщика, загрузка всех активных напоминаний из БД"""
     if not scheduler.running:
         scheduler.start()
     else:
         scheduler.remove_all_jobs()
+        
+    # Записываем heartbeat при старте
+    await write_heartbeat_job()
+    
+    # Добавляем задачу раз в 5 минут
+    scheduler.add_job(
+        write_heartbeat_job,
+        'interval',
+        minutes=5,
+        id="bot_heartbeat",
+        replace_existing=True
+    )
         
     reminders = await database.get_all_reminders_for_scheduler()
     

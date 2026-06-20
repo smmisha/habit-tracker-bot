@@ -138,6 +138,13 @@ async def init_db():
                     dosages TEXT
                 )
             """)
+            # Таблица статуса бота для мониторинга
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS bot_status (
+                    name TEXT PRIMARY KEY,
+                    last_ping TEXT
+                )
+            """)
             
             # Миграции для добавления языка и дат курса (PostgreSQL)
             try:
@@ -241,6 +248,13 @@ async def init_db():
                 CREATE TABLE IF NOT EXISTS dosage_cache (
                     name TEXT PRIMARY KEY,
                     dosages TEXT
+                )
+            """)
+            # Таблица статуса бота для мониторинга
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS bot_status (
+                    name TEXT PRIMARY KEY,
+                    last_ping TEXT
                 )
             """)
             await db.commit()
