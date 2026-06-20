@@ -91,6 +91,44 @@ async def cmd_help(message: Message, state: FSMContext = None):
         parse_mode="Markdown"
     )
 
+@router.message(Command("stats"))
+async def cmd_stats(message: Message):
+    # Ограничиваем доступ только владельцу бота
+    ADMIN_IDS = {1496819884}
+    if message.from_user.id not in ADMIN_IDS:
+        return
+
+    try:
+        res_users = await database.fetch_one("SELECT COUNT(*) as cnt FROM users", "SELECT COUNT(*) as cnt FROM users")
+        total_users = res_users["cnt"] if res_users else 0
+
+        res_meds = await database.fetch_one("SELECT COUNT(*) as cnt FROM medications WHERE is_active = 1", "SELECT COUNT(*) as cnt FROM medications WHERE is_active = 1")
+        total_meds = res_meds["cnt"] if res_meds else 0
+
+        res_reminders = await database.fetch_one("SELECT COUNT(*) as cnt FROM reminders", "SELECT COUNT(*) as cnt FROM reminders")
+        total_reminders = res_reminders["cnt"] if res_reminders else 0
+
+        res_history = await database.fetch_one(
+            "SELECT COUNT(*) as cnt FROM history WHERE status IN ('taken', 'taken_late')", 
+            "SELECT COUNT(*) as cnt FROM history WHERE status IN ('taken', 'taken_late')"
+        )
+        total_history = res_history["cnt"] if res_history else 0
+
+        res_history_all = await database.fetch_one("SELECT COUNT(*) as cnt FROM history", "SELECT COUNT(*) as cnt FROM history")
+        total_history_all = res_history_all["cnt"] if res_history_all else 0
+
+        stats_text = (
+            f"📊 *Статистика Мистера Таблетуса:*\n\n"
+            f"👥 Всего пользователей: *{total_users}*\n"
+            f"💊 Активных лекарств в аптечках: *{total_meds}*\n"
+            f"⏰ Всего напоминаний создано: *{total_reminders}*\n"
+            f"✅ Подтвержденных приёмов: *{total_history}* (из {total_history_all} записей)\n"
+        )
+        await message.answer(stats_text, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики: {e}")
+        await message.answer(f"❌ Ошибка при получении статистики: {e}")
+
 @router.message(Command("start"))
 async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: FSMContext):
     # Добавляем пользователя в базу данных
