@@ -52,9 +52,15 @@ async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: in
             second=0, microsecond=0
         ).isoformat()
         
-        # Проверяем, нет ли уже лога (чтобы избежать дублирования при перезапуске)
-        # И записываем в историю как 'pending' (ожидает подтверждения)
-        await database.log_history(user_id, med_id, expected_time_iso, 'pending', '')
+        # Проверяем, нет ли уже лога в истории (если пользователь уже принял лекарство раньше времени)
+        status_history = await database.get_history_status(med_id, expected_time_iso)
+        if status_history in ['taken', 'taken_late', 'skipped']:
+            logger.info(f"Reminder for med {med_id} at {expected_time_iso} already has status '{status_history}'. Skipping reminder notification.")
+            return
+            
+        # Записываем в историю как 'pending' (ожидает подтверждения), если записи еще нет
+        if status_history is None:
+            await database.log_history(user_id, med_id, expected_time_iso, 'pending', '')
         
         # Текст сообщения от Мистера Таблетуса
         relation_text = {
@@ -291,3 +297,13 @@ def remove_reminder_from_scheduler(reminder_id: int):
     job_id = f"reminder_{reminder_id}"
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
+
+def remove_snooze_jobs_from_scheduler(med_id: int):
+    """Удаляет все отложенные (snoozed) напоминания для указанного лекарства из планировщика"""
+    for job in list(scheduler.get_jobs()):
+        if job.id.startswith(f"snooze_{med_id}_"):
+            try:
+                scheduler.remove_job(job.id)
+                logger.info(f"Успешно удалена отложенная задача {job.id} из планировщика.")
+            except Exception as e:
+                logger.error(f"Не удалось удалить отложенную задачу {job.id}: {e}")

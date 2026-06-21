@@ -1771,6 +1771,7 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
         
     # 1. Обновляем статус в истории
     await database.update_history_status(med_id, expected_time_iso, 'taken', datetime.now().isoformat())
+    scheduler.remove_snooze_jobs_from_scheduler(med_id)
         
     # 2. Уменьшаем запас на 1 дозу
     await database.update_medication_stock(med_id, -1)
@@ -1821,6 +1822,7 @@ async def process_skip_pill(callback: CallbackQuery):
         
     # 1. Записываем пропуск
     await database.update_history_status(med_id, expected_time_iso, 'skipped', datetime.now().isoformat())
+    scheduler.remove_snooze_jobs_from_scheduler(med_id)
         
     # 2. Штрафуем маскота (-15 здоровья)
     status = await database.update_user_tamagotchi(callback.from_user.id, health_delta=-15, xp_delta=0)
@@ -2012,6 +2014,7 @@ async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_i
         await database.log_history(user_id, med_id, expected_time_iso, status_to_log, actual_time.isoformat())
     else:
         await database.update_history_status(med_id, expected_time_iso, status_to_log, actual_time.isoformat())
+    scheduler.remove_snooze_jobs_from_scheduler(med_id)
     
     # 2. Update stock
     await database.update_medication_stock(med_id, -1)
