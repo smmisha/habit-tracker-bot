@@ -16,6 +16,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+async def register_and_cleanup_messages(bot: Bot, user_id: int, new_msg_id: int):
+    try:
+        # 1. Получаем список последних сообщений пользователя
+        msg_ids = await database.get_user_recent_msg_ids(user_id)
+        
+        # 2. Добавляем новое сообщение в список
+        msg_ids.append(new_msg_id)
+        
+        # 3. Если в списке накопилось больше 10 сообщений
+        while len(msg_ids) > 10:
+            old_msg_id = msg_ids.pop(0)
+            try:
+                await bot.delete_message(chat_id=user_id, message_id=old_msg_id)
+            except Exception:
+                # Игнорируем ошибки (например, если сообщение уже удалено или прошло более 48 часов)
+                pass
+                
+        # 4. Сохраняем обновленный список в БД
+        await database.update_user_recent_msg_ids(user_id, msg_ids)
+    except Exception as e:
+        logger.error(f"Ошибка при автоматической очистке сообщений для {user_id}: {e}")
+
 async def main():
     logger.info("Инициализация базы данных...")
     await database.init_db()
@@ -26,6 +48,21 @@ async def main():
     
     # Инициализация бота и диспетчера
     bot = Bot(token=BOT_TOKEN)
+    
+    # Автоматическое удаление старых сообщений бота, чтобы в чате оставалось не более 10 последних
+    original_call = bot.__call__
+
+    async def patched_call(method, request_timeout=None):
+        response = await original_call(method, request_timeout)
+        method_name = method.__class__.__name__
+        if method_name.startswith("Send"):
+            chat_id = getattr(method, "chat_id", None)
+            if response and hasattr(response, "message_id") and isinstance(chat_id, int) and chat_id > 0:
+                asyncio.create_task(register_and_cleanup_messages(bot, chat_id, response.message_id))
+        return response
+
+    bot.__call__ = patched_call
+
     dp = Dispatcher(storage=storage)
     
     # Регистрация Whitelist Middleware

@@ -163,6 +163,10 @@ async def init_db():
                 await conn.execute("ALTER TABLE medications ADD COLUMN IF NOT EXISTS end_date TEXT")
             except Exception:
                 pass
+            try:
+                await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS recent_msg_ids TEXT")
+            except Exception:
+                pass
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             # Таблица пользователей
@@ -280,6 +284,11 @@ async def init_db():
                 await db.commit()
             except Exception:
                 pass
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN recent_msg_ids TEXT")
+                await db.commit()
+            except Exception:
+                pass
 
 
 async def close_db():
@@ -393,6 +402,23 @@ async def update_user_cabinet_msg_ids(user_id: int, msg_ids: list[int]):
     await execute(
         "UPDATE users SET cabinet_msg_ids = ? WHERE id = ?",
         "UPDATE users SET cabinet_msg_ids = $1 WHERE id = $2",
+        (val, user_id)
+    )
+
+async def get_user_recent_msg_ids(user_id: int) -> list[int]:
+    user = await get_user(user_id)
+    if not user or not user.get("recent_msg_ids"):
+        return []
+    try:
+        return [int(x) for x in user["recent_msg_ids"].split(",") if x.strip()]
+    except Exception:
+        return []
+
+async def update_user_recent_msg_ids(user_id: int, msg_ids: list[int]):
+    val = ",".join(str(x) for x in msg_ids)
+    await execute(
+        "UPDATE users SET recent_msg_ids = ? WHERE id = ?",
+        "UPDATE users SET recent_msg_ids = $1 WHERE id = $2",
         (val, user_id)
     )
 
