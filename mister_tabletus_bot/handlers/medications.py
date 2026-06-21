@@ -1769,8 +1769,13 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
         await callback.answer("Прием уже подтвержден!")
         return
         
-    # 1. Обновляем статус в истории
-    await database.update_history_status(med_id, expected_time_iso, 'taken', datetime.now().isoformat())
+    user = await database.get_user(callback.from_user.id)
+    import pytz
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow') if user else pytz.timezone('Europe/Moscow')
+    now_local = datetime.now(user_tz)
+
+    # 1. Обновляем статус в истории с использованием локального времени пользователя
+    await database.update_history_status(med_id, expected_time_iso, 'taken', now_local.isoformat())
     scheduler.remove_snooze_jobs_from_scheduler(med_id)
         
     # 2. Уменьшаем запас на 1 дозу
@@ -1789,11 +1794,6 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
     if updated_med and updated_med['stock_count'] <= updated_med['stock_alert_threshold']:
         stock_warning = f"\n⚠️ *Внимание:* в аптечке осталось всего {updated_med['stock_count']} шт.!"
         
-    user = await database.get_user(callback.from_user.id)
-    import pytz
-    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow') if user else pytz.timezone('Europe/Moscow')
-    now_local = datetime.now(user_tz)
-
     feedback_text = (
         f"✅ *Принято в {now_local.strftime('%H:%M')}!*\n\n"
         f"💊 Препарат: *{med['name']}*\n"
@@ -2123,10 +2123,31 @@ async def process_take_med_cabinet_start(callback: CallbackQuery, state: FSMCont
     now_local = datetime.now(user_tz)
     target = await find_target_reminder_for_cabinet_take(med_id, user_tz, now_local)
     if target is None:
+        # Ищем информацию о последнем приеме
+        query_sqlite = "SELECT action_time FROM history WHERE medication_id = ? AND status IN ('taken', 'taken_late') ORDER BY action_time DESC LIMIT 1"
+        query_pg = "SELECT action_time FROM history WHERE medication_id = $1 AND status IN ('taken', 'taken_late') ORDER BY action_time DESC LIMIT 1"
+        last_take = await database.fetch_one(query_sqlite, query_pg, (med_id,))
+        last_info = ""
+        if last_take and last_take.get("action_time"):
+            try:
+                time_str = last_take["action_time"]
+                if "." in time_str:
+                    time_str = time_str.split(".")[0]
+                dt = datetime.fromisoformat(time_str)
+                formatted = dt.strftime("%H:%M (%d.%m.%Y)")
+                if lang == "ru":
+                    last_info = f"\nПоследний прием: {formatted}"
+                elif lang == "en":
+                    last_info = f"\nLast intake: {formatted}"
+                else:
+                    last_info = f"\nОстанній прийом: {formatted}"
+            except Exception:
+                pass
+        
         msg = (
-            "Все приемы этого лекарства на сегодня уже выполнены!" if lang == "ru"
-            else "All intakes for this medication have already been completed today!" if lang == "en"
-            else "Всі прийоми цих ліків на сьогодні вже виконані!"
+            f"Все приемы этого лекарства на сегодня уже выполнены!{last_info}" if lang == "ru"
+            else f"All intakes for this medication have already been completed today!{last_info}" if lang == "en"
+            else f"Всі прийоми цих ліків на сьогодні вже виконані!{last_info}"
         )
         await callback.answer(msg, show_alert=True)
         return
@@ -2200,6 +2221,7 @@ async def process_take_late_now(callback: CallbackQuery, state: FSMContext, bot:
     if not user:
         await callback.answer()
         return
+    lang = user.get("language") if user else "ru"
     user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
     now_local = datetime.now(user_tz)
     
@@ -2211,7 +2233,31 @@ async def process_take_late_now(callback: CallbackQuery, state: FSMContext, bot:
     if from_cabinet:
         target = await find_target_reminder_for_cabinet_take(med_id, user_tz, now_local)
         if target is None:
-            await callback.answer("Все приемы этого лекарства на сегодня уже выполнены!", show_alert=True)
+            query_sqlite = "SELECT action_time FROM history WHERE medication_id = ? AND status IN ('taken', 'taken_late') ORDER BY action_time DESC LIMIT 1"
+            query_pg = "SELECT action_time FROM history WHERE medication_id = $1 AND status IN ('taken', 'taken_late') ORDER BY action_time DESC LIMIT 1"
+            last_take = await database.fetch_one(query_sqlite, query_pg, (med_id,))
+            last_info = ""
+            if last_take and last_take.get("action_time"):
+                try:
+                    time_str = last_take["action_time"]
+                    if "." in time_str:
+                        time_str = time_str.split(".")[0]
+                    dt = datetime.fromisoformat(time_str)
+                    formatted = dt.strftime("%H:%M (%d.%m.%Y)")
+                    if lang == "ru":
+                        last_info = f"\nПоследний прием: {formatted}"
+                    elif lang == "en":
+                        last_info = f"\nLast intake: {formatted}"
+                    else:
+                        last_info = f"\nОстанній прийом: {formatted}"
+                except Exception:
+                    pass
+            await callback.answer(
+                f"Все приемы этого лекарства на сегодня уже выполнены!{last_info}" if lang == "ru"
+                else f"All intakes for this medication have already been completed today!{last_info}" if lang == "en"
+                else f"Всі прийоми цих ліків на сьогодні вже виконані!{last_info}",
+                show_alert=True
+            )
             # Restore card
             idx = state_data.get("late_idx", 1)
             med = await database.get_medication(med_id)
