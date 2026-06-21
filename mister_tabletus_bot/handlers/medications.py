@@ -1789,8 +1789,13 @@ async def process_take_pill(callback: CallbackQuery, bot: Bot):
     if updated_med and updated_med['stock_count'] <= updated_med['stock_alert_threshold']:
         stock_warning = f"\n⚠️ *Внимание:* в аптечке осталось всего {updated_med['stock_count']} шт.!"
         
+    user = await database.get_user(callback.from_user.id)
+    import pytz
+    user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow') if user else pytz.timezone('Europe/Moscow')
+    now_local = datetime.now(user_tz)
+
     feedback_text = (
-        f"✅ *Принято в {datetime.now().strftime('%H:%M')}!*\n\n"
+        f"✅ *Принято в {now_local.strftime('%H:%M')}!*\n\n"
         f"💊 Препарат: *{med['name']}*\n"
         f"🤖 *Мистер Таблетус:* «Спасибо! Будьте здоровы! {mascot_msg}»"
         f"{stock_warning}"
@@ -1864,6 +1869,15 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
     else:
         await callback.message.edit_text(text=snoozed_text, reply_markup=None, parse_mode="Markdown")
         
+    try:
+        expected_time = datetime.fromisoformat(expected_time_iso)
+        expected_time_str = expected_time.strftime("%H:%M")
+    except Exception:
+        user = await database.get_user(callback.from_user.id)
+        import pytz
+        user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow') if user else pytz.timezone('Europe/Moscow')
+        expected_time_str = datetime.now(user_tz).strftime("%H:%M")
+
     run_time = datetime.now() + timedelta(minutes=15)
     job_id = f"snooze_{med_id}_{int(run_time.timestamp())}"
     
@@ -1872,7 +1886,7 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
         'date',
         run_date=run_time,
         id=job_id,
-        args=[bot, callback.from_user.id, 0, med_id, datetime.now().strftime("%H:%M")]
+        args=[bot, callback.from_user.id, 0, med_id, expected_time_str]
     )
     
     await callback.answer("Отложено на 15 минут!")
