@@ -93,8 +93,8 @@ async def cmd_help(message: Message, state: FSMContext = None):
 
 @router.message(Command("stats"))
 async def cmd_stats(message: Message):
-    # Ограничиваем доступ только владельцу бота
-    ADMIN_IDS = {1496819884}
+    # Ограничиваем доступ владельцам бота
+    ADMIN_IDS = {1496819884, 8215716011}
     if message.from_user.id not in ADMIN_IDS:
         return
 
