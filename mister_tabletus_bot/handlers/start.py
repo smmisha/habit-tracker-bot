@@ -99,31 +99,84 @@ async def cmd_stats(message: Message):
         return
 
     try:
+        # 1. Получаем общее количество пользователей
         res_users = await database.fetch_one("SELECT COUNT(*) as cnt FROM users", "SELECT COUNT(*) as cnt FROM users")
         total_users = res_users["cnt"] if res_users else 0
 
-        res_meds = await database.fetch_one("SELECT COUNT(*) as cnt FROM medications WHERE is_active = 1", "SELECT COUNT(*) as cnt FROM medications WHERE is_active = 1")
-        total_meds = res_meds["cnt"] if res_meds else 0
-
-        res_reminders = await database.fetch_one("SELECT COUNT(*) as cnt FROM reminders", "SELECT COUNT(*) as cnt FROM reminders")
-        total_reminders = res_reminders["cnt"] if res_reminders else 0
-
-        res_history = await database.fetch_one(
-            "SELECT COUNT(*) as cnt FROM history WHERE status IN ('taken', 'taken_late')", 
-            "SELECT COUNT(*) as cnt FROM history WHERE status IN ('taken', 'taken_late')"
-        )
-        total_history = res_history["cnt"] if res_history else 0
-
-        res_history_all = await database.fetch_one("SELECT COUNT(*) as cnt FROM history", "SELECT COUNT(*) as cnt FROM history")
-        total_history_all = res_history_all["cnt"] if res_history_all else 0
-
+        # 2. Получаем детальную статистику по каждому пользователю
+        query_sql = """
+        SELECT 
+            u.id, 
+            u.username, 
+            u.first_name,
+            COALESCE(m.med_count, 0) as med_count,
+            COALESCE(h.take_count, 0) as take_count,
+            h.last_take
+        FROM users u
+        LEFT JOIN (
+            SELECT user_id, COUNT(*) as med_count 
+            FROM medications 
+            WHERE is_active = 1 
+            GROUP BY user_id
+        ) m ON u.id = m.user_id
+        LEFT JOIN (
+            SELECT 
+                user_id, 
+                COUNT(*) as take_count, 
+                MAX(action_time) as last_take 
+            FROM history 
+            WHERE status IN ('taken', 'taken_late')
+            GROUP BY user_id
+        ) h ON u.id = h.user_id
+        ORDER BY take_count DESC, med_count DESC
+        """
+        
+        user_stats = await database.fetch_all(query_sql, query_sql)
+        
+        active_lines = []
+        idle_count = 0
+        
+        for row in user_stats:
+            meds = row["med_count"]
+            takes = row["take_count"]
+            last_take = row["last_take"]
+            
+            name = f"@{row['username']}" if row['username'] else row['first_name']
+            if not name:
+                name = f"ID: {row['id']}"
+                
+            if meds > 0 or takes > 0:
+                last_str = "нет"
+                if last_take:
+                    try:
+                        t_str = last_take.split(".")[0]
+                        if "T" in t_str:
+                            dt_part, tm_part = t_str.split("T")
+                            yy, mm, dd = dt_part.split("-")
+                            hh_mm = ":".join(tm_part.split(":")[:2])
+                            last_str = f"{hh_mm} ({dd}.{mm}.{yy})"
+                        else:
+                            last_str = last_take[:16]
+                    except Exception:
+                        last_str = last_take[:16]
+                active_lines.append(f"👤 *{name}*: лекарств: {meds}, приёмов: {takes}, последний: `{last_str}`")
+            else:
+                idle_count += 1
+                
+        active_users_count = len(active_lines)
+        
         stats_text = (
-            f"📊 *Статистика Мистера Таблетуса:*\n\n"
-            f"👥 Всего пользователей: *{total_users}*\n"
-            f"💊 Активных лекарств в аптечках: *{total_meds}*\n"
-            f"⏰ Всего напоминаний создано: *{total_reminders}*\n"
-            f"✅ Подтвержденных приёмов: *{total_history}* (из {total_history_all} записей)\n"
+            f"📊 *Детальная статистика активности:*\n\n"
+            f"👥 Всего зарегистрировано: *{total_users}*\n"
+            f"⚡️ Активных пользователей: *{active_users_count}*\n"
+            f"💤 Неактивных (только запустили): *{idle_count}*\n\n"
+            f"🔥 *Список активных пользователей:*\n"
         )
+        if active_lines:
+            stats_text += "\n".join(active_lines)
+        else:
+            stats_text += "_Активных пользователей пока нет._"
+            
         await message.answer(stats_text, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка при получении статистики: {e}")
