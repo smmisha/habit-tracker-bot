@@ -336,6 +336,11 @@ async def process_custom_timezone(message: Message, state: FSMContext):
         pytz.timezone(tz_name)
         # Если часовой пояс валидный, сохраняем в БД
         await database.update_user_timezone(message.from_user.id, tz_name)
+        
+        # Пересчитываем расписание напоминаний и еженедельных отчетов для пользователя
+        from scheduler import reschedule_user_jobs
+        await reschedule_user_jobs(message.bot, message.from_user.id)
+        
         await state.clear()
         await message.answer(
             _T("tz_success", lang, tz=tz_name),

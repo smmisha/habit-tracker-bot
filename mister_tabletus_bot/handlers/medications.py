@@ -2864,3 +2864,31 @@ async def process_direct_medicine_name(message: Message, state: FSMContext):
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+
+@router.callback_query(F.data == "feedback_no_use")
+async def process_feedback_no_use(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    user = await database.get_user(user_id)
+    lang = user.get("language") if user else "ru"
+    
+    # 1. Soft-delete all medications for this user and remove them from scheduler
+    meds = await database.get_user_medications(user_id)
+    for med in meds:
+        await database.delete_medication(med['id'])
+        reminders = await database.get_medication_reminders(med['id'])
+        for r in reminders:
+            scheduler.remove_reminder_from_scheduler(r['id'])
+            
+    # 2. Respond to the user
+    goodbye_msg = {
+        "ru": "Очень жаль! Я отключил все ваши напоминания. Если решите вернуться, просто добавьте новое лекарство с помощью меню. Буду ждать вас! 🤖💊",
+        "en": "So sorry! I have disabled all your reminders. If you decide to return, just add a new medication via the menu. I'll be waiting! 🤖💊",
+        "uk": "Дуже шкода! Я вимкнув усі ваші нагадування. Якщо вирішите повернутися, просто додайте нові ліки за допомогою меню. Буду чекати на вас! 🤖💊"
+    }.get(lang, "Очень жаль! Я отключил все ваши напоминания. Если решите вернуться, просто добавьте новое лекарство с помощью меню. Буду ждать вас! 🤖💊")
+    
+    await callback.message.edit_text(
+        text=goodbye_msg,
+        reply_markup=None,
+        parse_mode="Markdown"
+    )
+    await callback.answer()

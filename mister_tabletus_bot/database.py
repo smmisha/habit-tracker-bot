@@ -734,3 +734,47 @@ async def set_medication_stock(med_id: int, stock: int):
         "UPDATE medications SET stock_count = $1 WHERE id = $2",
         (stock, med_id)
     )
+
+async def get_all_users():
+    return await fetch_all(
+        "SELECT * FROM users",
+        "SELECT * FROM users"
+    )
+
+async def get_user_history(user_id: int):
+    return await fetch_all(
+        "SELECT * FROM history WHERE user_id = ?",
+        "SELECT * FROM history WHERE user_id = $1",
+        (user_id,)
+    )
+
+async def delete_old_history(user_id: int, before_date_str: str):
+    return await execute(
+        "DELETE FROM history WHERE user_id = ? AND reminder_time < ?",
+        "DELETE FROM history WHERE user_id = $1 AND reminder_time < $2",
+        (user_id, before_date_str)
+    )
+
+async def get_user_reminders_for_scheduler(user_id: int):
+    query = """
+        SELECT 
+            r.id as reminder_id, r.time_str, r.schedule_type, r.schedule_data,
+            m.id as medication_id, m.name as med_name, m.active_ingredient, m.dosage, m.food_relation, m.stock_count, m.stock_alert_threshold, m.image_path,
+            u.id as user_id, u.timezone, u.mascot_health, u.mascot_level, u.buddies_enabled
+        FROM reminders r
+        JOIN medications m ON r.medication_id = m.id
+        JOIN users u ON m.user_id = u.id
+        WHERE m.is_active = 1 AND u.id = ?
+    """
+    query_pg = query.replace("?", "$1")
+    rows = await fetch_all(query, query_pg, (user_id,))
+    processed_rows = []
+    for r in rows:
+        row_dict = dict(r)
+        if isinstance(row_dict.get('schedule_data'), str):
+            try:
+                row_dict['schedule_data'] = json.loads(row_dict['schedule_data'])
+            except:
+                pass
+        processed_rows.append(row_dict)
+    return processed_rows

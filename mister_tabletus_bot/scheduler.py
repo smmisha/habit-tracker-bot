@@ -247,6 +247,15 @@ async def setup_scheduler(bot: Bot):
         add_reminder_to_scheduler(bot, r)
         count += 1
         
+    # Загружаем недельные отчеты и очистку для всех пользователей
+    try:
+        users = await database.get_all_users()
+        for u in users:
+            schedule_user_weekly_jobs(bot, dict(u))
+        logger.info(f"Scheduled weekly report and cleanup jobs for {len(users)} users.")
+    except Exception as e:
+        logger.error(f"Error scheduling weekly jobs in setup_scheduler: {e}", exc_info=True)
+        
     logger.info(f"Планировщик запущен. Загружено {count} напоминаний.")
 
 
@@ -317,3 +326,193 @@ def remove_snooze_jobs_from_scheduler(med_id: int):
                 logger.info(f"Успешно удалена отложенная задача {job.id} из планировщика.")
             except Exception as e:
                 logger.error(f"Не удалось удалить отложенную задачу {job.id}: {e}")
+
+def schedule_user_weekly_jobs(bot: Bot, u: dict):
+    user_id = u['id']
+    try:
+        user_tz = pytz.timezone(u['timezone'] or 'Europe/Moscow')
+    except Exception:
+        user_tz = pytz.timezone('Europe/Moscow')
+        
+    report_job_id = f"weekly_report_{user_id}"
+    cleanup_job_id = f"weekly_cleanup_{user_id}"
+    
+    # Remove existing jobs if any
+    if scheduler.get_job(report_job_id):
+        scheduler.remove_job(report_job_id)
+    if scheduler.get_job(cleanup_job_id):
+        scheduler.remove_job(cleanup_job_id)
+        
+    # Schedule Weekly Report on Monday at 10:00 AM
+    scheduler.add_job(
+        send_weekly_report_job,
+        CronTrigger(day_of_week='mon', hour=10, minute=0, timezone=user_tz),
+        id=report_job_id,
+        args=[bot, user_id],
+        replace_existing=True
+    )
+    
+    # Schedule Weekly Cleanup on Tuesday at 03:00 AM
+    scheduler.add_job(
+        weekly_cleanup_job,
+        CronTrigger(day_of_week='tue', hour=3, minute=0, timezone=user_tz),
+        id=cleanup_job_id,
+        args=[user_id],
+        replace_existing=True
+    )
+
+async def reschedule_user_jobs(bot: Bot, user_id: int):
+    # 1. Reschedule all medication reminders
+    reminders = await database.get_user_reminders_for_scheduler(user_id)
+    
+    # First remove any existing reminders from this user from scheduler
+    for r in reminders:
+        remove_reminder_from_scheduler(r['reminder_id'])
+        
+    for r in reminders:
+        add_reminder_to_scheduler(bot, r)
+        
+    # 2. Reschedule the weekly report and cleanup jobs
+    user = await database.get_user(user_id)
+    if not user:
+        return
+    schedule_user_weekly_jobs(bot, dict(user))
+    logger.info(f"Rescheduled weekly jobs and {len(reminders)} medication reminders for user {user_id}")
+
+async def send_weekly_report_job(bot: Bot, user_id: int):
+    try:
+        user = await database.get_user(user_id)
+        if not user:
+            return
+        user = dict(user)
+        lang = user.get("language") or "ru"
+        
+        # 1. Fetch user's history
+        history = await database.get_user_history(user_id)
+        if not history:
+            history = []
+            
+        # 2. Fetch user's medications
+        meds = await database.get_user_medications(user_id)
+        # If the user has NO medications at all, they get nothing
+        if not meds:
+            logger.info(f"User {user_id} has no medications. Skipping weekly report.")
+            return
+            
+        # 3. Filter history for the previous week
+        try:
+            user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+        except Exception:
+            user_tz = pytz.timezone('Europe/Moscow')
+            
+        now_local = datetime.now(user_tz)
+        today_date = now_local.date()
+        
+        # Calculate last week's start (Monday) and end (Sunday)
+        start_of_this_week = today_date - timedelta(days=today_date.weekday())
+        start_of_last_week = start_of_this_week - timedelta(days=7)
+        end_of_last_week = start_of_this_week - timedelta(days=1)
+        
+        start_of_last_week_str = start_of_last_week.isoformat()
+        end_of_last_week_str = end_of_last_week.isoformat()
+        
+        logger.info(f"Weekly report for {user_id} from {start_of_last_week_str} to {end_of_last_week_str}")
+        
+        last_week_history = []
+        for h in history:
+            h = dict(h)
+            try:
+                rem_date_str = h['reminder_time'].split("T")[0]
+                if start_of_last_week_str <= rem_date_str <= end_of_last_week_str:
+                    last_week_history.append(h)
+            except Exception as e:
+                logger.error(f"Error parsing reminder_time: {e}")
+                
+        total_scheduled = len(last_week_history)
+        total_taken = sum(1 for h in last_week_history if h['status'] in ['taken', 'taken_late'])
+        total_skipped = sum(1 for h in last_week_history if h['status'] == 'skipped')
+        total_pending = sum(1 for h in last_week_history if h['status'] == 'pending')
+        
+        # If no reminders were scheduled, skip
+        if total_scheduled == 0:
+            logger.info(f"User {user_id} had 0 scheduled reminders in the past week. Skipping report.")
+            return
+            
+        # 4. Check feedback eligibility:
+        # - total_taken <= 1
+        # - at least one medication is scheduled for a period > 1 day
+        has_long_course = False
+        for med in meds:
+            med = dict(med)
+            start_date_str = med.get('start_date')
+            end_date_str = med.get('end_date')
+            if not end_date_str:
+                has_long_course = True
+                break
+            if start_date_str and end_date_str:
+                try:
+                    s_dt = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                    e_dt = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                    if s_dt != e_dt:
+                        has_long_course = True
+                        break
+                except:
+                    pass
+                    
+        is_feedback_eligible = (total_taken <= 1) and has_long_course
+        
+        if is_feedback_eligible:
+            msg_text = _T("weekly_feedback", lang, taken=total_taken)
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✍️ Написать @mishanya404", url="https://t.me/mishanya404")
+                ],
+                [
+                    InlineKeyboardButton(text=_T("btn_feedback_no_use", lang), callback_data="feedback_no_use")
+                ]
+            ])
+            await bot.send_message(
+                chat_id=user_id,
+                text=msg_text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            logger.info(f"Sent weekly low usage feedback message to user {user_id}")
+        else:
+            if total_skipped == 0 and total_pending == 0:
+                msg_text = _T("weekly_perfect", lang)
+            else:
+                msg_text = _T("weekly_good", lang, taken=total_taken, total=total_scheduled)
+                
+            await bot.send_message(
+                chat_id=user_id,
+                text=msg_text,
+                parse_mode="Markdown"
+            )
+            logger.info(f"Sent weekly adherence report to user {user_id}")
+            
+    except Exception as e:
+        logger.error(f"Error in send_weekly_report_job: {e}", exc_info=True)
+
+async def weekly_cleanup_job(user_id: int):
+    try:
+        user = await database.get_user(user_id)
+        if not user:
+            return
+        user = dict(user)
+        try:
+            user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+        except Exception:
+            user_tz = pytz.timezone('Europe/Moscow')
+            
+        now_local = datetime.now(user_tz)
+        today_date = now_local.date()
+        
+        # Tuesday cleanup: delete history older than Monday of the current week
+        start_of_this_week = today_date - timedelta(days=today_date.weekday())
+        start_of_this_week_str = start_of_this_week.isoformat()
+        
+        await database.delete_old_history(user_id, start_of_this_week_str)
+        logger.info(f"Cleaned up history for user {user_id} before {start_of_this_week_str}")
+    except Exception as e:
+        logger.error(f"Error in weekly_cleanup_job for user {user_id}: {e}", exc_info=True)
