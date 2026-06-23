@@ -2005,6 +2005,35 @@ async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_i
     delay_seconds = (actual_time - expected_time).total_seconds()
     delay_hours = max(0.0, delay_seconds / 3600.0)
     
+    # --- HARD LIMITS ---
+    # 1. Cannot mark intake for a different day
+    if actual_time.date() != expected_time.date():
+        reject_text = _T("take_late_next_day", lang)
+        if callback:
+            await callback.answer(reject_text, show_alert=True)
+        else:
+            try:
+                await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=reject_text, reply_markup=None, parse_mode="Markdown")
+            except Exception:
+                pass
+        if state:
+            await state.clear()
+        return
+    
+    # 2. Cannot mark intake if more than 4 hours late
+    if delay_hours > 4.0:
+        reject_text = _T("take_late_too_late", lang)
+        if callback:
+            await callback.answer(reject_text, show_alert=True)
+        else:
+            try:
+                await bot.edit_message_text(chat_id=user_id, message_id=msg_id, text=reject_text, reply_markup=None, parse_mode="Markdown")
+            except Exception:
+                pass
+        if state:
+            await state.clear()
+        return
+    
     is_on_time = delay_seconds <= 45.0 * 60.0
     status_to_log = 'taken' if is_on_time else 'taken_late'
     
@@ -2014,12 +2043,6 @@ async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_i
             await callback.answer("Прием уже подтвержден!")
         return
         
-    reminders = await database.get_medication_reminders(med_id)
-    all_times = [r['time_str'] for r in reminders]
-    interval = calculate_next_dose_interval(expected_time.strftime("%H:%M"), all_times)
-    
-    safe_limit = min(4.0, interval * 0.25)
-    
     med = await database.get_medication(med_id)
     if not med:
         return
@@ -2043,6 +2066,8 @@ async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_i
     actual_time_str = actual_time.strftime("%H:%M")
     
     # 3. Determine window and apply Tamagotchi health
+    #    ≤ 45 min  → taken (on time): +5 HP, +10 XP
+    #    > 45 min and ≤ 4h → taken_late: +5 HP, +5 XP
     if is_on_time:
         status = await database.update_user_tamagotchi(user_id, health_delta=5, xp_delta=10)
         mascot_msg = f"❤️ Моё здоровье: {status['health']}% (+5%) | ⭐ Уровень: {status['level']}" if status else ""
@@ -2050,20 +2075,11 @@ async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_i
             mascot_msg += "\n🎉 **LEVEL UP!** Мистер Таблетус повысил свой уровень!"
         feedback_text = _T("taken_success", lang, time=actual_time_str, name=med_name, mascot_msg=mascot_msg, stock_warning=stock_warning)
     else:
-        if delay_hours <= safe_limit:
-            status = await database.update_user_tamagotchi(user_id, health_delta=5, xp_delta=5)
-            mascot_msg = f"❤️ Моё здоровье: {status['health']}% (+5%) | ⭐ Уровень: {status['level']}" if status else ""
-            if status and status.get("level_up"):
-                mascot_msg += "\n🎉 **LEVEL UP!** Мистер Таблетус повысил свой уровень!"
-            feedback_text = _T("taken_late_success", lang, time=actual_time_str, name=med_name, mascot_msg=mascot_msg, stock_warning=stock_warning)
-        elif delay_hours <= interval / 2.0:
-            status = await database.update_user_tamagotchi(user_id, health_delta=5, xp_delta=5)
-            mascot_msg = f"❤️ Моё здоровье: {status['health']}% (+5%) | ⭐ Уровень: {status['level']}" if status else ""
-            if status and status.get("level_up"):
-                mascot_msg += "\n🎉 **LEVEL UP!** Мистер Таблетус повысил свой уровень!"
-            feedback_text = _T("overlap_warning_msg", lang, time=actual_time_str, delay_hours=delay_hours, name=med_name, mascot_msg=mascot_msg, stock_warning=stock_warning)
-        else:
-            feedback_text = _T("overlap_danger_alert", lang, time=actual_time_str, delay_hours=delay_hours, interval=interval, name=med_name, stock_warning=stock_warning)
+        status = await database.update_user_tamagotchi(user_id, health_delta=5, xp_delta=5)
+        mascot_msg = f"❤️ Моё здоровье: {status['health']}% (+5%) | ⭐ Уровень: {status['level']}" if status else ""
+        if status and status.get("level_up"):
+            mascot_msg += "\n🎉 **LEVEL UP!** Мистер Таблетус повысил свой уровень!"
+        feedback_text = _T("taken_late_success", lang, time=actual_time_str, name=med_name, mascot_msg=mascot_msg, stock_warning=stock_warning)
             
     # 4. Handle rendering depending on source
     from_cabinet = False
@@ -2194,6 +2210,23 @@ async def process_take_late_start(callback: CallbackQuery, state: FSMContext):
         
     user = await database.get_user(callback.from_user.id)
     lang = user.get("language") if user else "ru"
+    
+    # Check: is it already the next day? If so — reject immediately
+    try:
+        user_tz = pytz.timezone(user['timezone'] or 'Europe/Moscow')
+        now_local = datetime.now(user_tz)
+        expected_time = datetime.fromisoformat(expected_time_iso)
+        
+        if now_local.date() != expected_time.date():
+            await callback.answer(_T("take_late_next_day", lang), show_alert=True)
+            # Remove the "take late" button from the old message
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            return
+    except Exception as tz_err:
+        logger.error(f"Error checking late limits: {tz_err}")
     
     await state.set_state(TakeLateState.waiting_for_time)
     await state.update_data(
@@ -2840,30 +2873,27 @@ def is_not_menu_button(message: Message) -> bool:
     return text not in menu_buttons
 
 @router.message(StateFilter(None), F.text, is_not_menu_button)
-async def process_direct_medicine_name(message: Message, state: FSMContext):
-    text = message.text.strip()
-        
-    detected_name = text.capitalize()
-    
+async def process_unknown_text(message: Message, state: FSMContext):
+    """Catch-all: user sent text outside any wizard — delete it and hint to use buttons."""
     user = await database.get_user(message.from_user.id)
     lang = user.get("language") if user else "ru"
     
-    btn_txt = _T("btn_direct_manual", lang, name=detected_name)
+    # Delete user's message immediately
+    try:
+        await message.delete()
+    except Exception:
+        pass
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=btn_txt, callback_data=f"add_manual_prefilled:{detected_name}")
-        ],
-        [
-            InlineKeyboardButton(text=_T("btn_confirm_no", lang), callback_data="confirm_no")
-        ]
-    ])
-    
-    await message.answer(
-        _T("direct_add_prompt", lang, name=detected_name),
-        reply_markup=keyboard,
+    # Send a temporary hint and auto-delete it after 5 seconds
+    hint = await message.answer(
+        _T("use_buttons_hint", lang),
         parse_mode="Markdown"
     )
+    await asyncio.sleep(5)
+    try:
+        await hint.delete()
+    except Exception:
+        pass
 
 @router.callback_query(F.data == "feedback_no_use")
 async def process_feedback_no_use(callback: CallbackQuery):

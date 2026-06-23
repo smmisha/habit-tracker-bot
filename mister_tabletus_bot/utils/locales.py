@@ -465,6 +465,21 @@ TRANSLATIONS = {
         "ru": "❌ Не буду пользоваться",
         "en": "❌ Won't use anymore",
         "uk": "❌ Не буду користуватися"
+    },
+    "use_buttons_hint": {
+        "ru": "☝️ Пожалуйста, используйте кнопки для взаимодействия с ботом.\n\nЧтобы добавить лекарство — нажмите «➕ Добавить лекарство» в меню.",
+        "en": "☝️ Please use buttons to interact with the bot.\n\nTo add a medication — press «➕ Add Medication» in the menu.",
+        "uk": "☝️ Будь ласка, використовуйте кнопки для взаємодії з ботом.\n\nЩоб додати ліки — натисніть «➕ Додати ліки» в меню."
+    },
+    "take_late_next_day": {
+        "ru": "⛔ Нельзя отметить приём за прошлый день. Этот приём считается пропущенным.",
+        "en": "⛔ You cannot mark intake for a previous day. This dose is considered missed.",
+        "uk": "⛔ Не можна відмітити прийом за минулий день. Цей прийом вважається пропущеним."
+    },
+    "take_late_too_late": {
+        "ru": "⛔ Прошло более 4 часов с момента запланированного приёма. Отметить приём уже нельзя — он считается пропущенным.",
+        "en": "⛔ More than 4 hours have passed since the scheduled dose. You can no longer mark this intake — it is considered missed.",
+        "uk": "⛔ Минуло більше 4 годин з моменту запланованого прийому. Відмітити прийом вже не можна — він вважається пропущеним."
     }
 }
 
