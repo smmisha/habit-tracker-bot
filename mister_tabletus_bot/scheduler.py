@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Глобальный планировщик
 scheduler = AsyncIOScheduler()
 
-async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: int, expected_time_str: str):
+async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: int, expected_time_str: str, override_date: str = None):
     """Задача, которая запускается планировщиком для отправки напоминания о лекарстве"""
     try:
         user = await database.get_user(user_id)
@@ -46,7 +46,17 @@ async def send_reminder_job(bot: Bot, user_id: int, reminder_id: int, med_id: in
                 logger.error(f"Error checking end_date for med {med_id}: {date_err}")
 
         # Уникальный идентификатор конкретного приёма (дата + ожидаемое время)
+        ref_date = now_local.date()
+        if override_date:
+            try:
+                ref_date = datetime.strptime(override_date, "%Y-%m-%d").date()
+            except Exception as date_err:
+                logger.error(f"Error parsing override_date '{override_date}' for med {med_id}: {date_err}")
+
         expected_time_iso = now_local.replace(
+            year=ref_date.year,
+            month=ref_date.month,
+            day=ref_date.day,
             hour=int(expected_time_str.split(':')[0]),
             minute=int(expected_time_str.split(':')[1]),
             second=0, microsecond=0

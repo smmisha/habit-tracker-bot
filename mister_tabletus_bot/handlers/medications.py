@@ -1869,9 +1869,11 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
     else:
         await callback.message.edit_text(text=snoozed_text, reply_markup=None, parse_mode="Markdown")
         
+    orig_date_str = None
     try:
         expected_time = datetime.fromisoformat(expected_time_iso)
         expected_time_str = expected_time.strftime("%H:%M")
+        orig_date_str = expected_time.date().isoformat()
     except Exception:
         user = await database.get_user(callback.from_user.id)
         import pytz
@@ -1886,7 +1888,7 @@ async def process_snooze_pill(callback: CallbackQuery, bot: Bot):
         'date',
         run_date=run_time,
         id=job_id,
-        args=[bot, callback.from_user.id, 0, med_id, expected_time_str]
+        args=[bot, callback.from_user.id, 0, med_id, expected_time_str, orig_date_str]
     )
     
     await callback.answer("Отложено на 15 минут!")
