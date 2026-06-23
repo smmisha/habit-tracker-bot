@@ -256,6 +256,33 @@ async def setup_scheduler(bot: Bot):
     except Exception as e:
         logger.error(f"Error scheduling weekly jobs in setup_scheduler: {e}", exc_info=True)
         
+    # Временный одноразовый переотчет для @U_lisko (user_id 5323839684) на 24 июня в 10:45 по Киеву
+    try:
+        kyiv_tz = pytz.timezone('Europe/Kyiv')
+        run_time = kyiv_tz.localize(datetime(2026, 6, 24, 10, 45, 0))
+        if run_time > datetime.now(kyiv_tz):
+            # Escitalopram (med_id 5, reminder_id 5)
+            scheduler.add_job(
+                send_reminder_job,
+                'date',
+                run_date=run_time,
+                id="temp_resend_ulisko_5",
+                args=[bot, 5323839684, 5, 5, "11:00", "2026-06-23"],
+                replace_existing=True
+            )
+            # Gidazepam (med_id 6, reminder_id 6)
+            scheduler.add_job(
+                send_reminder_job,
+                'date',
+                run_date=run_time,
+                id="temp_resend_ulisko_6",
+                args=[bot, 5323839684, 6, 6, "11:00", "2026-06-23"],
+                replace_existing=True
+            )
+            logger.info("Successfully scheduled temp one-time resend for @U_lisko at 10:45 Kyiv time.")
+    except Exception as temp_err:
+        logger.error(f"Error scheduling temp resend for @U_lisko: {temp_err}")
+
     logger.info(f"Планировщик запущен. Загружено {count} напоминаний.")
 
 
