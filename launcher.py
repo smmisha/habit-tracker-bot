@@ -32,38 +32,56 @@ def main():
 
     print("=== LAUNCHER: Start Bots ===")
     
+    p1 = None
+    p2 = None
+
     # Запуск бота Трекера привычек
-    print("Starting Habit Tracker Bot...")
-    p1 = subprocess.Popen([sys.executable, "main.py"], cwd=habits_dir, env=habits_env)
+    if habits_token:
+        print("Starting Habit Tracker Bot...")
+        p1 = subprocess.Popen([sys.executable, "main.py"], cwd=habits_dir, env=habits_env)
+    else:
+        print("Habit Tracker Bot is disabled (HABITS_BOT_TOKEN not set).")
 
     # Запуск бота Мистера Таблетуса
-    print("Starting Mister Tabletus Bot...")
-    tabletus_py = os.path.join(tabletus_dir, "venv", "Scripts", "python.exe")
-    if not os.path.exists(tabletus_py):
-        tabletus_py = sys.executable
-    p2 = subprocess.Popen([tabletus_py, "main.py"], cwd=tabletus_dir, env=tabletus_env)
+    if tabletus_token:
+        print("Starting Mister Tabletus Bot...")
+        tabletus_py = os.path.join(tabletus_dir, "venv", "Scripts", "python.exe")
+        if not os.path.exists(tabletus_py):
+            tabletus_py = sys.executable
+        p2 = subprocess.Popen([tabletus_py, "main.py"], cwd=tabletus_dir, env=tabletus_env)
+    else:
+        print("Mister Tabletus Bot is disabled (TABLETUS_BOT_TOKEN not set).")
 
     try:
         while True:
-            # Проверяем состояние первого процесса
-            if p1.poll() is not None:
+            # Проверяем состояние первого процесса (Трекер привычек)
+            if p1 is not None and p1.poll() is not None:
                 print("[Launcher] Habit Tracker Bot stopped. Restarting in 5s...")
                 time.sleep(5)
                 p1 = subprocess.Popen([sys.executable, "main.py"], cwd=habits_dir, env=habits_env)
                 
-            # Проверяем состояние второго процесса
-            if p2.poll() is not None:
+            # Проверяем состояние второго процесса (Мистер Таблетус)
+            if p2 is not None and p2.poll() is not None:
                 print("[Launcher] Mister Tabletus Bot stopped. Restarting in 5s...")
                 time.sleep(5)
                 p2 = subprocess.Popen([tabletus_py, "main.py"], cwd=tabletus_dir, env=tabletus_env)
                 
+            # Если оба бота выключены, просто завершаем работу лаунчера
+            if p1 is None and p2 is None:
+                print("[Launcher] Both bots are disabled. Exiting.")
+                break
+
             time.sleep(1)
     except KeyboardInterrupt:
         print("=== LAUNCHER: Stopping bots... ===")
-        p1.terminate()
-        p2.terminate()
-        p1.wait()
-        p2.wait()
+        if p1 is not None:
+            p1.terminate()
+        if p2 is not None:
+            p2.terminate()
+        if p1 is not None:
+            p1.wait()
+        if p2 is not None:
+            p2.wait()
         print("=== LAUNCHER: All processes stopped ===")
 
 if __name__ == "__main__":
