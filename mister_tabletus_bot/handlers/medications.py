@@ -2315,7 +2315,16 @@ async def process_take_late_now(callback: CallbackQuery, state: FSMContext, bot:
         expected_time_iso = state_data.get("late_expected_time_iso")
         
     await perform_take_late(bot, callback.from_user.id, med_id, expected_time_iso, now_local, msg_id, callback=callback, state=state)
-
+@router.callback_query(F.data == "take_late_now")
+async def process_take_late_now_fallback(callback: CallbackQuery, state: FSMContext):
+    """Фолбек: ловит кнопку Сейчас, даже если FSM-состояние потерялось."""
+    await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer("Сессия устарела. Попробуйте снова.", show_alert=True)
+    
 @router.callback_query(TakeLateState.waiting_for_time, F.data == "take_late_cancel")
 async def process_take_late_cancel(callback: CallbackQuery, state: FSMContext):
     try:
@@ -2371,7 +2380,15 @@ async def process_take_late_cancel(callback: CallbackQuery, state: FSMContext):
             await callback.answer("Отменено")
         except Exception:
             pass
-
+@router.callback_query(F.data == "take_late_cancel")
+async def process_take_late_cancel_fallback(callback: CallbackQuery, state: FSMContext):
+    """Фолбек: ловит кнопку Отмена, даже если FSM-состояние потерялось."""
+    await state.clear()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await callback.answer("Отменено")
 @router.message(StateFilter(TakeLateState.waiting_for_time))
 async def process_take_late_input(message: Message, state: FSMContext, bot: Bot):
     try:
