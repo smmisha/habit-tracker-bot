@@ -2007,7 +2007,7 @@ async def perform_take_late(bot: Bot, user_id: int, med_id: int, expected_time_i
     
     # --- HARD LIMITS ---
     # 1. Cannot mark intake for a different day
-    if actual_time.date() != expected_time.date():
+    if actual_time.date() != expected_time.date() and actual_time.hour >= 1:
         reject_text = _T("take_late_next_day", lang)
         if callback:
             await callback.answer(reject_text, show_alert=True)
@@ -2217,7 +2217,7 @@ async def process_take_late_start(callback: CallbackQuery, state: FSMContext):
         now_local = datetime.now(user_tz)
         expected_time = datetime.fromisoformat(expected_time_iso)
         
-        if now_local.date() != expected_time.date():
+        if now_local.date() != expected_time.date() and now_local.hour >= 1:
             await callback.answer(_T("take_late_next_day", lang), show_alert=True)
             # Remove the "take late" button from the old message
             try:
