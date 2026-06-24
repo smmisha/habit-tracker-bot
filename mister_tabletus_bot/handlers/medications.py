@@ -2163,9 +2163,9 @@ async def process_take_med_cabinet_start(callback: CallbackQuery, state: FSMCont
                 pass
         
         msg = (
-            f"Все приемы этого лекарства на сегодня уже выполнены!{last_info}" if lang == "ru"
-            else f"All intakes for this medication have already been completed today!{last_info}" if lang == "en"
-            else f"Всі прийоми цих ліків на сьогодні вже виконані!{last_info}"
+            f"Все приёмы на сегодня уже отмечены. Если нужно принять сейчас — измените время приёма в настройках лекарства (✏️).{last_info}" if lang == "ru"
+            else f"All intakes for today are already marked. If you need to take it now — change the intake time in medication settings (✏️).{last_info}" if lang == "en"
+            else f"Всі прийоми на сьогодні вже відмічені. Якщо потрібно прийняти зараз — змініть час прийому в налаштуваннях ліків (✏️).{last_info}"
         )
         await callback.answer(msg, show_alert=True)
         return
@@ -2288,9 +2288,9 @@ async def process_take_late_now(callback: CallbackQuery, state: FSMContext, bot:
                 except Exception:
                     pass
             await callback.answer(
-                f"Все приемы этого лекарства на сегодня уже выполнены!{last_info}" if lang == "ru"
-                else f"All intakes for this medication have already been completed today!{last_info}" if lang == "en"
-                else f"Всі прийоми цих ліків на сьогодні вже виконані!{last_info}",
+                f"Все приёмы на сегодня уже отмечены. Если нужно принять сейчас — измените время приёма в настройках (✏️).{last_info}" if lang == "ru"
+                else f"All intakes for today are already marked. If you need to take it now — change the intake time in settings (✏️).{last_info}" if lang == "en"
+                else f"Всі прийоми на сьогодні вже відмічені. Якщо потрібно прийняти зараз — змініть час прийому в налаштуваннях (✏️).{last_info}",
                 show_alert=True
             )
             # Restore card
@@ -2461,7 +2461,7 @@ async def process_take_late_input(message: Message, state: FSMContext, bot: Bot)
                 )
             except Exception:
                 pass
-            await message.answer("Все приемы этого лекарства на сегодня уже выполнены!")
+            await message.answer("Все приёмы на сегодня уже отмечены. Если нужно принять сейчас — измените время приёма в настройках лекарства (✏️).")
             await state.clear()
             return
         expected_time_iso = target[1]
