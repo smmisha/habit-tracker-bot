@@ -1,6 +1,0 @@
-venv/
-.env
-*.db
-__pycache__/
-*.pyc
-photos/
