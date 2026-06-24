@@ -2318,45 +2318,59 @@ async def process_take_late_now(callback: CallbackQuery, state: FSMContext, bot:
 
 @router.callback_query(TakeLateState.waiting_for_time, F.data == "take_late_cancel")
 async def process_take_late_cancel(callback: CallbackQuery, state: FSMContext):
-    user = await database.get_user(callback.from_user.id)
-    lang = user.get("language") if user else "ru"
-    
-    state_data = await state.get_data()
-    med_id = state_data.get("late_med_id")
-    from_cabinet = state_data.get("from_cabinet", False)
-    msg_id = state_data.get("late_msg_id")
-    
-    if from_cabinet:
-        idx = state_data.get("late_idx", 1)
+    try:
+        user = await database.get_user(callback.from_user.id)
+        lang = user.get("language") if user else "ru"
+        
+        state_data = await state.get_data()
+        med_id = state_data.get("late_med_id")
+        from_cabinet = state_data.get("from_cabinet", False)
+        msg_id = state_data.get("late_msg_id")
+        
+        if from_cabinet:
+            idx = state_data.get("late_idx", 1)
+            med = await database.get_medication(med_id)
+            if med:
+                med_text, keyboard = await get_medication_card_data(med, idx, user, lang)
+                try:
+                    await callback.message.edit_text(med_text, reply_markup=keyboard, parse_mode="Markdown")
+                except Exception:
+                    pass
+            else:
+                try:
+                    await callback.message.delete()
+                except Exception:
+                    pass
+            await state.clear()
+            await callback.answer(_T("take_late_canceled", lang))
+            return
+            
+        expected_time_iso = state_data.get("late_expected_time_iso")
         med = await database.get_medication(med_id)
-        med_text, keyboard = await get_medication_card_data(med, idx, user, lang)
+        med_name = med['name'] if med else "лекарство"
+        health_msg = f"💔 Моё здоровье упало до {user['mascot_health']}%!" if user else ""
+        
+        text = (
+            f"🚨 *Пропущен прием лекарства!*\n\n"
+            f"Вы не подтвердили прием *{med_name}* вовремя (прошло 45 минут).\n\n"
+            f"🤢 *Мистер Таблетус:* «Ай! Мне стало хуже... Пожалуйста, не забывайте о своем здоровье и обо мне! {health_msg}»"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=_T("btn_take_late", lang), callback_data=f"take_late:{med_id}:{expected_time_iso}")
+            ]
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await state.clear()
+        await callback.answer(_T("take_late_canceled", lang))
+    except Exception as e:
+        logger.error(f"Error in process_take_late_cancel: {e}", exc_info=True)
+        await state.clear()
         try:
-            await callback.message.edit_text(med_text, reply_markup=keyboard, parse_mode="Markdown")
+            await callback.answer("Отменено")
         except Exception:
             pass
-        await state.clear()
-        await callback.answer()
-        return
-        
-    expected_time_iso = state_data.get("late_expected_time_iso")
-    med = await database.get_medication(med_id)
-    med_name = med['name'] if med else "лекарство"
-    health_msg = f"💔 Моё здоровье упало до {user['mascot_health']}%!" if user else ""
-    
-    text = (
-        f"🚨 *Пропущен прием лекарства!*\n\n"
-        f"Вы не подтвердили прием *{med_name}* вовремя (прошло 45 минут).\n\n"
-        f"🤢 *Мистер Таблетус:* «Ай! Мне стало хуже... Пожалуйста, не забывайте о своем здоровье и обо мне! {health_msg}»"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=_T("btn_take_late", lang), callback_data=f"take_late:{med_id}:{expected_time_iso}")
-        ]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
-    await state.clear()
-    await callback.answer(_T("take_late_canceled", lang))
 
 @router.message(StateFilter(TakeLateState.waiting_for_time))
 async def process_take_late_input(message: Message, state: FSMContext, bot: Bot):
