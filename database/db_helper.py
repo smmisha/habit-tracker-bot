@@ -11,6 +11,11 @@ class DatabaseHelper:
         connect_args = {}
         if url.startswith("sqlite"):
             connect_args = {"check_same_thread": False}
+        elif "postgresql" in url:
+            connect_args = {
+                "statement_cache_size": 0,
+                "prepared_statement_cache_size": 0,
+            }
             
         self.engine = create_async_engine(
             url,
