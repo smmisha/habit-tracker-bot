@@ -163,7 +163,11 @@ function renderCalendar(days) {
         dayEl.innerHTML = `<span>${dayNumber}</span>`;
         
         if (day.status === 'clean') {
-            dayEl.classList.add('day-clean');
+            if (day.excuse_reason) {
+                dayEl.classList.add('day-late');
+            } else {
+                dayEl.classList.add('day-clean');
+            }
         } else if (day.status === 'relapsed') {
             dayEl.classList.add('day-relapse');
             if (day.relapse_count > 1) {
@@ -178,7 +182,13 @@ function renderCalendar(days) {
         
         const formattedDate = dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
         let tooltipText = `${formattedDate}: `;
-        if (day.status === 'clean') tooltipText += 'Чистый день! 💪';
+        if (day.status === 'clean') {
+            if (day.excuse_reason) {
+                tooltipText += `Чисто, опоздание (${day.excuse_reason}) ⏰`;
+            } else {
+                tooltipText += 'Чистый день! 💪';
+            }
+        }
         else if (day.status === 'relapsed') tooltipText += `Срывов: ${day.relapse_count} ⚠️`;
         else tooltipText += 'Нет отметки 💤';
         

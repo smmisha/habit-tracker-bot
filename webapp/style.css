@@ -9,10 +9,12 @@
     --accent-red: #ff3b30;
     --accent-blue: #60efff;
     --accent-gray: #1f2026;
+    --accent-yellow: #ffd60a;
     
     --glow-green: rgba(0, 255, 135, 0.15);
     --glow-red: rgba(255, 59, 48, 0.15);
     --glow-blue: rgba(96, 239, 255, 0.15);
+    --glow-yellow: rgba(255, 214, 10, 0.15);
     
     --nav-height: 64px;
 }
@@ -238,6 +240,13 @@ body {
     box-shadow: 0 0 10px rgba(0, 255, 135, 0.08);
 }
 
+.day-late {
+    background: linear-gradient(135deg, rgba(255, 214, 10, 0.1) 0%, rgba(255, 214, 10, 0.25) 100%);
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 214, 10, 0.25);
+    box-shadow: 0 0 10px rgba(255, 214, 10, 0.08);
+}
+
 .day-relapse {
     background: linear-gradient(135deg, rgba(255, 59, 48, 0.1) 0%, rgba(255, 59, 48, 0.25) 100%);
     color: var(--accent-red);
@@ -284,6 +293,11 @@ body {
 .legend-color.clean {
     background: rgba(0, 255, 135, 0.2);
     border: 1px solid var(--accent-green);
+}
+
+.legend-color.late {
+    background: rgba(255, 214, 10, 0.2);
+    border: 1px solid var(--accent-yellow);
 }
 
 .legend-color.relapse {

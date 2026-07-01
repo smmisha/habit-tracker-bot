@@ -220,7 +220,7 @@ async def handle_api_stats(request):
                 )
             )
         )
-        checkins = {c.checkin_date: c.status for c in checkins_result.scalars().all()}
+        checkins = {c.checkin_date: (c.status, c.excuse_reason) for c in checkins_result.scalars().all()}
         
         # 3. Получаем срывы за последние 30 дней
         relapses_result = await session.execute(
@@ -246,11 +246,13 @@ async def handle_api_stats(request):
             day_date = start_date + timedelta(days=i)
             status = "no-data"
             relapse_count = relapse_by_day.get(day_date, 0)
+            excuse_reason = None
             
             if relapse_count > 0:
                 status = "relapsed"
             elif day_date in checkins:
-                ch_status = checkins[day_date]
+                ch_status, ch_excuse = checkins[day_date]
+                excuse_reason = ch_excuse
                 if ch_status == "clean":
                     status = "clean"
                 elif ch_status == "relapsed":
@@ -259,7 +261,8 @@ async def handle_api_stats(request):
             calendar_days.append({
                 "date": day_date.isoformat(),
                 "status": status,
-                "relapse_count": relapse_count
+                "relapse_count": relapse_count,
+                "excuse_reason": excuse_reason
             })
             
         # 5. Группируем триггеры срывов (всего за все время)
