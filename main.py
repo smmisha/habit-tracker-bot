@@ -621,6 +621,17 @@ async def start_web_server():
 # --- ОСНОВНОЙ ЗАПУСК ---
 
 async def main():
+    # Проверяем, нужно ли выполнить автоматический перенос базы данных
+    old_db = os.getenv("OLD_DATABASE_URL")
+    new_db = os.getenv("NEW_DATABASE_URL")
+    if old_db and new_db:
+        logger.info("Обнаружены переменные OLD_DATABASE_URL и NEW_DATABASE_URL. Запуск автоматической миграции...")
+        try:
+            import migrate_on_server
+            await migrate_on_server.main()
+        except Exception as e:
+            logger.error(f"Ошибка во время автоматического переноса базы: {e}")
+
     # Подключаем роутеры
     dp.include_router(common_router)
     dp.include_router(tracker_router)
