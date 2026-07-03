@@ -4,6 +4,7 @@ import os
 import time
 
 def main():
+    print("LAUNCHER DATABASE ENV KEYS:", [k for k in os.environ.keys() if "DATABASE" in k or "URL" in k])
     base_dir = os.path.dirname(os.path.abspath(__file__))
     habits_dir = base_dir
     tabletus_dir = os.path.join(base_dir, "mister_tabletus_bot")
