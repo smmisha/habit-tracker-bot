@@ -154,6 +154,25 @@ function renderCalendar(days) {
         return;
     }
     
+    // Добавляем заголовки дней недели
+    const weekdays = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+    weekdays.forEach(wd => {
+        const wdEl = document.createElement('div');
+        wdEl.className = 'calendar-weekday-header';
+        wdEl.textContent = wd;
+        grid.appendChild(wdEl);
+    });
+    
+    // Вычисляем отступ для первого дня, чтобы выровнять по дням недели
+    const firstDayDate = new Date(days[0].date);
+    const startWeekday = (firstDayDate.getDay() + 6) % 7;
+    
+    for (let i = 0; i < startWeekday; i++) {
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'calendar-day-empty';
+        grid.appendChild(emptyEl);
+    }
+    
     days.forEach(day => {
         const dayEl = document.createElement('div');
         dayEl.className = 'calendar-day';

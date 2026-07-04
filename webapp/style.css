@@ -212,6 +212,27 @@ body {
     justify-items: center;
 }
 
+.calendar-weekday-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    text-align: center;
+    width: 100%;
+    max-width: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 4px;
+}
+
+.calendar-day-empty {
+    aspect-ratio: 1;
+    width: 100%;
+    max-width: 45px;
+    visibility: hidden;
+}
+
 .calendar-day {
     aspect-ratio: 1;
     width: 100%;
