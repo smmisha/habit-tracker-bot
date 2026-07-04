@@ -437,10 +437,10 @@ def setup_scheduler():
     scheduler.add_job(check_milestone_achievements, "interval", hours=1)
     
     # Ежедневная рассылка библейского стиха в 09:00 по Киевскому времени (локально для сервера)
-    scheduler.add_job(send_daily_bible_verses, "cron", hour=9, minute=0)
+    scheduler.add_job(send_daily_bible_verses, "cron", hour=9, minute=0, misfire_grace_time=36000)
     
     # Еженедельный отчет напарнику по воскресеньям в 21:00 по Киевскому времени
-    scheduler.add_job(send_weekly_reports, "cron", day_of_week="sun", hour=21, minute=0)
+    scheduler.add_job(send_weekly_reports, "cron", day_of_week="sun", hour=21, minute=0, misfire_grace_time=36000)
     
     scheduler.start()
     logger.info("Планировщик APScheduler запущен с новыми задачами.")
