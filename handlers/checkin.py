@@ -128,20 +128,14 @@ async def process_checkin_clean(callback: CallbackQuery):
 @router.callback_query(F.data == "checkin_relapsed")
 async def process_checkin_relapsed(callback: CallbackQuery):
     await callback.answer()
-    from keyboards.inline import get_reset_type_keyboard
+    from keyboards.inline import get_trigger_keyboard
     await callback.message.edit_text(
         "⚠️ <b>Запись срыва при чек-ине</b>\n\n"
-        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
-        "<b>Как вы хотите сбросить счетчик согласно Соглашению совести?</b>\n"
-        "• 🤫 <b>Сбросить тихо</b> — если это единичный срыв и вы сразу взяли себя в руки. Счетчик обнулится, напарник не будет уведомлен.\n"
-        "• 📢 <b>Сообщить напарнику</b> — если это повторный срыв (или серия), и вам нужна духовная помощь брата.",
-        reply_markup=get_reset_type_keyboard()
+        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
+        "Путь к свободе не бывает идеально ровным. Не сдавайся!\n\n"
+        "<b>Что послужило главным триггером срыва?</b> Выбери вариант на кнопках ниже:",
+        reply_markup=get_trigger_keyboard()
     )
-            
-    try:
-        await callback.answer()
-    except Exception:
-        pass
 
 # --- ОБРАБОТКА ПРИЧИН ОПОЗДАНИЯ ---
 async def save_excuse(user_id: int, excuse_text: str, callback: CallbackQuery = None, message: Message = None):

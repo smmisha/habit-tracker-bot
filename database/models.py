@@ -51,6 +51,7 @@ class User(Base):
     relapses: Mapped[List["RelapseLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     checkins: Mapped[List["CheckInLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     journal_entries: Mapped[List["JournalEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    slip_events: Mapped[List["SlipEvent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class RelapseLog(Base):
@@ -91,3 +92,14 @@ class JournalEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="journal_entries")
+
+
+class SlipEvent(Base):
+    __tablename__ = "slip_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    notified_partner: Mapped[bool] = mapped_column(default=False)
+
+    user: Mapped["User"] = relationship(back_populates="slip_events")

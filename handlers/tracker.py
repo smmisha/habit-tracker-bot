@@ -112,104 +112,16 @@ async def process_relapse_confirm(callback: CallbackQuery):
     await callback.answer()
     await callback.message.edit_text(
         "⚠️ <b>Запись срыва</b>\n\n"
-        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
-        "<b>Как вы хотите сбросить счетчик согласно Соглашению совести?</b>\n"
-        "• 🤫 <b>Сбросить тихо</b> — если это единичный срыв и вы сразу взяли себя в руки. Счетчик обнулится, напарник не будет уведомлен.\n"
-        "• 📢 <b>Сообщить напарнику</b> — если это повторный срыв (или серия), и вам нужна духовная помощь брата.",
-        reply_markup=get_reset_type_keyboard()
-    )
-
-@router.callback_query(F.data == "relapse_type_confess")
-async def process_relapse_type_confess(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.edit_text(
-        "⚠️ <b>Заявление о срыве с уведомлением напарника</b>\n\n"
-        "<b>Что послужило главным триггером срыва?</b> Выберите вариант на кнопках ниже:",
+        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
+        "Путь к свободе не бывает идеально ровным. Не сдавайся!\n\n"
+        "<b>Что послужило главным триггером срыва?</b> Выбери вариант на кнопках ниже:",
         reply_markup=get_trigger_keyboard()
-    )
-
-@router.callback_query(F.data == "relapse_type_quiet")
-async def process_relapse_type_quiet(callback: CallbackQuery):
-    await callback.answer()
-    user_id = callback.from_user.id
-    now = datetime.now()
-    
-    # Считаем тихие сбросы за последние 7 дней
-    from datetime import timedelta
-    seven_days_ago = now - timedelta(days=7)
-    
-    async with db_helper.session_factory() as session:
-        # Проверяем количество тихих сбросов за последние 7 дней
-        result = await session.execute(
-            select(RelapseLog)
-            .where(
-                and_(
-                    RelapseLog.user_id == user_id,
-                    RelapseLog.timestamp >= seven_days_ago,
-                    RelapseLog.trigger_reason == "Тихий сброс"
-                )
-            )
-        )
-        quiet_relapses = result.scalars().all()
-        quiet_count = len(quiet_relapses)
-        
-        # Если уже было 2 тихих сброса (это будет 3-й за 7 дней), блокируем тихий сброс
-        if quiet_count >= 2:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            only_confess_kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="📢 Сообщить напарнику (Исповедь)", callback_data="relapse_type_confess")],
-                    [InlineKeyboardButton(text="❌ Отмена", callback_data="relapse_cancel")]
-                ]
-            )
-            await callback.message.edit_text(
-                "⚠️ <b>Тихий сброс заблокирован</b>\n\n"
-                f"За последние 7 дней у вас уже было зафиксировано <b>{quiet_count} тихих сбросов</b>.\n\n"
-                "Согласно Соглашению совести, при повторении срывов (серия из 3+ срывов за короткий срок) "
-                "молчание является самообманом. Вы обязаны открыто признаться напарнику, чтобы выйти из этой петли с его поддержкой.",
-                reply_markup=only_confess_kb
-            )
-            return
-            
-        # Выполняем тихий сброс
-        result_user = await session.execute(select(User).where(User.id == user_id))
-        user = result_user.scalar_one_or_none()
-        if not user:
-            return
-            
-        user.streak_start = now
-        user.total_relapses += 1
-        user.awarded_milestones = ""
-        
-        log = RelapseLog(
-            user_id=user_id,
-            timestamp=now,
-            trigger_reason="Тихий сброс"
-        )
-        session.add(log)
-        
-        # Обновляем активный чек-ин на "relapsed", если он находится в статусе pending
-        checkin_result = await session.execute(
-            select(CheckInLog)
-            .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
-        )
-        active_checkin = checkin_result.scalar_one_or_none()
-        if active_checkin:
-            active_checkin.status = "relapsed"
-            active_checkin.timestamp = now
-            
-        await session.commit()
-        
-    await callback.message.edit_text(
-        "🤫 <b>Счетчик чистоты сброшен тихо. Стрик начат заново!</b>\n\n"
-        "Напарник не получил уведомление об этой осечке. Это ваше право на самостоятельную борьбу, "
-        "но помните: Иегова видит ваши усилия. Сделайте правильные выводы из этой ошибки, "
-        "удалите то, что вас искусило, и продолжайте идти вперед! 💪"
     )
 
 async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: CallbackQuery = None, message: Message = None):
     """Выполнить сброс счетчика чистоты и залогировать причину"""
     now = datetime.now()
+    now_utc = datetime.utcnow()
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -223,7 +135,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         user.total_relapses += 1
         user.awarded_milestones = ""
         
-        # 2. Логирование срыва
+        # 2. Логирование срыва в традиционный лог (для совместимости)
         log = RelapseLog(
             user_id=user_id,
             timestamp=now,
@@ -231,7 +143,15 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         )
         session.add(log)
         
-        # Обновляем активный чек-ин на "relapsed", если он находится в статусе pending
+        # 3. Логирование срыва в slip_events (в UTC)
+        slip = SlipEvent(
+            user_id=user_id,
+            occurred_at=now_utc,
+            notified_partner=False
+        )
+        session.add(slip)
+        
+        # 4. Обновляем активный чек-ин на "relapsed", если он находится в статусе pending
         checkin_result = await session.execute(
             select(CheckInLog)
             .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
@@ -241,12 +161,51 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             active_checkin.status = "relapsed"
             active_checkin.timestamp = now
             
+        # Сохраняем в БД, чтобы новая запись попала в выборку
         await session.commit()
+        
+        # 5. Проверка правила: 3 срыва за последние 7 дней (скользящее окно)
+        from datetime import timedelta
+        seven_days_ago = now_utc - timedelta(days=7)
+        
+        slips_result = await session.execute(
+            select(SlipEvent)
+            .where(
+                and_(
+                    SlipEvent.user_id == user_id,
+                    SlipEvent.occurred_at >= seven_days_ago
+                )
+            )
+        )
+        recent_slips = slips_result.scalars().all()
+        recent_count = len(recent_slips)
+        
+        # Проверяем, есть ли хотя бы один ненотифицированный
+        has_unnotified = any(not s.notified_partner for s in recent_slips)
         
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id
         
-        # 3. Расчет статистики триггеров
+        partner_notified = False
+        if recent_count >= 3 and has_unnotified:
+            # 6. Автоматическое уведомление напарника-контролера
+            if partner_username and business_connection_id:
+                alert_text = (
+                    f"⚠️ У @{user.username or user.first_name} зафиксирована серия срывов (3+ за последние 7 дней). "
+                    "Это сигнал потери контроля — пожалуйста, свяжитесь для духовной поддержки."
+                )
+                try:
+                    sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                    if sent:
+                        partner_notified = True
+                        # Помечаем все записи за последние 7 дней как notified_partner = True
+                        for s in recent_slips:
+                            s.notified_partner = True
+                        await session.commit()
+                except Exception as e:
+                    logger.error(f"Error sending series alert to partner: {e}")
+                    
+        # 7. Расчет статистики триггеров
         relapses_result = await session.execute(
             select(RelapseLog.trigger_reason)
             .where(RelapseLog.user_id == user_id)
@@ -261,7 +220,6 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         for r in reasons:
             if not r:
                 continue
-            # Группировка
             clean_reason = r
             if r.startswith("Другое:") or r.startswith("Текстовое описание:"):
                 clean_reason = "Другая причина"
@@ -278,27 +236,16 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             
     stats_text = "\n".join(stats_list) if stats_list else "Нет данных."
     
-    try:
-        if callback:
-            await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
-        elif message:
-            await message.answer("⏳ <i>Подключаю ИИ-ассистента...</i>")
-    except Exception as e:
-        logger.warning(f"Failed to send 'Connecting AI' status: {e}")
- 
-    try:
-        ai_response = await ai_service.generate_relapse_response(trigger_reason)
-    except Exception as e:
-        logger.error(f"Error calling AI service in execute_relapse_reset: {e}")
-        ai_response = (
-            "Очень жаль, что это произошло. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
-            "Не сдавайся, твой стрик чистоты начат заново! Ты справишься."
+    confirm_text = "😔 <b>Счетчик сброшен. Стрик чистоты начат заново!</b>\n\n"
+    if partner_notified:
+        confirm_text += (
+            f"⚠️ <b>Внимание:</b> за последние 7 дней у вас зафиксировано {recent_count} срывов. "
+            f"Согласно Соглашению совести, вашему напарнику <code>@{partner_username}</code> автоматически отправлено уведомление о серии срывов.\n\n"
         )
-
-    ai_response_escaped = html.escape(ai_response)
-    confirm_text = (
-        "😔 <b>Счетчик сброшен. Стрик чистоты начат заново!</b>\n\n"
-        f"{ai_response_escaped}\n\n"
+    else:
+        confirm_text += "🤫 Сброс выполнен приватно. Напарник не уведомлен (единичный срыв конфиденциален).\n\n"
+        
+    confirm_text += (
         "📊 <b>Статистика твоих триггеров срывов:</b>\n"
         f"{stats_text}"
     )
@@ -310,59 +257,6 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             await message.answer(confirm_text)
     except Exception as e:
         logger.error(f"Failed to send confirmation text to user: {e}")
-        if callback:
-            try:
-                await callback.message.answer(confirm_text)
-            except Exception as e2:
-                logger.error(f"Failed to send confirmation fallback: {e2}")
-        
-    # 4. Оповещение напарника
-    if partner_username and business_connection_id:
-        try:
-            alert_text = await ai_service.humanize_relapse_confession(trigger_reason)
-        except Exception as e:
-            logger.error(f"Error humanizing confession: {e}")
-            escaped_trigger = html.escape(trigger_reason)
-            alert_text = f"Привет. К сожалению, сегодня у меня произошел срыв. Причина: {escaped_trigger}."
-        
-        try:
-            sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-        except Exception as e:
-            logger.error(f"Error sending message to partner: {e}")
-            sent = False
-        
-        notify_msg = f"✅ Сообщение напарнику <code>@{partner_username}</code> успешно отправлено автоматически." if sent else f"⚠️ Не удалось автоматически отправить сообщение напарнику <code>@{partner_username}</code>."
-        
-        try:
-            if callback:
-                await callback.message.answer(notify_msg)
-            elif message:
-                await message.answer(notify_msg)
-        except Exception as e:
-            logger.error(f"Failed to send partner notification status to user: {e}")
-
-async def start_confession_flow(user_id: int, trigger_reason: str, state: FSMContext, message: Message = None, callback: CallbackQuery = None, bot = None):
-    """Инициализация процесса исповеди перед сбросом счетчика"""
-    await state.set_state(Form.waiting_for_confession)
-    await state.update_data(relapse_trigger_reason=trigger_reason)
-    
-    prompt_text = (
-        "⚠️ <b>Шаг подтверждения срыва: Зеркало исповеди</b>\n\n"
-        "Для сброса счетчика вы должны прислать в этот чат <b>голосовое сообщение или видеосообщение</b> с искренним признанием.\n\n"
-        "💬 <b>Произнесите слова:</b>\n"
-        "<i>«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»</i>\n\n"
-        "ИИ проверит ваше сообщение. Только после успешной проверки счетчик чистоты будет сброшен, а старейшина Андрей получит автоматическое уведомление."
-    )
-    
-    if callback:
-        await callback.message.edit_text(prompt_text)
-    elif message:
-        await message.answer(prompt_text)
-    elif bot:
-        try:
-            await bot.send_message(chat_id=user_id, text=prompt_text)
-        except Exception as e:
-            logger.error(f"Failed to send confession prompt to user {user_id}: {e}")
 
 @router.callback_query(F.data.startswith("relapse_trigger_"))
 async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):
@@ -387,66 +281,14 @@ async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):
         "relapse_trigger_web": "Искушение в интернете"
     }
     trigger = reasons.get(action, "Общая причина")
-    await start_confession_flow(user_id, trigger, state=state, callback=callback)
+    await execute_relapse_reset(user_id, trigger, callback=callback)
 
 @router.message(Form.waiting_for_relapse_trigger_other)
 async def process_relapse_trigger_other_text(message: Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text.strip()
-    await start_confession_flow(user_id, f"Другое: {text}", state=state, message=message)
-
-@router.message(Form.waiting_for_confession, F.voice | F.video_note)
-async def process_confession_media(message: Message, state: FSMContext):
-    user_id = message.from_user.id
-    
-    status_msg = await message.answer("⏳ <i>Скачиваю медиафайл и отправляю на проверку в Gemini AI...</i>")
-    
-    try:
-        file_in_io = BytesIO()
-        if message.voice:
-            file = await message.bot.get_file(message.voice.file_id)
-            mime_type = message.voice.mime_type or "audio/ogg"
-            await message.bot.download_file(file.file_path, file_in_io)
-        else: # video_note
-            file = await message.bot.get_file(message.video_note.file_id)
-            mime_type = "video/mp4"
-            await message.bot.download_file(file.file_path, file_in_io)
-            
-        file_bytes = file_in_io.getvalue()
-        
-        await status_msg.edit_text("🎙️ <i>Gemini AI анализирует вашу речь на наличие признания срыва...</i>")
-        
-        is_approved = await ai_service.verify_confession_speech(file_bytes, mime_type)
-        
-        if is_approved:
-            await status_msg.delete()
-            state_data = await state.get_data()
-            trigger_reason = state_data.get("relapse_trigger_reason", "Срыв подтвержден исповедью")
-            await state.clear()
-            await execute_relapse_reset(user_id, trigger_reason, message=message)
-        else:
-            await status_msg.edit_text(
-                "❌ <b>Исповедь отклонена Gemini AI</b>\n\n"
-                "Вы должны искренне и внятно признать свой срыв, упомянув Бога и напарника.\n\n"
-                "💬 <b>Попробуйте сказать еще раз:</b>\n"
-                "<i>«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»</i>\n\n"
-                "Запишите и отправьте новое голосовое сообщение или видеосообщение."
-            )
-    except Exception as e:
-        logger.error(f"Error processing confession: {e}")
-        await status_msg.edit_text(
-            "⚠️ Произошла техническая ошибка при проверке аудио/видео. Пожалуйста, попробуйте записать еще раз или введите /cancel для отмены."
-        )
-
-@router.message(Form.waiting_for_confession)
-async def process_confession_invalid_type(message: Message):
-    await message.answer(
-        "⚠️ <b>Ожидание признания (Зеркало исповеди)</b>\n\n"
-        "Для подтверждения срыва и сброса счетчика вы <b>обязаны отправить голосовое сообщение или видеосообщение</b>.\n\n"
-        "💬 <b>Произнесите слова:</b>\n"
-        "<i>«Иегова видит меня. Я признаю, что совершил срыв, и беру на себя ответственность перед старейшиной Андреем.»</i>\n\n"
-        "Если вы хотите отменить сброс, отправьте команду /cancel."
-    )
+    await state.clear()
+    await execute_relapse_reset(user_id, f"Другое: {text}", message=message)
 
 @router.callback_query(F.data == "relapse_cancel")
 async def process_relapse_cancel(callback: CallbackQuery):

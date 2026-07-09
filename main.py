@@ -411,27 +411,25 @@ async def handle_api_log_relapse(request):
     except Exception:
         pass
 
-    # Отправляем клавиатуру выбора сброса в Telegram
-    from keyboards.inline import get_reset_type_keyboard
+    # Отправляем клавиатуру выбора триггера срыва в Telegram
+    from keyboards.inline import get_trigger_keyboard
     try:
         await bot.send_message(
             chat_id=user_id,
             text=(
-                "⚠️ <b>Запрос на сброс счетчика из Mini App</b>\n\n"
+                "⚠️ <b>Зафиксирован срыв из Mini App</b>\n\n"
                 "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
-                "<b>Как вы хотите сбросить счетчик согласно Соглашению совести?</b>\n"
-                "• 🤫 <b>Сбросить тихо</b> — если это единичный срыв и вы сразу взяли себя в руки. Счетчик обнулится, напарник не будет уведомлен.\n"
-                "• 📢 <b>Сообщить напарнику</b> — если это повторный срыв (или серия), и вам нужна духовная помощь брата."
+                "<b>Что послужило главным триггером срыва?</b> Выберите вариант на кнопках ниже:"
             ),
-            reply_markup=get_reset_type_keyboard()
+            reply_markup=get_trigger_keyboard()
         )
     except Exception as e:
-        logger.error(f"Failed to send reset type keyboard to user {user_id}: {e}")
+        logger.error(f"Failed to send trigger keyboard to user {user_id}: {e}")
     
     return web.json_response({
         "success": True, 
         "confession_pending": True,
-        "message": "Выбор типа сброса отправлен в Telegram. Пожалуйста, откройте чат с ботом."
+        "message": "Выбор триггера срыва отправлен в Telegram. Пожалуйста, откройте чат с ботом."
     })
 
 async def handle_api_manage_panic(request):
