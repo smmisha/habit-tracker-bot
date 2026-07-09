@@ -127,95 +127,16 @@ async def process_checkin_clean(callback: CallbackQuery):
 
 @router.callback_query(F.data == "checkin_relapsed")
 async def process_checkin_relapsed(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    
-    async with db_helper.session_factory() as session:
-        result = await session.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            await callback.answer("Ошибка: пользователь не найден.")
-            return
-            
-        now = datetime.now()
-        
-        # Обновляем вчерашний/сегодняшний чек-ин
-        checkin_result = await session.execute(
-            select(CheckInLog)
-            .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
-        )
-        active_checkin = checkin_result.scalar_one_or_none()
-        if active_checkin:
-            active_checkin.status = "relapsed"
-            active_checkin.timestamp = now
-            
-        # Логируем срыв и сбрасываем счетчик
-        user.streak_start = now
-        user.total_relapses += 1
-        
-        log = RelapseLog(
-            user_id=user_id,
-            timestamp=now,
-            trigger_reason="Срыв зафиксирован при чек-ине"
-        )
-        session.add(log)
-        await session.commit()
-        
-        partner_username = user.partner_username
-        business_connection_id = user.business_connection_id
-        
-    import html
-    try:
-        await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
-    except Exception as e:
-        logger.warning(f"Failed to send 'Connecting AI' status in checkin_relapsed: {e}")
-        
-    try:
-        ai_response = await ai_service.generate_relapse_response("Срыв зафиксирован при чек-ине")
-    except Exception as e:
-        logger.error(f"Error calling AI service in checkin_relapsed: {e}")
-        ai_response = (
-            "Очень жаль, что это произошло. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
-            "Не сдавайся, твой стрик чистоты начат заново! Ты справишься."
-        )
-        
-    ai_response_escaped = html.escape(ai_response)
-    confirm_text = (
-        "😔 <b>Счетчик сброшен. Начинаем стрик заново!</b>\n\n"
-        f"{ai_response_escaped}"
+    await callback.answer()
+    from keyboards.inline import get_reset_type_keyboard
+    await callback.message.edit_text(
+        "⚠️ <b>Запись срыва при чек-ине</b>\n\n"
+        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
+        "<b>Как вы хотите сбросить счетчик согласно Соглашению совести?</b>\n"
+        "• 🤫 <b>Сбросить тихо</b> — если это единичный срыв и вы сразу взяли себя в руки. Счетчик обнулится, напарник не будет уведомлен.\n"
+        "• 📢 <b>Сообщить напарнику</b> — если это повторный срыв (или серия), и вам нужна духовная помощь брата.",
+        reply_markup=get_reset_type_keyboard()
     )
-    
-    try:
-        await callback.message.edit_text(confirm_text)
-    except Exception as e:
-        logger.error(f"Failed to edit message in checkin_relapsed: {e}")
-        try:
-            await callback.message.answer(confirm_text)
-        except Exception as e2:
-            logger.error(f"Failed to send relapse confirmation fallback: {e2}")
-    
-    if partner_username and business_connection_id:
-        try:
-            alert_text = await ai_service.humanize_relapse_confession("Срыв зафиксирован при чек-ине")
-        except Exception as e:
-            logger.error(f"Error humanizing confession: {e}")
-            alert_text = "Привет. К сожалению, сегодня у меня произошел срыв."
-        try:
-            sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-        except Exception as e:
-            logger.error(f"Error sending message to partner in checkin_relapsed: {e}")
-            sent = False
-            
-        notify_msg = f"✅ Сообщение напарнику <code>@{partner_username}</code> успешно отправлено автоматически." if sent else f"⚠️ Не удалось автоматически отправить сообщение напарнику <code>@{partner_username}</code>."
-        try:
-            await callback.message.answer(notify_msg)
-        except Exception as e:
-            logger.error(f"Failed to send partner notification status: {e}")
-    else:
-        try:
-            await callback.message.answer(f"⚠️ Сообщение напарнику не отправлено (напарник или Бизнес-подключение не настроены).")
-        except Exception as e:
-            logger.error(f"Failed to send no-partner status: {e}")
             
     try:
         await callback.answer()

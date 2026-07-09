@@ -4,10 +4,10 @@ import logging
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from database.db_helper import db_helper
-from database.models import User, RelapseLog
-from keyboards.inline import get_relapse_confirm_keyboard
+from database.models import User, RelapseLog, CheckInLog
+from keyboards.inline import get_relapse_confirm_keyboard, get_reset_type_keyboard, get_trigger_keyboard
 from config.config import settings
 from services.userbot_client import userbot
 from services.ai_service import ai_service
@@ -112,10 +112,99 @@ async def process_relapse_confirm(callback: CallbackQuery):
     await callback.answer()
     await callback.message.edit_text(
         "⚠️ <b>Запись срыва</b>\n\n"
-        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками. "
-        "Путь к свободе не бывает идеально ровным. Не сдавайся!\n\n"
-        "<b>Что послужило главным триггером срыва?</b> Выбери вариант на кнопках ниже:",
+        "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
+        "<b>Как вы хотите сбросить счетчик согласно Соглашению совести?</b>\n"
+        "• 🤫 <b>Сбросить тихо</b> — если это единичный срыв и вы сразу взяли себя в руки. Счетчик обнулится, напарник не будет уведомлен.\n"
+        "• 📢 <b>Сообщить напарнику</b> — если это повторный срыв (или серия), и вам нужна духовная помощь брата.",
+        reply_markup=get_reset_type_keyboard()
+    )
+
+@router.callback_query(F.data == "relapse_type_confess")
+async def process_relapse_type_confess(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "⚠️ <b>Заявление о срыве с уведомлением напарника</b>\n\n"
+        "<b>Что послужило главным триггером срыва?</b> Выберите вариант на кнопках ниже:",
         reply_markup=get_trigger_keyboard()
+    )
+
+@router.callback_query(F.data == "relapse_type_quiet")
+async def process_relapse_type_quiet(callback: CallbackQuery):
+    await callback.answer()
+    user_id = callback.from_user.id
+    now = datetime.now()
+    
+    # Считаем тихие сбросы за последние 7 дней
+    from datetime import timedelta
+    seven_days_ago = now - timedelta(days=7)
+    
+    async with db_helper.session_factory() as session:
+        # Проверяем количество тихих сбросов за последние 7 дней
+        result = await session.execute(
+            select(RelapseLog)
+            .where(
+                and_(
+                    RelapseLog.user_id == user_id,
+                    RelapseLog.timestamp >= seven_days_ago,
+                    RelapseLog.trigger_reason == "Тихий сброс"
+                )
+            )
+        )
+        quiet_relapses = result.scalars().all()
+        quiet_count = len(quiet_relapses)
+        
+        # Если уже было 2 тихих сброса (это будет 3-й за 7 дней), блокируем тихий сброс
+        if quiet_count >= 2:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            only_confess_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📢 Сообщить напарнику (Исповедь)", callback_data="relapse_type_confess")],
+                    [InlineKeyboardButton(text="❌ Отмена", callback_data="relapse_cancel")]
+                ]
+            )
+            await callback.message.edit_text(
+                "⚠️ <b>Тихий сброс заблокирован</b>\n\n"
+                f"За последние 7 дней у вас уже было зафиксировано <b>{quiet_count} тихих сбросов</b>.\n\n"
+                "Согласно Соглашению совести, при повторении срывов (серия из 3+ срывов за короткий срок) "
+                "молчание является самообманом. Вы обязаны открыто признаться напарнику, чтобы выйти из этой петли с его поддержкой.",
+                reply_markup=only_confess_kb
+            )
+            return
+            
+        # Выполняем тихий сброс
+        result_user = await session.execute(select(User).where(User.id == user_id))
+        user = result_user.scalar_one_or_none()
+        if not user:
+            return
+            
+        user.streak_start = now
+        user.total_relapses += 1
+        user.awarded_milestones = ""
+        
+        log = RelapseLog(
+            user_id=user_id,
+            timestamp=now,
+            trigger_reason="Тихий сброс"
+        )
+        session.add(log)
+        
+        # Обновляем активный чек-ин на "relapsed", если он находится в статусе pending
+        checkin_result = await session.execute(
+            select(CheckInLog)
+            .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
+        )
+        active_checkin = checkin_result.scalar_one_or_none()
+        if active_checkin:
+            active_checkin.status = "relapsed"
+            active_checkin.timestamp = now
+            
+        await session.commit()
+        
+    await callback.message.edit_text(
+        "🤫 <b>Счетчик чистоты сброшен тихо. Стрик начат заново!</b>\n\n"
+        "Напарник не получил уведомление об этой осечке. Это ваше право на самостоятельную борьбу, "
+        "но помните: Иегова видит ваши усилия. Сделайте правильные выводы из этой ошибки, "
+        "удалите то, что вас искусило, и продолжайте идти вперед! 💪"
     )
 
 async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: CallbackQuery = None, message: Message = None):
@@ -141,6 +230,17 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             trigger_reason=trigger_reason
         )
         session.add(log)
+        
+        # Обновляем активный чек-ин на "relapsed", если он находится в статусе pending
+        checkin_result = await session.execute(
+            select(CheckInLog)
+            .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
+        )
+        active_checkin = checkin_result.scalar_one_or_none()
+        if active_checkin:
+            active_checkin.status = "relapsed"
+            active_checkin.timestamp = now
+            
         await session.commit()
         
         partner_username = user.partner_username

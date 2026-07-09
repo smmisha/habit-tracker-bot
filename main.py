@@ -411,14 +411,27 @@ async def handle_api_log_relapse(request):
     except Exception:
         pass
 
-    # Переводим пользователя в режим ожидания исповеди
-    state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
-    await start_confession_flow(user_id, trigger_reason, state=state_ctx, bot=bot)
+    # Отправляем клавиатуру выбора сброса в Telegram
+    from keyboards.inline import get_reset_type_keyboard
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text=(
+                "⚠️ <b>Запрос на сброс счетчика из Mini App</b>\n\n"
+                "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
+                "<b>Как вы хотите сбросить счетчик согласно Соглашению совести?</b>\n"
+                "• 🤫 <b>Сбросить тихо</b> — если это единичный срыв и вы сразу взяли себя в руки. Счетчик обнулится, напарник не будет уведомлен.\n"
+                "• 📢 <b>Сообщить напарнику</b> — если это повторный срыв (или серия), и вам нужна духовная помощь брата."
+            ),
+            reply_markup=get_reset_type_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Failed to send reset type keyboard to user {user_id}: {e}")
     
     return web.json_response({
         "success": True, 
         "confession_pending": True,
-        "message": "Запрос на исповедь отправлен в Telegram. Пожалуйста, отправьте голосовое или видеосообщение с признанием."
+        "message": "Выбор типа сброса отправлен в Telegram. Пожалуйста, откройте чат с ботом."
     })
 
 async def handle_api_manage_panic(request):

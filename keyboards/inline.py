@@ -26,6 +26,19 @@ def get_settings_keyboard(notify_achievements: bool) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+def get_reset_type_keyboard() -> InlineKeyboardMarkup:
+    """Выбор типа сброса (тихий или с исповедью)"""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="🤫 Сбросить тихо", callback_data="relapse_type_quiet"),
+            InlineKeyboardButton(text="📢 Сообщить напарнику", callback_data="relapse_type_confess")
+        ],
+        [
+            InlineKeyboardButton(text="❌ Отмена", callback_data="relapse_cancel")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 def get_checkin_keyboard() -> InlineKeyboardMarkup:
     """Ежедневный чек-ин"""
     keyboard = [
