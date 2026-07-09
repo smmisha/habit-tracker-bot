@@ -223,18 +223,8 @@ async def check_milestone_achievements():
                         except Exception as e:
                             logger.error(f"Не удалось отправить медаль пользователю {user.id}: {e}")
                             
-                        # 2. Оповещаем напарника, если опция включена
-                        if user.notify_partner_achievements:
-                            partner_username = user.partner_username
-                            business_connection_id = user.business_connection_id
-                            
-                            if partner_username and business_connection_id:
-                                alert_text = (
-                                    f"🤖 [Автоматическое сообщение] Привет! Я достиг новой важной вехи чистоты — "
-                                    f"{m} дней подряд! 🎉 Спасибо за твою поддержку."
-                                )
-                                await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                                logger.info(f"Отправлено уведомление о медали {m}д напарнику для {user.id}")
+                        # Напарник о достижениях не уведомляется, чтобы не спамить
+                        pass
             except Exception as e:
                 logger.error(f"Ошибка проверки достижений для пользователя {user.id}: {e}")
 
@@ -339,7 +329,7 @@ async def send_weekly_reports():
                     f"⚠️ Срывов зафиксировано: <b>{relapse_count}</b>\n"
                     f"🔄 Использовано лимитов «Забыл»: <b>{forgot_count} из 3</b>\n"
                     "──────────────────────────\n"
-                    "<i>Отчет также автоматически отправлен твоему напарнику.</i>"
+                    "<i>Держитесь чистоты и оставайтесь сильными! 💪</i>"
                 )
                 try:
                     await bot.send_message(chat_id=user.id, text=user_report)
@@ -353,21 +343,6 @@ async def send_weekly_reports():
                     await bot.send_message(chat_id=user.id, text=analysis_msg)
                 except Exception as e:
                     logger.error(f"Не удалось отправить недельный отчет пользователю {user.id}: {e}")
-                    
-                # 2. Отправляем сообщение напарнику
-                partner_username = user.partner_username
-                business_connection_id = user.business_connection_id
-                
-                if partner_username and business_connection_id:
-                    alert_text = (
-                        f"🤖 [Автоматический еженедельный отчет] Привет! Мой отчет о прогрессе за неделю:\n"
-                        f"• Чистых дней: {clean_count} из 7\n"
-                        f"• Срывов зафиксировано: {relapse_count}\n"
-                        f"• Использовано причин 'Забыл': {forgot_count}/3\n\n"
-                        f"Спасибо, что остаешься моим напарником и помогаешь мне в этом пути!"
-                    )
-                    await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                    logger.info(f"Отправлен недельный отчет напарнику для {user.id}")
             except Exception as e:
                 logger.error(f"Ошибка формирования недельного отчета для {user.id}: {e}")
 

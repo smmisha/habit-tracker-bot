@@ -179,27 +179,11 @@ async def process_excuse_selection(callback: CallbackQuery, state: FSMContext):
                 await session.commit()
                 
         if current_forgot > 3:
-            # Превышен лимит! Отправляем сообщение напарнику
+            # Превышен лимит!
             await save_excuse(user_id, "Забыл (Лимит превышен)", callback=callback)
-            
-            if partner_username and business_connection_id:
-                alert_text = (
-                    "🤖 [Автоматическое сообщение] Привет. Я пишу тебе, чтобы сообщить: я систематически пропускаю отчеты в боте "
-                    "(я снова превысил лимит причин 'Забыл'). Это знак того, что я могу быть на грани срыва и мне нужна твоя помощь."
-                )
-                sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                if sent:
-                    await callback.message.answer(
-                        f"🚨 <b>Лимит причин «Забыл» превышен!</b> Сообщение о нарушении отправлено напарнику <code>@{partner_username}</code>."
-                    )
-                else:
-                    await callback.message.answer(
-                        "🚨 <b>Лимит причин «Забыл» превышен!</b> Не удалось отправить сообщение напарнику."
-                    )
-            else:
-                await callback.message.answer(
-                    "🚨 <b>Лимит причин «Забыл» превышен!</b> Сообщение напарнику не отправлено (нет настройки)."
-                )
+            await callback.message.answer(
+                "🚨 <b>Лимит причин «Забыл» превышен!</b>"
+            )
         else:
             left = 3 - current_forgot
             await save_excuse(user_id, f"Забыл ({current_forgot}/3)", callback=callback)
