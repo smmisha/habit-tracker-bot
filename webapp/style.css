@@ -804,4 +804,82 @@ textarea:focus, .form-input:focus, .form-select:focus {
     font-weight: 500;
 }
 
+/* Чипы выбора искушений */
+.temptation-chips {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+
+.chip-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 10px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.chip-btn:hover, .chip-btn:active {
+    background: rgba(162, 155, 254, 0.15);
+    border-color: rgba(162, 155, 254, 0.4);
+}
+
+.chip-btn.active {
+    background: rgba(108, 92, 231, 0.35);
+    border-color: #a29bfe;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(108, 92, 231, 0.3);
+}
+
+.spiritual-textarea {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease;
+}
+
+.spiritual-textarea:focus {
+    border-color: #a29bfe;
+    background: rgba(162, 155, 254, 0.06);
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--accent-blue);
+    color: var(--accent-blue);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-outline:hover, .btn-outline:active {
+    background: rgba(162, 155, 254, 0.12);
+}
+
+.btn-outline.read-confirmed {
+    background: rgba(0, 184, 148, 0.15);
+    border-color: #55efc4;
+    color: #55efc4;
+}
+
 

@@ -614,134 +614,179 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
     }
 });
 
-// 2. Загрузка духовных материалов с jw.org / wol.jw.org
-async function loadSpiritualMaterials() {
-    const listEl = document.getElementById('spiritual-materials-list');
+// 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
+let selectedTemptationType = null;
+let isArticleReadConfirmed = false;
+
+// Обработка чипов искушений
+document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const currentType = btn.getAttribute('data-type');
+        if (btn.classList.contains('active')) {
+            btn.classList.remove('active');
+            selectedTemptationType = null;
+        } else {
+            document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedTemptationType = currentType;
+        }
+    });
+});
+
+// Кнопка запроса духовного решения от ИИ
+document.getElementById('btn-find-spiritual-solution')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-find-spiritual-solution');
+    const userNotes = document.getElementById('spiritual-user-notes')?.value || '';
+    
+    btn.disabled = true;
+    btn.querySelector('.spinner')?.classList.remove('hidden');
+    btn.querySelector('.btn-text').textContent = 'ИИ анализирует и подбирает статью...';
+    
+    await loadSpiritualSolution(selectedTemptationType, userNotes);
+    
+    btn.disabled = false;
+    btn.querySelector('.spinner')?.classList.add('hidden');
+    btn.querySelector('.btn-text').textContent = '🔍 Получить духовное решение';
+});
+
+// Кнопка смены темы / возврата к выбору
+document.getElementById('btn-spiritual-change-topic')?.addEventListener('click', () => {
+    document.getElementById('spiritual-step-study')?.classList.add('hidden');
+    document.getElementById('spiritual-step-select')?.classList.remove('hidden');
+});
+
+// Кнопка подтверждения прочтения статьи
+document.getElementById('btn-spiritual-mark-read')?.addEventListener('click', () => {
+    isArticleReadConfirmed = true;
+    const btnRead = document.getElementById('btn-spiritual-mark-read');
+    const btnHelped = document.getElementById('btn-spiritual-helped');
+    
+    btnRead.classList.add('read-confirmed');
+    btnRead.innerHTML = '✓ 1. Статья прочитана';
+    
+    if (btnHelped) {
+        btnHelped.disabled = false;
+        btnHelped.style.opacity = '1';
+        btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
+    }
+    showToast('Статья отмечена как прочитанная! Подтвердите победу кнопкой ниже.', 'info');
+});
+
+async function loadSpiritualSolution(tType, notes) {
     const thoughtEl = document.getElementById('spiritual-thought-text');
     const actionBox = document.getElementById('spiritual-action-box');
     const actionText = document.getElementById('spiritual-action-text');
-    if (!listEl) return;
+    const catBadge = document.getElementById('spiritual-cat-badge');
+    const primaryContainer = document.getElementById('spiritual-primary-card-container');
+    const stepSelect = document.getElementById('spiritual-step-select');
+    const stepStudy = document.getElementById('spiritual-step-study');
+    const btnRead = document.getElementById('btn-spiritual-mark-read');
+    const btnHelped = document.getElementById('btn-spiritual-helped');
     
-    listEl.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><span class="spinner"></span> Подбираем духовные материалы...</div>';
+    // Сброс состояния подтверждения
+    isArticleReadConfirmed = false;
+    if (btnRead) {
+        btnRead.classList.remove('read-confirmed');
+        btnRead.innerHTML = '📖 1. Я прочитал(а) статью';
+    }
+    if (btnHelped) {
+        btnHelped.disabled = true;
+        btnHelped.style.opacity = '0.5';
+        btnHelped.style.boxShadow = 'none';
+    }
     
     try {
-        const url = userId ? `/api/spiritual_help?user_id=${encodeURIComponent(userId)}` : '/api/spiritual_help';
-        const resp = await fetch(url);
+        const resp = await fetch('/api/spiritual_help', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                temptation_type: tType,
+                user_notes: notes
+            })
+        });
         const data = await resp.json();
         
         if (data.success || data.ok) {
             if (thoughtEl) {
-                thoughtEl.textContent = data.spiritual_thought || 'Иегова видит твою борьбу и даст выход из искушения (1 Кор. 10:13).';
+                thoughtEl.textContent = data.spiritual_thought;
             }
-            
             if (actionBox && actionText) {
-                if (data.spiritual_action) {
-                    actionText.textContent = data.spiritual_action;
-                    actionBox.classList.remove('hidden');
-                } else {
-                    actionBox.classList.add('hidden');
-                }
+                actionText.textContent = data.spiritual_action;
+                actionBox.classList.remove('hidden');
             }
-
-            if (data.sent_to_telegram) {
-                showToast('Духовное подкрепление отправлено в ваш чат Telegram 📖', 'info');
+            if (catBadge) {
+                catBadge.textContent = data.temptation_title || 'Духовное наставление';
             }
             
-            listEl.innerHTML = '';
-            (data.materials || []).forEach(item => {
-                const card = document.createElement('div');
-                card.className = 'spiritual-card';
-                card.innerHTML = `
-                    <div class="spiritual-badge">
-                        <span>${item.icon || '📖'}</span>
-                        <span>${item.type_label || 'Материал'}</span>
-                    </div>
-                    <div class="spiritual-title">${item.title}</div>
-                    <div class="spiritual-desc">${item.description || ''}</div>
-                    <div class="spiritual-btn">
-                        <span>Открыть материал</span>
-                        <span>↗</span>
+            const primary = data.primary_material || (data.materials && data.materials[0]) || {
+                title: "Бог хочет, чтобы мы были чистыми",
+                type_label: "wol.jw.org Урок",
+                icon: "✨",
+                description: "Нравственная чистота и близкие отношения с Богом.",
+                url: "https://wol.jw.org/ru/wol/d/r2/lp-u/1102021240"
+            };
+            
+            if (primaryContainer) {
+                primaryContainer.innerHTML = `
+                    <div class="spiritual-card" style="border-width: 2px; border-color: rgba(162, 155, 254, 0.45); background: rgba(108, 92, 231, 0.08);">
+                        <div class="spiritual-badge">
+                            <span>${primary.icon || '📖'}</span>
+                            <span>${primary.type_label || 'wol.jw.org'}</span>
+                        </div>
+                        <div class="spiritual-title" style="font-size: 15px; margin-top: 2px;">${primary.title}</div>
+                        <div class="spiritual-desc" style="margin-top: 4px;">${primary.description || ''}</div>
+                        <div class="spiritual-btn" style="margin-top: 10px; background: rgba(108, 92, 231, 0.3); border-color: #a29bfe;">
+                            <span>Открыть и изучить материал</span>
+                            <span>↗</span>
+                        </div>
                     </div>
                 `;
-                card.addEventListener('click', (e) => {
+                
+                primaryContainer.querySelector('.spiritual-card')?.addEventListener('click', (e) => {
                     e.preventDefault();
                     if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
-                        Telegram.WebApp.openLink(item.url);
+                        Telegram.WebApp.openLink(primary.url);
                     } else {
-                        window.open(item.url, '_blank');
+                        window.open(primary.url, '_blank');
                     }
                 });
-                listEl.appendChild(card);
-            });
+            }
+            
+            if (data.sent_to_telegram) {
+                showToast('Целевая статья и духовное наставление отправлены вам в чат Telegram 📖', 'info');
+            }
+            
+            // Переключаем шаги
+            stepSelect?.classList.add('hidden');
+            stepStudy?.classList.remove('hidden');
             return;
         }
     } catch (e) {
-        console.error('Error loading spiritual materials:', e);
+        console.error('Error loading spiritual solution:', e);
+        showToast('Ошибка при подборе духовного решения', 'error');
     }
-    
-    // Fallback проверенные материалы (только 100% рабочие ссылки)
-    if (thoughtEl) {
-        thoughtEl.textContent = 'Иегова верен, Он не допустит искушения сверх сил, но при искушении даст и облегчение (1 Коринфянам 10:13).';
-    }
-    if (actionBox && actionText) {
-        actionText.textContent = 'Преклони колени прямо сейчас и от всего сердца попроси у Иеговы силы переломить импульс.';
-        actionBox.classList.remove('hidden');
-    }
-    listEl.innerHTML = `
-        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/d/r2/lp-u/1102008082">
-            <div class="spiritual-badge"><span>📚</span><span>wol.jw.org Книга</span></div>
-            <div class="spiritual-title">Мастурбация: насколько серьезна эта привычка и как её победить?</div>
-            <div class="spiritual-desc">Практическое библейское руководство: как преодолевать вину и побеждать плоть.</div>
-            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
-        </div>
-        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/d/r2/lp-u/1102008131">
-            <div class="spiritual-badge"><span>🧠</span><span>wol.jw.org Статья</span></div>
-            <div class="spiritual-title">Как мне избавиться от навязчивых мыслей о сексе?</div>
-            <div class="spiritual-desc">Методы защиты разума, фильтрации контента и переключения внимания на духовное.</div>
-            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
-        </div>
-        <div class="spiritual-card" data-url="https://www.jw.org/ru/библейские-учения/вопросы/что-говорит-библия-о-порнографии/">
-            <div class="spiritual-badge"><span>📄</span><span>jw.org Статья</span></div>
-            <div class="spiritual-title">Что говорит Библия о порнографии? Грех ли это?</div>
-            <div class="spiritual-desc">Официальная статья: библейские шаги по освобождению от похоти глаз.</div>
-            <div class="spiritual-btn">Открыть на jw.org ↗</div>
-        </div>
-        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/b/r2/lp-u/nwt/20/4#study=discover&v=20:4:23">
-            <div class="spiritual-badge"><span>❤️</span><span>wol.jw.org Библия</span></div>
-            <div class="spiritual-title">Больше всего хранимого храни сердце твоё (Притчи 4:23)</div>
-            <div class="spiritual-desc">Исследование стиха и библейских комментариев: источник жизни.</div>
-            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
-        </div>
-        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/s/r2/lp-u?q=%D0%BC%D0%B0%D1%81%D1%82%D1%83%D1%80%D0%B1%D0%B0%D1%86%D0%B8%D1%8F">
-            <div class="spiritual-badge"><span>📑</span><span>wol.jw.org Каталог</span></div>
-            <div class="spiritual-title">Онлайн-библиотека: Все публикации по теме мастурбации</div>
-            <div class="spiritual-desc">Тематический указатель Сторожевой Башни по исследованию вопроса.</div>
-            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
-        </div>
-    `;
-    listEl.querySelectorAll('.spiritual-card').forEach(c => {
-        c.addEventListener('click', (e) => {
-            e.preventDefault();
-            const u = c.getAttribute('data-url');
-            if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
-                Telegram.WebApp.openLink(u);
-            } else {
-                window.open(u, '_blank');
-            }
-        });
-    });
 }
 
 // 3. SOS - Не помогло -> Переход к духовному подкреплению
 document.getElementById('btn-panic-failed').addEventListener('click', () => {
     document.getElementById('sos-dynamic-content')?.classList.add('hidden');
     document.getElementById('sos-spiritual-content')?.classList.remove('hidden');
-    loadSpiritualMaterials();
-    showToast('Переключите разум на духовную пищу 📖', 'info');
+    
+    // Сбрасываем к шагу 1 (выбор искушения)
+    document.getElementById('spiritual-step-select')?.classList.remove('hidden');
+    document.getElementById('spiritual-step-study')?.classList.add('hidden');
+    
+    showToast('Выберите искушение для целевой помощи 🛡️', 'info');
 });
 
-// 4. Духовный блок: Мне помогло!
+// 4. Духовный блок: Мне помогло! (двухэтапное подтверждение)
 document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
+    if (!isArticleReadConfirmed) {
+        showToast('Пожалуйста, сначала изучите статью и нажмите «Я прочитал(а) статью»', 'info');
+        return;
+    }
+    
     const btn = document.getElementById('btn-spiritual-helped');
     btn.disabled = true;
     try {

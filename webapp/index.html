@@ -141,37 +141,99 @@
 
                 <!-- Блок духовного подкрепления (jw.org / wol.jw.org) -->
                 <div id="sos-spiritual-content" class="sos-spiritual-content hidden">
-                    <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 15px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                            <span style="font-size: 20px;">📖</span>
-                            <span style="font-size: 15px; font-weight: 700; color: #a29bfe;">Духовная пища против искушения</span>
+                    
+                    <!-- Шаг 1: Выбор искушения и ввод ощущений -->
+                    <div id="spiritual-step-select" class="spiritual-step-container">
+                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 15px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                <span style="font-size: 20px;">🛡️</span>
+                                <span style="font-size: 15px; font-weight: 700; color: #a29bfe;">Духовная защита: Что происходит?</span>
+                            </div>
+                            <p class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
+                                Выберите тип искушения или опишите ощущения своими словами. ИИ подберет точное наставление и <b>одну прицельную публикацию</b> для изучения прямо сейчас.
+                            </p>
                         </div>
-                        <p id="spiritual-thought-text" class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
-                            Загрузка духовного наставления...
-                        </p>
-                    </div>
 
-                    <div id="spiritual-action-box" class="glass hidden" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: rgba(0, 184, 148, 0.15); border: 1px solid rgba(85, 239, 196, 0.4);">
-                        <div style="font-size: 11px; font-weight: 700; color: #55efc4; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-                            <span>💡</span><span>Духовный шаг прямо сейчас:</span>
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">
+                                Выберите искушение:
+                            </label>
+                            <div class="temptation-chips" id="temptation-chips-container">
+                                <button type="button" class="chip-btn" data-type="masturbation">✊ Мастурбация</button>
+                                <button type="button" class="chip-btn" data-type="porn">🔞 Порнография</button>
+                                <button type="button" class="chip-btn" data-type="sexting">📱 Секстинг</button>
+                                <button type="button" class="chip-btn" data-type="premarital_sex">💔 Секс с девушкой</button>
+                            </div>
                         </div>
-                        <div id="spiritual-action-text" style="font-size: 13px; color: #ffffff; line-height: 1.4; font-style: italic;"></div>
-                    </div>
 
-                    <p class="sos-text" style="margin-bottom: 10px; font-weight: 500; font-size: 13px; color: var(--text-secondary);">
-                        Переключи разум прямо сейчас — открой видео или начни читать публикацию:
-                    </p>
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label for="spiritual-user-notes" style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">
+                                Или опишите свои ощущения своими словами:
+                            </label>
+                            <textarea id="spiritual-user-notes" rows="3" class="spiritual-textarea" placeholder="Например: увидел фото, накатило одиночество, тянет написать..."></textarea>
+                        </div>
 
-                    <div id="spiritual-materials-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
-                        <!-- Заполняется динамически через JS -->
-                    </div>
-
-                    <div class="sos-actions" style="display: flex; flex-direction: column; gap: 10px;">
-                        <button class="btn btn-success" id="btn-spiritual-helped">✅ Мне помогло, тяга отступила!</button>
-                        <button class="btn btn-secondary" id="btn-spiritual-to-relapse" style="background: rgba(255, 59, 48, 0.12); border-color: rgba(255, 59, 48, 0.3); color: #ff6b6b;">
-                            ⚠️ Я все-таки сорвался (зафиксировать)
+                        <button class="btn btn-primary" id="btn-find-spiritual-solution" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe); border: none; font-weight: 600; width: 100%;">
+                            <span class="btn-text">🔍 Получить духовное решение</span>
+                            <span class="spinner hidden"></span>
                         </button>
                     </div>
+
+                    <!-- Шаг 2: Духовный ответ, чтение статьи и подтверждение -->
+                    <div id="spiritual-step-study" class="spiritual-step-container hidden">
+                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span style="font-size: 20px;">📖</span>
+                                    <span id="spiritual-cat-badge" style="font-size: 13px; font-weight: 700; color: #a29bfe;">Духовное наставление</span>
+                                </div>
+                                <button type="button" id="btn-spiritual-change-topic" style="background: none; border: none; color: #b2bec3; font-size: 11px; cursor: pointer; text-decoration: underline;">
+                                    Сменить тему
+                                </button>
+                            </div>
+                            <p id="spiritual-thought-text" class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
+                                Загрузка духовного наставления...
+                            </p>
+                        </div>
+
+                        <div id="spiritual-action-box" class="glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; background: rgba(0, 184, 148, 0.15); border: 1px solid rgba(85, 239, 196, 0.4);">
+                            <div style="font-size: 11px; font-weight: 700; color: #55efc4; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                                <span>💡</span><span>Духовный шаг прямо сейчас:</span>
+                            </div>
+                            <div id="spiritual-action-text" style="font-size: 13px; color: #ffffff; line-height: 1.4; font-style: italic;"></div>
+                        </div>
+
+                        <p class="sos-text" style="margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-secondary);">
+                            🎯 Целевая статья для победы над этим искушением:
+                        </p>
+
+                        <!-- Одна прицельная карточка материала -->
+                        <div id="spiritual-primary-card-container" style="margin-bottom: 16px;">
+                            <!-- Заполняется динамически -->
+                        </div>
+
+                        <!-- Двухэтапный флоу подтверждения -->
+                        <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                                Шаги освобождения от тяги:
+                            </div>
+
+                            <button class="btn btn-outline" id="btn-spiritual-mark-read" style="width: 100%; margin-bottom: 10px; border-color: #a29bfe; color: #a29bfe; font-weight: 600;">
+                                📖 1. Я прочитал(а) статью
+                            </button>
+
+                            <button class="btn btn-success" id="btn-spiritual-helped" disabled style="width: 100%; opacity: 0.5; transition: all 0.3s ease;">
+                                ✅ 2. Помогло! Тяга отступила
+                            </button>
+                        </div>
+
+                        <div class="sos-actions" style="display: flex; flex-direction: column; gap: 10px;">
+                            <button class="btn btn-secondary" id="btn-spiritual-to-relapse" style="background: rgba(255, 59, 48, 0.12); border-color: rgba(255, 59, 48, 0.3); color: #ff6b6b; font-size: 12px;">
+                                ⚠️ Я все-таки сорвался (зафиксировать срыв)
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </section>
 

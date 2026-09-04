@@ -562,10 +562,33 @@ async def handle_api_accept_covenant(request):
     return web.json_response({"success": True})
 
 async def handle_api_spiritual_help(request):
-    """API получения материалов для духовного подкрепления на jw.org / wol.jw.org"""
+    """API получения индивидуальной духовной помощи по типам искушений (wol.jw.org / jw.org)"""
     from services.ai_service import ai_service
-    user_id_param = request.query.get("user_id")
-    data = await ai_service.generate_spiritual_study_materials()
+    
+    user_id_param = None
+    temptation_type = None
+    user_notes = None
+    
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            user_id_param = body.get("user_id")
+            temptation_type = body.get("temptation_type")
+            user_notes = body.get("user_notes")
+        except Exception:
+            pass
+            
+    if not user_id_param:
+        user_id_param = request.query.get("user_id")
+    if not temptation_type:
+        temptation_type = request.query.get("temptation_type")
+    if not user_notes:
+        user_notes = request.query.get("user_notes")
+        
+    data = await ai_service.generate_spiritual_study_materials(
+        temptation_type=temptation_type,
+        user_notes=user_notes
+    )
     
     sent_to_telegram = False
     if user_id_param:
@@ -583,6 +606,9 @@ async def handle_api_spiritual_help(request):
         "success": True,
         "spiritual_thought": data.get("spiritual_thought", ""),
         "spiritual_action": data.get("spiritual_action", ""),
+        "temptation_type": data.get("temptation_type", "general"),
+        "temptation_title": data.get("temptation_title", "Духовное подкрепление"),
+        "primary_material": data.get("primary_material"),
         "materials": data.get("materials", []),
         "sent_to_telegram": sent_to_telegram
     })
@@ -594,6 +620,7 @@ async def start_web_server():
         web.get("/dashboard", handle_webapp),
         web.get("/api/stats", handle_api_stats),
         web.get("/api/spiritual_help", handle_api_spiritual_help),
+        web.post("/api/spiritual_help", handle_api_spiritual_help),
         web.post("/api/journal", handle_api_save_journal),
         web.post("/api/relapse", handle_api_log_relapse),
         web.post("/api/initiate_relapse", handle_api_log_relapse),

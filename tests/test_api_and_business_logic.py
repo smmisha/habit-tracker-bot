@@ -75,6 +75,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             web.post("/api/panic", handle_api_manage_panic),
             web.post("/api/accept_covenant", handle_api_accept_covenant),
             web.get("/api/spiritual_help", handle_api_spiritual_help),
+            web.post("/api/spiritual_help", handle_api_spiritual_help),
         ])
         return app
 
@@ -218,15 +219,39 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertTrue(data.get("success"))
         self.assertTrue(len(data.get("spiritual_thought", "")) > 0)
         self.assertTrue(len(data.get("spiritual_action", "")) > 0)
-        materials = data.get("materials", [])
-        self.assertGreater(len(materials), 0)
-        for m in materials:
-            self.assertIn("title", m)
-            self.assertIn("url", m)
-            self.assertTrue(m["url"].startswith("http"))
-            self.assertTrue("jw.org" in m["url"] or "wol.jw.org" in m["url"])
-            # Ensure none of the old 404 links exist
-            self.assertNotIn("подростки/вопросы/мастурбация", m["url"])
+        primary = data.get("primary_material")
+        self.assertIsNotNone(primary)
+        self.assertIn("title", primary)
+        self.assertIn("url", primary)
+        self.assertTrue(primary["url"].startswith("http"))
+        self.assertTrue("jw.org" in primary["url"] or "wol.jw.org" in primary["url"])
+
+    async def test_spiritual_help_post_sexting(self):
+        resp = await self.client.request("POST", "/api/spiritual_help", json={
+            "user_id": 999001,
+            "temptation_type": "sexting"
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("temptation_type"), "sexting")
+        primary = data.get("primary_material")
+        self.assertIsNotNone(primary)
+        self.assertIn("секстинг", primary["title"].lower())
+        self.assertTrue("wol.jw.org/ru/wol/d/r2/lp-u/502013360" in primary["url"])
+
+    async def test_spiritual_help_post_custom_notes(self):
+        resp = await self.client.request("POST", "/api/spiritual_help", json={
+            "user_id": 999001,
+            "user_notes": "Увидел фото знакомой девушки, очень хочу переспать"
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("temptation_type"), "premarital_sex")
+        primary = data.get("primary_material")
+        self.assertIsNotNone(primary)
+        self.assertTrue("wol.jw.org" in primary["url"])
 
     def test_is_on_time_logic(self):
         scheduled = "21:00"
