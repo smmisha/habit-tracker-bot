@@ -10,13 +10,15 @@ def main():
     tabletus_dir = os.path.join(base_dir, "mister_tabletus_bot")
 
     # Формируем переменные окружения для Трекера привычек
-    habits_db = os.getenv("HABITS_DATABASE_URL", "")
-    habits_token = os.getenv("HABITS_BOT_TOKEN", "")
+    habits_db = os.getenv("HABITS_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+    habits_token = os.getenv("HABITS_BOT_TOKEN") or os.getenv("BOT_TOKEN", "")
     habits_env = os.environ.copy()
     if habits_token:
         habits_env["BOT_TOKEN"] = habits_token
     if habits_db:
-        if habits_db.startswith("postgresql://"):
+        if habits_db.startswith("postgres://"):
+            habits_db = habits_db.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif habits_db.startswith("postgresql://"):
             habits_db = habits_db.replace("postgresql://", "postgresql+asyncpg://", 1)
         habits_env["DATABASE_URL"] = habits_db
         
@@ -29,6 +31,8 @@ def main():
     if tabletus_db:
         if tabletus_db.startswith("postgresql+asyncpg://"):
             tabletus_db = tabletus_db.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif tabletus_db.startswith("postgres://"):
+            tabletus_db = tabletus_db.replace("postgres://", "postgresql://", 1)
         tabletus_env["DATABASE_URL"] = tabletus_db
 
     print("=== LAUNCHER: Start Bots ===")
@@ -41,7 +45,7 @@ def main():
         print("Starting Habit Tracker Bot...")
         p1 = subprocess.Popen([sys.executable, "main.py"], cwd=habits_dir, env=habits_env)
     else:
-        print("Habit Tracker Bot is disabled (HABITS_BOT_TOKEN not set).")
+        print("Habit Tracker Bot is disabled (neither HABITS_BOT_TOKEN nor BOT_TOKEN set).")
 
     # Запуск бота Мистера Таблетуса
     if tabletus_token:

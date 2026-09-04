@@ -4,7 +4,9 @@ from database.models import Base
 
 class DatabaseHelper:
     def __init__(self, url: str, echo: bool = False):
-        if url.startswith("postgresql://"):
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
             
         # Настройка асинхронного движка. Для SQLite отключаем пул потоков для безопасности
