@@ -682,7 +682,7 @@ document.getElementById('btn-spiritual-mark-read')?.addEventListener('click', ()
 document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', async () => {
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
-    showToast('Загружаем углубленный материал Раунда 2 (20–60 минут)...', 'info');
+    showToast('Загружаем углубленный материал Раунда 2...', 'info');
     await loadRound2Solution(selectedTemptationType, currentSpiritualNotes);
 });
 
@@ -831,7 +831,7 @@ async function loadSpiritualSolution(tType, notes) {
                         <div class="spiritual-title" style="font-size: 15px; margin-top: 2px;">${primary.title}</div>
                         <div class="spiritual-desc" style="margin-top: 4px;">${primary.description || ''}</div>
                         <div class="spiritual-btn" style="margin-top: 10px; background: rgba(108, 92, 231, 0.3); border-color: #a29bfe;">
-                            <span>Открыть и изучить материал (20–60 мин)</span>
+                            <span>Открыть и изучить материал</span>
                             <span>↗</span>
                         </div>
                     </div>

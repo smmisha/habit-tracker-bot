@@ -105,7 +105,7 @@ async def cb_spiritual_read(callback: CallbackQuery):
         ])
         new_keyboard.append([
             InlineKeyboardButton(
-                text="⏳ Не помогло (Раунд 2: углубиться на 20–60 мин)",
+                text="⏳ Не помогло (Раунд 2: углубиться в размышление)",
                 callback_data="spiritual_round2"
             )
         ])
@@ -129,11 +129,11 @@ async def cb_spiritual_round2(callback: CallbackQuery):
     data = await ai_service.generate_spiritual_study_materials(round=2)
     
     thought = data.get("spiritual_thought", "")
-    action = data.get("spiritual_action", "Помолитесь усерднее и уделите 20-60 минут исследованию слова Бога.")
+    action = data.get("spiritual_action", "Помолитесь от всего сердца и исследуйте слово Бога без спешки.")
     primary = data.get("primary_material") or (data.get("materials", [{}])[0])
     
     text = (
-        "🛡️ <b>РАУНД 2: ДУХОВНОЕ ПОГРУЖЕНИЕ (20–60 МИН)</b>\n"
+        "🛡️ <b>РАУНД 2: ДУХОВНОЕ ПОГРУЖЕНИЕ</b>\n"
         "───────────────────────────────────\n"
         "<i>Ты продолжаешь бороться, стрик сохранен! Это НЕ срыв.</i>\n\n"
         f"{thought}\n\n"
