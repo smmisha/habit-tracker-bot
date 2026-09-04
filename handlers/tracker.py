@@ -146,48 +146,33 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         # Сохраняем в БД, чтобы новая запись попала в выборку
         await session.commit()
         
-        # 5. Проверка правила: 3 срыва за последние 7 дней (скользящее окно)
-        from datetime import timedelta
-        seven_days_ago = now_utc - timedelta(days=7)
-        
-        slips_result = await session.execute(
-            select(SlipEvent)
-            .where(
-                and_(
-                    SlipEvent.user_id == user_id,
-                    SlipEvent.occurred_at >= seven_days_ago
-                )
-            )
-        )
-        recent_slips = slips_result.scalars().all()
-        recent_count = len(recent_slips)
-        
-        # Проверяем, есть ли хотя бы один ненотифицированный
-        has_unnotified = any(not s.notified_partner for s in recent_slips)
-        
+        # 5. Автоматическое уведомление напарника при ЛЮБОМ срыве (без поблажек и задержек)
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id
         
         partner_notified = False
-        if recent_count >= 3 and has_unnotified:
-            # 6. Автоматическое уведомление напарника-контролера
-            if partner_username and business_connection_id:
-                alert_text = (
-                    f"⚠️ У @{user.username or user.first_name} зафиксирована серия срывов (3+ за последние 7 дней). "
-                    "Это сигнал потери контроля — пожалуйста, свяжитесь для духовной поддержки."
+        if partner_username:
+            user_tag = f"@{user.username}" if user.username else (user.first_name or f"ID {user.id}")
+            alert_text = (
+                f"⚠️ <b>Уведомление о срыве</b>\n\n"
+                f"Пользователь {user_tag} зафиксировал срыв.\n"
+                f"Счетчик чистоты сброшен."
+            )
+            try:
+                sent = await userbot.send_message_to_partner(
+                    business_connection_id=business_connection_id,
+                    partner_username=partner_username,
+                    text=alert_text,
+                    bot=bot
                 )
-                try:
-                    sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text, bot=bot)
-                    if sent:
-                        partner_notified = True
-                        # Помечаем все записи за последние 7 дней как notified_partner = True
-                        for s in recent_slips:
-                            s.notified_partner = True
-                        await session.commit()
-                except Exception as e:
-                    logger.error(f"Error sending series alert to partner: {e}")
+                if sent:
+                    partner_notified = True
+                    slip.notified_partner = True
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Error sending relapse alert to partner: {e}")
                     
-        # 7. Расчет статистики триггеров
+        # 6. Расчет статистики триггеров
         relapses_result = await session.execute(
             select(RelapseLog.trigger_reason)
             .where(RelapseLog.user_id == user_id)
@@ -220,12 +205,12 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
     
     confirm_text = "😔 <b>Счетчик сброшен. Стрик чистоты начат заново!</b>\n\n"
     if partner_notified:
-        confirm_text += (
-            f"⚠️ <b>Внимание:</b> за последние 7 дней у вас зафиксировано {recent_count} срывов. "
-            f"Согласно Соглашению совести, вашему напарнику <code>@{partner_username}</code> автоматически отправлено уведомление о серии срывов.\n\n"
-        )
+        partner_tag = partner_username if partner_username.isdigit() else f"@{partner_username}"
+        confirm_text += f"📬 Вашему напарнику <code>{partner_tag}</code> автоматически отправлено уведомление о срыве.\n\n"
+    elif partner_username:
+        confirm_text += "⚠️ <i>Не удалось доставить авто-уведомление напарнику. Пожалуйста, напишите ему лично.</i>\n\n"
     else:
-        confirm_text += "🤫 Сброс выполнен приватно. Напарник не уведомлен (единичный срыв конфиденциален).\n\n"
+        confirm_text += "ℹ️ Напарник не указан в настройках бота.\n\n"
         
     confirm_text += (
         "📊 <b>Статистика твоих триггеров срывов:</b>\n"
@@ -247,7 +232,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
 
     return {
         "partner_notified": partner_notified,
-        "recent_count": recent_count,
+        "recent_count": 1 if partner_notified else 0,
         "confirm_text": confirm_text
     }
 

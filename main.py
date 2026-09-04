@@ -456,38 +456,7 @@ async def handle_api_manage_panic(request):
         business_connection_id = user.business_connection_id
         
         if action == "initiate":
-            from services.scheduler import scheduler, send_silent_panic_alert
-            try:
-                scheduler.remove_job(f"panic_alert_{user_id}")
-            except Exception:
-                pass
-                
-            import pytz
-            from datetime import timedelta
-            kyiv_tz = pytz.timezone("Europe/Kyiv")
-            run_time = datetime.now(kyiv_tz) + timedelta(minutes=5)
-            
-            scheduler.add_job(
-                send_silent_panic_alert,
-                'date',
-                run_date=run_time,
-                args=[user_id],
-                id=f"panic_alert_{user_id}",
-                replace_existing=True
-            )
-            logger.info(f"Запущен 5-минутный таймер тихой тревоги SOS для {user_id}")
-            
-            # Отправляем сообщение напарнику о начале SOS через бизнес-соединение
-            if partner_username and business_connection_id:
-                async def send_sos_to_partner():
-                    try:
-                        alert_text = await ai_service.humanize_sos_alert()
-                        await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                        logger.info(f"Напарник {partner_username} уведомлен о начале SOS для {user_id}")
-                    except Exception as e:
-                        logger.error(f"Не удалось отправить SOS-уведомление напарнику: {e}")
-                asyncio.create_task(send_sos_to_partner())
-                
+            # Сообщение напарнику отправляется ТОЛЬКО при срыве. При входе в SOS напарник не тревожится.
             return web.json_response({"success": True})
             
         elif action == "start":
@@ -520,24 +489,12 @@ async def handle_api_manage_panic(request):
             return web.json_response({"success": True, "guidelines": guidelines})
         
     if action == "helped":
-        from services.scheduler import scheduler
-        try:
-            scheduler.remove_job(f"panic_alert_{user_id}")
-        except Exception:
-            pass
-            
         async def send_help_ok():
             try:
                 await bot.send_message(
                     chat_id=user_id,
                     text="🎉 <b>Отлично! Ты справился с тягой и защитил свой стрик!</b>\n\nКаждая такая победа делает тебя сильнее."
                 )
-                
-                # Дополнительно оповещаем напарника об успехе
-                if partner_username and business_connection_id:
-                    alert_text = await ai_service.humanize_sos_success()
-                    await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
-                    logger.info(f"Напарник {partner_username} уведомлен об успешном выходе из SOS для {user_id}")
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения: {e}")
         asyncio.create_task(send_help_ok())
