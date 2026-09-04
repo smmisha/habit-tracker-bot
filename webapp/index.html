@@ -135,7 +135,35 @@
                     </div>
                     <div class="sos-actions" style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
                         <button class="btn btn-success" id="btn-panic-helped">✅ Мне помогло / Тяга ушла</button>
-                        <button class="btn btn-danger" id="btn-panic-failed">❌ Не помогло / Нужна помощь</button>
+                        <button class="btn btn-primary" id="btn-panic-failed" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe); border: none; font-weight: 600;">📖 Не помогло / Духовное подкрепление (jw.org)</button>
+                    </div>
+                </div>
+
+                <!-- Блок духовного подкрепления (jw.org / wol.jw.org) -->
+                <div id="sos-spiritual-content" class="sos-spiritual-content hidden">
+                    <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 15px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                            <span style="font-size: 20px;">📖</span>
+                            <span style="font-size: 15px; font-weight: 700; color: #a29bfe;">Духовная пища против искушения</span>
+                        </div>
+                        <p id="spiritual-thought-text" class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
+                            Загрузка духовного наставления...
+                        </p>
+                    </div>
+
+                    <p class="sos-text" style="margin-bottom: 10px; font-weight: 500; font-size: 13px; color: var(--text-secondary);">
+                        Переключи разум прямо сейчас — открой видео или начни читать публикацию:
+                    </p>
+
+                    <div id="spiritual-materials-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                        <!-- Заполняется динамически через JS -->
+                    </div>
+
+                    <div class="sos-actions" style="display: flex; flex-direction: column; gap: 10px;">
+                        <button class="btn btn-success" id="btn-spiritual-helped">✅ Мне помогло, тяга отступила!</button>
+                        <button class="btn btn-secondary" id="btn-spiritual-to-relapse" style="background: rgba(255, 59, 48, 0.12); border-color: rgba(255, 59, 48, 0.3); color: #ff6b6b;">
+                            ⚠️ Я все-таки сорвался (зафиксировать)
+                        </button>
                     </div>
                 </div>
             </section>

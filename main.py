@@ -561,12 +561,24 @@ async def handle_api_accept_covenant(request):
         
     return web.json_response({"success": True})
 
+async def handle_api_spiritual_help(request):
+    """API получения материалов для духовного подкрепления на jw.org / wol.jw.org"""
+    from services.ai_service import ai_service
+    data = await ai_service.generate_spiritual_study_materials()
+    return web.json_response({
+        "ok": True,
+        "success": True,
+        "spiritual_thought": data.get("spiritual_thought", ""),
+        "materials": data.get("materials", [])
+    })
+
 async def start_web_server():
     app = web.Application()
     app.add_routes([
         web.get("/", handle_ping),
         web.get("/dashboard", handle_webapp),
         web.get("/api/stats", handle_api_stats),
+        web.get("/api/spiritual_help", handle_api_spiritual_help),
         web.post("/api/journal", handle_api_save_journal),
         web.post("/api/relapse", handle_api_log_relapse),
         web.post("/api/initiate_relapse", handle_api_log_relapse),

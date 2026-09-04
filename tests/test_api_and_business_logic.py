@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,6 +24,7 @@ from main import (
     handle_api_log_relapse,
     handle_api_manage_panic,
     handle_api_accept_covenant,
+    handle_api_spiritual_help,
 )
 
 class TestApiAndBusinessLogic(AioHTTPTestCase):
@@ -72,7 +73,8 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             web.post("/api/journal", handle_api_save_journal),
             web.post("/api/relapse", handle_api_log_relapse),
             web.post("/api/panic", handle_api_manage_panic),
-            web.post("/api/accept_covenant", handle_api_accept_covenant)
+            web.post("/api/accept_covenant", handle_api_accept_covenant),
+            web.get("/api/spiritual_help", handle_api_spiritual_help),
         ])
         return app
 
@@ -207,6 +209,19 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             "user_id": -1
         })
         self.assertEqual(resp.status, 400)
+
+    async def test_spiritual_help(self):
+        resp = await self.client.request("GET", "/api/spiritual_help?topic=temptation")
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("ok"))
+        materials = data.get("materials", [])
+        self.assertGreater(len(materials), 0)
+        for m in materials:
+            self.assertIn("title", m)
+            self.assertIn("url", m)
+            self.assertTrue(m["url"].startswith("http"))
+            self.assertTrue("jw.org" in m["url"] or "wol.jw.org" in m["url"])
 
     def test_is_on_time_logic(self):
         scheduled = "21:00"

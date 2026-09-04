@@ -749,3 +749,59 @@ textarea:focus, .form-input:focus, .form-select:focus {
     40%, 80% { transform: translateX(8px); }
 }
 
+/* Духовная помощь / JW карточки */
+.spiritual-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(162, 155, 254, 0.25);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+}
+.spiritual-card:hover, .spiritual-card:active {
+    background: rgba(162, 155, 254, 0.12);
+    border-color: rgba(162, 155, 254, 0.5);
+    transform: translateY(-1px);
+}
+.spiritual-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #a29bfe;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.spiritual-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.35;
+}
+.spiritual-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.spiritual-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 7px 12px;
+    background: rgba(162, 155, 254, 0.2);
+    border: 1px solid rgba(162, 155, 254, 0.4);
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+

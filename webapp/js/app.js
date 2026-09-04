@@ -614,25 +614,138 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
     }
 });
 
-// 2. SOS - Не справился (Failed)
+// 2. Загрузка духовных материалов с jw.org / wol.jw.org
+async function loadSpiritualMaterials() {
+    const listEl = document.getElementById('spiritual-materials-list');
+    const thoughtEl = document.getElementById('spiritual-thought-text');
+    if (!listEl) return;
+    
+    listEl.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><span class="spinner"></span> Подбираем духовные материалы...</div>';
+    
+    try {
+        const resp = await fetch('/api/spiritual_help');
+        const data = await resp.json();
+        
+        if (data.success) {
+            if (thoughtEl) {
+                thoughtEl.textContent = data.spiritual_thought || 'Иегова видит твою борьбу и даст выход из искушения (1 Кор. 10:13).';
+            }
+            
+            listEl.innerHTML = '';
+            (data.materials || []).forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'spiritual-card';
+                card.innerHTML = `
+                    <div class="spiritual-badge">
+                        <span>${item.icon || '📖'}</span>
+                        <span>${item.type_label || 'Материал'}</span>
+                    </div>
+                    <div class="spiritual-title">${item.title}</div>
+                    <div class="spiritual-desc">${item.description || ''}</div>
+                    <div class="spiritual-btn">
+                        <span>Открыть материал</span>
+                        <span>↗</span>
+                    </div>
+                `;
+                card.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
+                        Telegram.WebApp.openLink(item.url);
+                    } else {
+                        window.open(item.url, '_blank');
+                    }
+                });
+                listEl.appendChild(card);
+            });
+            return;
+        }
+    } catch (e) {
+        console.error('Error loading spiritual materials:', e);
+    }
+    
+    // Fallback материалы
+    if (thoughtEl) {
+        thoughtEl.textContent = 'Иегова верен, Он не допустит искушения сверх сил, но при искушении даст и облегчение (1 Коринфянам 10:13).';
+    }
+    listEl.innerHTML = `
+        <div class="spiritual-card" data-url="https://www.jw.org/ru/библейские-учения/вопросы/что-говорит-библия-о-порнографии/">
+            <div class="spiritual-badge"><span>📄</span><span>Статья на jw.org</span></div>
+            <div class="spiritual-title">Что говорит Библия о порнографии?</div>
+            <div class="spiritual-desc">Практические советы, как защитить мысли и избавиться от привычки.</div>
+            <div class="spiritual-btn">Открыть на jw.org ↗</div>
+        </div>
+        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/b/r2/lp-u/nwt/20/4#study=discover&v=20:4:23">
+            <div class="spiritual-badge"><span>📚</span><span>wol.jw.org Библиотека</span></div>
+            <div class="spiritual-title">Храни сердце твоё (Притчи 4:23)</div>
+            <div class="spiritual-desc">Исследование стиха и библейских комментариев.</div>
+            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
+        </div>
+        <div class="spiritual-card" data-url="https://www.jw.org/ru/поиск/?q=Убегайте+от+блуда">
+            <div class="spiritual-badge"><span>🎬</span><span>Видео на jw.org</span></div>
+            <div class="spiritual-title">Убегайте от блуда (1 Кор. 6:18)</div>
+            <div class="spiritual-desc">Видеоролик о решительности и немедленных действиях при искушении.</div>
+            <div class="spiritual-btn">Открыть на jw.org ↗</div>
+        </div>
+    `;
+    listEl.querySelectorAll('.spiritual-card').forEach(c => {
+        c.addEventListener('click', (e) => {
+            e.preventDefault();
+            const u = c.getAttribute('data-url');
+            if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
+                Telegram.WebApp.openLink(u);
+            } else {
+                window.open(u, '_blank');
+            }
+        });
+    });
+}
+
+// 3. SOS - Не помогло -> Переход к духовному подкреплению
 document.getElementById('btn-panic-failed').addEventListener('click', () => {
-    relapseSource = 'panic';
-    // Скрываем карточки рекомендаций и показываем форму срыва
-    document.getElementById('sos-guidelines-box').classList.add('hidden');
-    document.getElementById('relapse-form').classList.remove('hidden');
-    showToast('Пожалуйста, укажите триггер срыва', 'info');
+    document.getElementById('sos-dynamic-content')?.classList.add('hidden');
+    document.getElementById('sos-spiritual-content')?.classList.remove('hidden');
+    loadSpiritualMaterials();
+    showToast('Переключите разум на духовную пищу 📖', 'info');
 });
 
-// 3. Прямая кнопка срыва
+// 4. Духовный блок: Мне помогло!
+document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-spiritual-helped');
+    btn.disabled = true;
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'helped' })
+        });
+    } catch (e) {
+        console.error(e);
+    }
+    showToast('Слава Богу! Вы устояли и защитили свой стрик! 💪', 'success');
+    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('sos-start-screen')?.classList.remove('hidden');
+    btn.disabled = false;
+    switchTab('dashboard');
+});
+
+// 5. Духовный блок: Я все-таки сорвался -> Открыть форму срыва
+document.getElementById('btn-spiritual-to-relapse')?.addEventListener('click', () => {
+    relapseSource = 'panic';
+    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('relapse-form')?.classList.remove('hidden');
+    showToast('Укажите триггер. Напарнику будет отправлено уведомление.', 'info');
+});
+
+// 6. Прямая кнопка срыва из нижнего блока
 document.getElementById('btn-show-relapse-form').addEventListener('click', () => {
     relapseSource = 'direct';
     document.getElementById('relapse-form').classList.remove('hidden');
 });
 
-// 4. Отмена срыва (скрыть форму)
+// 7. Отмена срыва (скрыть форму)
 document.getElementById('btn-cancel-relapse').addEventListener('click', () => {
     document.getElementById('relapse-form').classList.add('hidden');
-    document.getElementById('sos-guidelines-box').classList.remove('hidden');
+    document.getElementById('sos-dynamic-content')?.classList.remove('hidden');
 });
 
 // 5. Обработка селекта причин (вывод текстового поля для "Другое")
