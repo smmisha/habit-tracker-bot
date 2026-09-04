@@ -614,6 +614,27 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
     }
 });
 
+// Переход от базовых SOS-шагов к духовному подкреплению (jw.org)
+document.getElementById('btn-panic-failed')?.addEventListener('click', async () => {
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'failed' })
+        });
+    } catch (e) {
+        console.error(e);
+    }
+    
+    document.getElementById('sos-dynamic-content')?.classList.add('hidden');
+    document.getElementById('sos-spiritual-content')?.classList.remove('hidden');
+    document.getElementById('spiritual-step-select')?.classList.remove('hidden');
+    document.getElementById('spiritual-step-study')?.classList.add('hidden');
+    document.getElementById('spiritual-step-round2')?.classList.add('hidden');
+    document.getElementById('spiritual-step-partner')?.classList.add('hidden');
+    showToast('Переходим к духовному подкреплению (jw.org)...', 'info');
+});
+
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 let selectedTemptationTypes = [];

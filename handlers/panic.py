@@ -26,7 +26,10 @@ async def send_spiritual_message_to_user(bot, user_id: int, data: dict):
         f"<i>{action}</i>\n\n"
         f"🎯 <b>Целевой библейский материал для изучения:</b>\n"
         f"• <b>{primary.get('title', '')}</b>\n"
-        f"<i>{primary.get('description', '')}</i>"
+        f"<i>{primary.get('description', '')}</i>\n\n"
+        "⏳ <b>Чтение без спешки и ограничений:</b>\n"
+        "<i>Уделите чтению и размышлению не менее 20 минут (или сколько потребуется). "
+        "Дело не в количестве минут, а в том, чтобы Слово Бога коснулось и успокоило сердце. Твой стрик в полной безопасности!</i>"
     )
     
     buttons = [
@@ -53,7 +56,7 @@ async def send_spiritual_message_to_user(bot, user_id: int, data: dict):
                 
     buttons.append([
         InlineKeyboardButton(
-            text="📖 Я прочитал(а) статью",
+            text="📖 1. Я прочитал(а) статью (уделил время)",
             callback_data="spiritual_read"
         )
     ])
@@ -96,11 +99,66 @@ async def cmd_panic(message: Message, state: FSMContext):
     )
 
 @router.callback_query(F.data == "send_spiritual_help")
-async def cb_send_spiritual_help(callback: CallbackQuery):
-    await callback.answer("Подбираем целевой духовный материал...", show_alert=False)
+async def cb_send_spiritual_help(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    from keyboards.inline import get_temptation_multiselect_keyboard
+    await state.update_data(selected_temptations=[])
+    
+    await callback.message.edit_text(
+        "🛡️ <b>ДУХОВНАЯ ЗАЩИТА: ЧТО ПРОИСХОДИТ?</b>\n\n"
+        "Отметьте искушения, с которыми вы столкнулись прямо сейчас (можно выбрать несколько):\n"
+        "<i>Нажимайте на пункты, чтобы отметить галочками, затем нажмите кнопку подтверждения.</i>",
+        reply_markup=get_temptation_multiselect_keyboard([])
+    )
+
+@router.callback_query(F.data.startswith("toggle_temptation:"))
+async def cb_toggle_temptation(callback: CallbackQuery, state: FSMContext):
+    key = callback.data.split(":")[1]
+    data = await state.get_data()
+    selected = list(data.get("selected_temptations", []))
+    if key in selected:
+        selected.remove(key)
+    else:
+        selected.append(key)
+    await state.update_data(selected_temptations=selected)
+    
+    from keyboards.inline import get_temptation_multiselect_keyboard
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=get_temptation_multiselect_keyboard(selected)
+        )
+    except Exception:
+        pass
+    await callback.answer()
+
+@router.callback_query(F.data == "submit_temptations")
+async def cb_submit_spiritual_temptations(callback: CallbackQuery, state: FSMContext):
+    await callback.answer("Подбираем целевые духовные материалы...", show_alert=False)
+    data = await state.get_data()
+    selected = data.get("selected_temptations", [])
+    
     from services.ai_service import ai_service
-    data = await ai_service.generate_spiritual_study_materials()
-    await send_spiritual_message_to_user(callback.bot, callback.from_user.id, data)
+    materials_data = await ai_service.generate_spiritual_study_materials(
+        temptation_types=selected if selected else None,
+        temptation_type=selected[0] if selected else "general",
+        round=1
+    )
+    await state.update_data(last_selected_temptations=selected)
+    
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await send_spiritual_message_to_user(callback.bot, callback.from_user.id, materials_data)
+
+@router.callback_query(F.data == "cancel_spiritual")
+async def cb_cancel_spiritual(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer("Отменено", show_alert=False)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
 
 @router.callback_query(F.data == "spiritual_read")
 async def cb_spiritual_read(callback: CallbackQuery):
@@ -137,10 +195,17 @@ async def cb_spiritual_read(callback: CallbackQuery):
         logger.warning(f"Не удалось обновить клавиатуру spiritual_read: {e}")
 
 @router.callback_query(F.data == "spiritual_round2")
-async def cb_spiritual_round2(callback: CallbackQuery):
+async def cb_spiritual_round2(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Загружаем Раунд 2: углубленное изучение...", show_alert=False)
+    st = await state.get_data()
+    selected = st.get("last_selected_temptations", [])
+    
     from services.ai_service import ai_service
-    data = await ai_service.generate_spiritual_study_materials(round=2)
+    data = await ai_service.generate_spiritual_study_materials(
+        temptation_types=selected if selected else None,
+        temptation_type=selected[0] if selected else "general",
+        round=2
+    )
     
     thought = data.get("spiritual_thought", "")
     action = data.get("spiritual_action", "Помолитесь от всего сердца и исследуйте слово Бога без спешки.")
@@ -155,7 +220,10 @@ async def cb_spiritual_round2(callback: CallbackQuery):
         f"<i>{action}</i>\n\n"
         f"🎯 <b>Углубленный материал для чтения:</b>\n"
         f"• <b>{primary.get('title', '')}</b>\n"
-        f"<i>{primary.get('description', '')}</i>"
+        f"<i>{primary.get('description', '')}</i>\n\n"
+        "⏳ <b>Чтение без спешки и ограничений:</b>\n"
+        "<i>Уделите изучению и молитве столько времени, сколько нужно вашему сердцу (от 20 минут или больше). "
+        "Если тяга отступила — подтвердите победу. Если борьба продолжается — напишите напарнику лично.</i>"
     )
     
     buttons = [

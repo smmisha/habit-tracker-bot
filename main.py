@@ -507,21 +507,10 @@ async def handle_api_manage_panic(request):
         except Exception:
             pass
             
-        from database.models import User
-        from handlers.tracker import execute_relapse_reset
-        
-        async with db_helper.session_factory() as session:
-            user_db = await session.get(User, user_id)
-            if not user_db:
-                return web.json_response({"error": "User not found"}, status=404)
-                
-        # Выполняем сброс счетчика чистоты и оповещение напарника по правилу скользящего окна
-        await execute_relapse_reset(user_id, f"Паника: {trigger_reason}", bot=bot)
-        
         return web.json_response({
             "success": True, 
-            "confession_pending": False,
-            "message": "Счетчик сброшен после выхода из режима SOS. Пожалуйста, откройте чат с ботом."
+            "relapse": False,
+            "message": "Переход к духовному подкреплению. Стрик в безопасности!"
         })
         
     elif action == "partner_contacted":

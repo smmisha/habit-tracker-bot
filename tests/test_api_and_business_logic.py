@@ -188,8 +188,13 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         data = await resp.json()
         self.assertTrue(data.get("success"))
 
-    async def test_panic_failed_no_crash(self):
-        """Verify action=failed in /api/panic does NOT crash and executes reset"""
+    async def test_panic_failed_preserves_streak_no_relapse(self):
+        """Verify action=failed in /api/panic does NOT reset streak and redirects to spiritual help"""
+        async with self.session_factory() as session:
+            user_before = await session.get(User, self.user_id)
+            initial_streak_start = user_before.streak_start
+            initial_relapses = user_before.total_relapses
+
         with patch("main.bot.send_message", new_callable=AsyncMock):
             resp = await self.client.request("POST", "/api/panic", json={
                 "user_id": self.user_id,
@@ -199,11 +204,29 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertEqual(resp.status, 200)
             data = await resp.json()
             self.assertTrue(data.get("success"))
-            self.assertFalse(data.get("confession_pending"))
+            self.assertFalse(data.get("relapse"))
 
         async with self.session_factory() as session:
             user = await session.get(User, self.user_id)
-            self.assertEqual(user.total_relapses, 2)
+            # Streak and relapses must remain intact
+            self.assertEqual(user.total_relapses, initial_relapses)
+            self.assertEqual(user.streak_start, initial_streak_start)
+
+    def test_temptation_multiselect_keyboard(self):
+        from keyboards.inline import get_temptation_multiselect_keyboard
+        # Empty selection
+        kb1 = get_temptation_multiselect_keyboard([])
+        btn_texts1 = [btn.text for row in kb1.inline_keyboard for btn in row]
+        self.assertTrue(any("⬜" in t for t in btn_texts1))
+        self.assertFalse(any("✅" in t for t in btn_texts1))
+
+        # Selected items
+        kb2 = get_temptation_multiselect_keyboard(["porn", "masturbation"])
+        btn_texts2 = [btn.text for row in kb2.inline_keyboard for btn in row]
+        self.assertTrue(any("✅ 🔞 Порнография" in t for t in btn_texts2))
+        self.assertTrue(any("✅ ✊ Мастурбация" in t for t in btn_texts2))
+        self.assertTrue(any("⬜ 💬 Секстинг" in t for t in btn_texts2))
+        self.assertTrue(any("Получить духовное решение (2)" in t for t in btn_texts2))
 
     async def test_accept_covenant_invalid_payload(self):
         resp = await self.client.request("POST", "/api/accept_covenant", json={
