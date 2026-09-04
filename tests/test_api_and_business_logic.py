@@ -267,6 +267,25 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIsNotNone(primary)
         self.assertTrue("1101989353" in primary["url"])
 
+    async def test_spiritual_help_multi_select(self):
+        resp = await self.client.request("POST", "/api/spiritual_help", json={
+            "user_id": 999001,
+            "temptation_types": ["sexting", "masturbation"]
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertIn("sexting", data.get("temptation_types"))
+        self.assertIn("masturbation", data.get("temptation_types"))
+        self.assertIn("Секстинг", data.get("temptation_title"))
+        self.assertIn("Мастурбация", data.get("temptation_title"))
+        materials = data.get("materials")
+        self.assertIsNotNone(materials)
+        self.assertEqual(len(materials), 2)
+        urls = [m["url"] for m in materials]
+        self.assertTrue(any("502013360" in u for u in urls))
+        self.assertTrue(any("1102008082" in u for u in urls))
+
     async def test_panic_partner_contacted_preserves_streak(self):
         async with self.session_factory() as session:
             user_before = await session.get(User, self.user_id)

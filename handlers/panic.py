@@ -35,20 +35,34 @@ async def send_spiritual_message_to_user(bot, user_id: int, data: dict):
                 text=f"{primary.get('icon', '📖')} Открыть статью на {primary.get('type_label', 'wol.jw.org')}",
                 url=primary.get("url")
             )
-        ],
-        [
-            InlineKeyboardButton(
-                text="📖 Я прочитал(а) статью",
-                callback_data="spiritual_read"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="📱 Открыть в Mini App",
-                url=f"{settings.mini_app_link}?startapp=sos"
-            )
         ]
     ]
+    
+    materials = data.get("materials", [])
+    if len(materials) > 1:
+        text += "\n\n📚 <b>Дополнительные материалы по выбранным темам:</b>"
+        for m in materials[1:]:
+            text += f"\n• <b>{m.get('title', '')}</b>"
+            if m.get("url"):
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=f"{m.get('icon', '📖')} {m.get('title', 'Доп. статья')[:32]}...",
+                        url=m.get("url")
+                    )
+                ])
+                
+    buttons.append([
+        InlineKeyboardButton(
+            text="📖 Я прочитал(а) статью",
+            callback_data="spiritual_read"
+        )
+    ])
+    buttons.append([
+        InlineKeyboardButton(
+            text="📱 Открыть в Mini App",
+            url=f"{settings.mini_app_link}?startapp=sos"
+        )
+    ])
     
     markup = InlineKeyboardMarkup(inline_keyboard=buttons)
     await bot.send_message(chat_id=user_id, text=text, reply_markup=markup, disable_web_page_preview=True)

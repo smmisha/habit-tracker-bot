@@ -443,11 +443,12 @@ class GeminiAIService:
         )
         return await self._call_gemini(prompt, "Привет! Всё нормально, тяга отпустила, стрик сохранен.")
 
-    async def generate_spiritual_study_materials(self, triggers: list = None, temptation_type: str = None, user_notes: str = None, round: int = 1) -> dict:
+    async def generate_spiritual_study_materials(self, triggers: list = None, temptation_type: str = None, temptation_types: list = None, user_notes: str = None, round: int = 1) -> dict:
         """
         Генерирует индивидуальное библейское наставление, немедленный духовный шаг
-        и подбирает целевую проверенную статью на wol.jw.org / jw.org под конкретное искушение.
+        и подбирает целевую проверенную статью на wol.jw.org / jw.org под конкретное искушение (или связку искушений).
         Поддерживает round=1 (первое погружение) и round=2 (углубленное изучение без спешки, если тяга осталась).
+        Поддерживает одиночный выбор (temptation_type) и мультивыбор (temptation_types).
         """
         import json
         import random
@@ -601,38 +602,74 @@ class GeminiAIService:
             }
         }
         
-        # Определение категории:
-        resolved_key = "general"
-        if temptation_type in categories:
-            resolved_key = temptation_type
-        elif user_notes:
+        # Определение категорий (поддержка мультивыбора):
+        selected_keys = []
+        if temptation_types and isinstance(temptation_types, list):
+            for t in temptation_types:
+                if t in categories and t not in selected_keys:
+                    selected_keys.append(t)
+        elif temptation_type and temptation_type in categories:
+            selected_keys.append(temptation_type)
+            
+        if user_notes:
             notes_lower = user_notes.lower()
             if any(k in notes_lower for k in ["переспать", "добрачн", "живой секс", "секс с девушк", "блуд", "постел", "близост"]):
-                resolved_key = "premarital_sex"
-            elif any(k in notes_lower for k in ["секстинг", "переписк", "интимн", "пошл", "нюдс", "скинуть фот", "сообщен сексуально"]):
-                resolved_key = "sexting"
-            elif any(k in notes_lower for k in ["порно", "порнух", "эротик", "ххх", "видео 18+", "нечистые картинки"]):
-                resolved_key = "porn"
-            elif any(k in notes_lower for k in ["мастурб", "рукоблуд", "рука", "онанизм", "кончить", "снять напряжение", "подроч"]):
-                resolved_key = "masturbation"
-            elif any(k in notes_lower for k in ["девушк", "секс"]):
-                resolved_key = "premarital_sex"
-            elif any(k in notes_lower for k in ["чат", "написать", "фот", "инста", "ватсап"]):
-                resolved_key = "sexting"
-                
+                if "premarital_sex" not in selected_keys:
+                    selected_keys.append("premarital_sex")
+            if any(k in notes_lower for k in ["секстинг", "переписк", "интимн", "пошл", "нюдс", "скинуть фот", "сообщен сексуально"]):
+                if "sexting" not in selected_keys:
+                    selected_keys.append("sexting")
+            if any(k in notes_lower for k in ["порно", "порнух", "эротик", "ххх", "видео 18+", "нечистые картинки"]):
+                if "porn" not in selected_keys:
+                    selected_keys.append("porn")
+            if any(k in notes_lower for k in ["мастурб", "рукоблуд", "рука", "онанизм", "кончить", "снять напряжение", "подроч"]):
+                if "masturbation" not in selected_keys:
+                    selected_keys.append("masturbation")
+                    
+        if not selected_keys:
+            selected_keys = ["general"]
+            
+        resolved_key = selected_keys[0]
         cat_data = categories[resolved_key]
         
-        # Выбираем материал и фаллбэк в зависимости от раунда
-        if round == 2:
-            primary_material = cat_data.get("secondary", cat_data["primary"])
-            thought = cat_data.get("secondary_thought", cat_data["fallback_thought"])
-            action = cat_data.get("secondary_action", cat_data["fallback_action"])
+        # Формируем читаемый заголовок (для одного или цепочки искушений)
+        if len(selected_keys) == 1:
+            temptation_title = cat_data["title"]
         else:
-            primary_material = cat_data["primary"]
-            thought = cat_data["fallback_thought"]
-            action = cat_data["fallback_action"]
+            temptation_title = " + ".join([categories[k]["title"] for k in selected_keys])
+            
+        # Список материалов по всем отмеченным темам
+        materials = []
+        for k in selected_keys:
+            mat = categories[k].get("secondary" if round == 2 else "primary", categories[k]["primary"])
+            if mat not in materials:
+                materials.append(mat)
+        primary_material = materials[0]
         
-        # Формируем запрос к Gemini с учетом контекста ощущений и раунда
+        # Выбираем фаллбэк мысли и действия с учетом мультивыбора
+        if len(selected_keys) > 1:
+            if round == 2:
+                thought = (
+                    f"Раунд 2: глубокое духовное укрепление. Когда искушение атакует сразу с нескольких сторон ({temptation_title}), "
+                    "требуется больше терпения и времени в Слове Бога. Стрик сохранен, ты стоишь в вере! Иегова рядом."
+                )
+                action = "Продолжай спокойное вдумчивое чтение статей ниже. Искренняя молитва и библейские мысли вытеснят навязчивые импульсы."
+            else:
+                thought = (
+                    f"Иегова видит твою борьбу прямо сейчас: когда несколько искушений переплетаются ({temptation_title}), "
+                    "давление кажется сильнее. Но Библия заверяет: «Бог верен, Он не допустит искушения сверх ваших сил» (1 Кор. 10:13). "
+                    "Не пытайся одолеть всё разом — сделай первый шаг к духовному миру."
+                )
+                action = "Немедленно разорви цепь триггеров: отложи телефон экраном вниз, выйди в другую комнату, ополосни лицо холодной водой и помолись Иегове о самообладании."
+        else:
+            if round == 2:
+                thought = cat_data.get("secondary_thought", cat_data["fallback_thought"])
+                action = cat_data.get("secondary_action", cat_data["fallback_action"])
+            else:
+                thought = cat_data["fallback_thought"]
+                action = cat_data["fallback_action"]
+        
+        # Формируем запрос к Gemini с учетом контекста ощущений, раунда и мультивыбора
         notes_context = f' Пользователь так описал свои ощущения: "{user_notes.strip()}".' if user_notes and user_notes.strip() else ""
         round_context = (
             "Это уже ВТОРОЙ РАУНД углубленного изучения. Пользователь прочитал первую статью, но тяга ещё не прошла. "
@@ -642,12 +679,19 @@ class GeminiAIService:
             "Он только что запросил духовную помощь, чтобы переключить разум на чистые мысли."
         )
         
+        temptations_desc = ", ".join([categories[k]["title"] for k in selected_keys])
+        multi_instruction = (
+            "Пользователь отметил сразу несколько связанных искушений: объясни эту связку и помоги разорвать цепочку триггеров.\n"
+            if len(selected_keys) > 1 else ""
+        )
+        
         prompt = (
             "Ты — христианский духовный наставник (Свидетель Иеговы).\n"
-            f"Пользователь находится в состоянии сильного искушения: {cat_data['title']}.{notes_context}\n"
+            f"Пользователь находится в состоянии сильного искушения: {temptations_desc}.{notes_context}\n"
             f"{round_context}\n\n"
+            f"{multi_instruction}"
             "Напиши глубокое, теплое и сочувствующее наставление (3-4 предложения):\n"
-            "1. Обратись к нему как любящий брат/наставник, покажи, что Иегова понимает его слабость и сострадает ему прямо сейчас (Евр. 4:15).\n"
+            "1. Обратись к нему как любящий брат/наставник, покажи понимание его борьбы и заверь в сострадании Иеговы прямо сейчас (Евр. 4:15).\n"
             "2. Напомни читать и молиться спокойно, без спешки и таймеров, пока истина не наполнит разум и сердце.\n"
             "3. Дай 1 конкретное безотлагательное действие прямо сейчас.\n\n"
             "Отвечай без сухого формализма, искренне и с любовью.\n"
@@ -671,10 +715,11 @@ class GeminiAIService:
             "spiritual_thought": thought,
             "spiritual_action": action,
             "temptation_type": resolved_key,
-            "temptation_title": cat_data["title"],
+            "temptation_types": selected_keys,
+            "temptation_title": temptation_title,
             "round": round,
             "primary_material": primary_material,
-            "materials": [primary_material]  # Совместимость с фронтендом
+            "materials": materials
         }
 
 ai_service = GeminiAIService()

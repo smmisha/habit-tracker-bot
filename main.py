@@ -587,6 +587,7 @@ async def handle_api_spiritual_help(request):
     
     user_id_param = None
     temptation_type = None
+    temptation_types = None
     user_notes = None
     round_param = 1
     
@@ -595,6 +596,7 @@ async def handle_api_spiritual_help(request):
             body = await request.json()
             user_id_param = body.get("user_id")
             temptation_type = body.get("temptation_type")
+            temptation_types = body.get("temptation_types")
             user_notes = body.get("user_notes")
             if "round" in body:
                 round_param = int(body.get("round", 1))
@@ -605,6 +607,9 @@ async def handle_api_spiritual_help(request):
         user_id_param = request.query.get("user_id")
     if not temptation_type:
         temptation_type = request.query.get("temptation_type")
+    if not temptation_types and request.query.get("temptation_types"):
+        raw_types = request.query.get("temptation_types")
+        temptation_types = [t.strip() for t in raw_types.split(",") if t.strip()]
     if not user_notes:
         user_notes = request.query.get("user_notes")
     if "round" in request.query:
@@ -615,6 +620,7 @@ async def handle_api_spiritual_help(request):
         
     data = await ai_service.generate_spiritual_study_materials(
         temptation_type=temptation_type,
+        temptation_types=temptation_types,
         user_notes=user_notes,
         round=round_param
     )
@@ -645,6 +651,7 @@ async def handle_api_spiritual_help(request):
         "spiritual_thought": data.get("spiritual_thought", ""),
         "spiritual_action": data.get("spiritual_action", ""),
         "temptation_type": data.get("temptation_type", "general"),
+        "temptation_types": data.get("temptation_types", []),
         "temptation_title": data.get("temptation_title", "Духовное подкрепление"),
         "primary_material": data.get("primary_material"),
         "materials": data.get("materials", []),

@@ -616,23 +616,24 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
 
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
-let selectedTemptationType = null;
+let selectedTemptationTypes = [];
 let isArticleReadConfirmed = false;
 let isRound2ReadConfirmed = false;
 let currentSpiritualNotes = '';
 let cachedPartnerUsername = null;
 
-// Обработка чипов искушений
+// Обработка чипов искушений (мультивыбор)
 document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const currentType = btn.getAttribute('data-type');
         if (btn.classList.contains('active')) {
             btn.classList.remove('active');
-            selectedTemptationType = null;
+            selectedTemptationTypes = selectedTemptationTypes.filter(t => t !== currentType);
         } else {
-            document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            selectedTemptationType = currentType;
+            if (!selectedTemptationTypes.includes(currentType)) {
+                selectedTemptationTypes.push(currentType);
+            }
         }
     });
 });
@@ -644,9 +645,9 @@ document.getElementById('btn-find-spiritual-solution')?.addEventListener('click'
     
     btn.disabled = true;
     btn.querySelector('.spinner')?.classList.remove('hidden');
-    btn.querySelector('.btn-text').textContent = 'ИИ анализирует и подбирает статью...';
+    btn.querySelector('.btn-text').textContent = 'ИИ анализирует и подбирает материалы...';
     
-    await loadSpiritualSolution(selectedTemptationType, currentSpiritualNotes);
+    await loadSpiritualSolution(selectedTemptationTypes, currentSpiritualNotes);
     
     btn.disabled = false;
     btn.querySelector('.spinner')?.classList.add('hidden');
@@ -683,7 +684,7 @@ document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', as
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
     showToast('Загружаем углубленный материал Раунда 2...', 'info');
-    await loadRound2Solution(selectedTemptationType, currentSpiritualNotes);
+    await loadRound2Solution(selectedTemptationTypes, currentSpiritualNotes);
 });
 
 // Кнопка подтверждения прочтения статьи (Раунд 2)
@@ -786,12 +787,14 @@ async function loadSpiritualSolution(tType, notes) {
     }
     
     try {
+        const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);
         const resp = await fetch('/api/spiritual_help', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_id: userId,
-                temptation_type: tType,
+                temptation_types: tTypes,
+                temptation_type: tTypes[0] || null,
                 user_notes: notes,
                 round: 1
             })
@@ -813,7 +816,8 @@ async function loadSpiritualSolution(tType, notes) {
                 catBadge.textContent = data.temptation_title || 'Духовное наставление';
             }
             
-            const primary = data.primary_material || (data.materials && data.materials[0]) || {
+            const materials = (data.materials && data.materials.length > 0) ? data.materials : (data.primary_material ? [data.primary_material] : []);
+            const primary = data.primary_material || materials[0] || {
                 title: "Бог хочет, чтобы мы были чистыми",
                 type_label: "wol.jw.org Урок",
                 icon: "✨",
@@ -822,8 +826,8 @@ async function loadSpiritualSolution(tType, notes) {
             };
             
             if (primaryContainer) {
-                primaryContainer.innerHTML = `
-                    <div class="spiritual-card" style="border-width: 2px; border-color: rgba(162, 155, 254, 0.45); background: rgba(108, 92, 231, 0.08);">
+                let html = `
+                    <div class="spiritual-card" data-url="${primary.url}" style="border-width: 2px; border-color: rgba(162, 155, 254, 0.45); background: rgba(108, 92, 231, 0.08); cursor: pointer;">
                         <div class="spiritual-badge">
                             <span>${primary.icon || '📖'}</span>
                             <span>${primary.type_label || 'wol.jw.org'}</span>
@@ -837,13 +841,44 @@ async function loadSpiritualSolution(tType, notes) {
                     </div>
                 `;
                 
-                primaryContainer.querySelector('.spiritual-card')?.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
-                        Telegram.WebApp.openLink(primary.url);
-                    } else {
-                        window.open(primary.url, '_blank');
+                if (materials.length > 1) {
+                    html += `
+                        <div style="margin-top: 14px; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: #a29bfe; text-transform: uppercase; letter-spacing: 0.5px;">
+                            📚 Дополнительные материалы по выбранным темам:
+                        </div>
+                    `;
+                    for (let i = 1; i < materials.length; i++) {
+                        const m = materials[i];
+                        html += `
+                            <div class="spiritual-card" data-url="${m.url}" style="margin-top: 8px; border-width: 1px; border-color: rgba(162, 155, 254, 0.3); background: rgba(255, 255, 255, 0.03); cursor: pointer;">
+                                <div class="spiritual-badge" style="background: rgba(255, 255, 255, 0.08); color: #dfe6e9;">
+                                    <span>${m.icon || '📖'}</span>
+                                    <span>${m.type_label || 'wol.jw.org'}</span>
+                                </div>
+                                <div class="spiritual-title" style="font-size: 14px; margin-top: 2px;">${m.title}</div>
+                                <div class="spiritual-desc" style="margin-top: 3px; font-size: 12px;">${m.description || ''}</div>
+                                <div class="spiritual-btn" style="margin-top: 8px; font-size: 12px; padding: 6px 10px;">
+                                    <span>Открыть статью</span>
+                                    <span>↗</span>
+                                </div>
+                            </div>
+                        `;
                     }
+                }
+                
+                primaryContainer.innerHTML = html;
+                
+                primaryContainer.querySelectorAll('.spiritual-card').forEach(card => {
+                    card.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const url = card.getAttribute('data-url');
+                        if (!url) return;
+                        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
+                            Telegram.WebApp.openLink(url);
+                        } else {
+                            window.open(url, '_blank');
+                        }
+                    });
                 });
             }
             
@@ -882,12 +917,14 @@ async function loadRound2Solution(tType, notes) {
     }
     
     try {
+        const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);
         const resp = await fetch('/api/spiritual_help', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 user_id: userId,
-                temptation_type: tType,
+                temptation_types: tTypes,
+                temptation_type: tTypes[0] || null,
                 user_notes: notes,
                 round: 2
             })
@@ -906,7 +943,8 @@ async function loadRound2Solution(tType, notes) {
                 actionBox.classList.remove('hidden');
             }
             
-            const secondary = data.primary_material || {
+            const materials = (data.materials && data.materials.length > 0) ? data.materials : (data.primary_material ? [data.primary_material] : []);
+            const secondary = data.primary_material || materials[0] || {
                 title: "Бог хочет, чтобы мы были чистыми",
                 type_label: "wol.jw.org Урок",
                 icon: "✨",
@@ -915,8 +953,8 @@ async function loadRound2Solution(tType, notes) {
             };
             
             if (cardContainer) {
-                cardContainer.innerHTML = `
-                    <div class="spiritual-card" style="border-width: 2px; border-color: rgba(253, 203, 110, 0.45); background: rgba(253, 203, 110, 0.08);">
+                let html = `
+                    <div class="spiritual-card" data-url="${secondary.url}" style="border-width: 2px; border-color: rgba(253, 203, 110, 0.45); background: rgba(253, 203, 110, 0.08); cursor: pointer;">
                         <div class="spiritual-badge" style="background: rgba(253, 203, 110, 0.2); color: #ffeaa7;">
                             <span>${secondary.icon || '🛡️'}</span>
                             <span>${secondary.type_label || 'wol.jw.org'}</span>
@@ -930,13 +968,44 @@ async function loadRound2Solution(tType, notes) {
                     </div>
                 `;
                 
-                cardContainer.querySelector('.spiritual-card')?.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
-                        Telegram.WebApp.openLink(secondary.url);
-                    } else {
-                        window.open(secondary.url, '_blank');
+                if (materials.length > 1) {
+                    html += `
+                        <div style="margin-top: 14px; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: #fdcb6e; text-transform: uppercase; letter-spacing: 0.5px;">
+                            📚 Дополнительные материалы Раунда 2:
+                        </div>
+                    `;
+                    for (let i = 1; i < materials.length; i++) {
+                        const m = materials[i];
+                        html += `
+                            <div class="spiritual-card" data-url="${m.url}" style="margin-top: 8px; border-width: 1px; border-color: rgba(253, 203, 110, 0.3); background: rgba(255, 255, 255, 0.03); cursor: pointer;">
+                                <div class="spiritual-badge" style="background: rgba(255, 255, 255, 0.08); color: #dfe6e9;">
+                                    <span>${m.icon || '🛡️'}</span>
+                                    <span>${m.type_label || 'wol.jw.org'}</span>
+                                </div>
+                                <div class="spiritual-title" style="font-size: 14px; margin-top: 2px;">${m.title}</div>
+                                <div class="spiritual-desc" style="margin-top: 3px; font-size: 12px;">${m.description || ''}</div>
+                                <div class="spiritual-btn" style="margin-top: 8px; font-size: 12px; padding: 6px 10px; background: rgba(253, 203, 110, 0.15); border-color: #fdcb6e; color: #ffeaa7;">
+                                    <span>Открыть статью</span>
+                                    <span>↗</span>
+                                </div>
+                            </div>
+                        `;
                     }
+                }
+                
+                cardContainer.innerHTML = html;
+                
+                cardContainer.querySelectorAll('.spiritual-card').forEach(card => {
+                    card.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const url = card.getAttribute('data-url');
+                        if (!url) return;
+                        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
+                            Telegram.WebApp.openLink(url);
+                        } else {
+                            window.open(url, '_blank');
+                        }
+                    });
                 });
             }
         }
