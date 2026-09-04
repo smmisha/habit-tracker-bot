@@ -211,10 +211,13 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertEqual(resp.status, 400)
 
     async def test_spiritual_help(self):
-        resp = await self.client.request("GET", "/api/spiritual_help?topic=temptation")
+        resp = await self.client.request("GET", "/api/spiritual_help?user_id=999001")
         self.assertEqual(resp.status, 200)
         data = await resp.json()
         self.assertTrue(data.get("ok"))
+        self.assertTrue(data.get("success"))
+        self.assertTrue(len(data.get("spiritual_thought", "")) > 0)
+        self.assertTrue(len(data.get("spiritual_action", "")) > 0)
         materials = data.get("materials", [])
         self.assertGreater(len(materials), 0)
         for m in materials:
@@ -222,6 +225,8 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertIn("url", m)
             self.assertTrue(m["url"].startswith("http"))
             self.assertTrue("jw.org" in m["url"] or "wol.jw.org" in m["url"])
+            # Ensure none of the old 404 links exist
+            self.assertNotIn("подростки/вопросы/мастурбация", m["url"])
 
     def test_is_on_time_logic(self):
         scheduled = "21:00"

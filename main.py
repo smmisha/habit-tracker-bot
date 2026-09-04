@@ -564,12 +564,27 @@ async def handle_api_accept_covenant(request):
 async def handle_api_spiritual_help(request):
     """API получения материалов для духовного подкрепления на jw.org / wol.jw.org"""
     from services.ai_service import ai_service
+    user_id_param = request.query.get("user_id")
     data = await ai_service.generate_spiritual_study_materials()
+    
+    sent_to_telegram = False
+    if user_id_param:
+        try:
+            uid = int(user_id_param)
+            if uid > 0:
+                from handlers.panic import send_spiritual_message_to_user
+                await send_spiritual_message_to_user(bot, uid, data)
+                sent_to_telegram = True
+        except Exception as e:
+            logger.warning(f"Не удалось отправить духовное сообщение пользователю {user_id_param} в Telegram: {e}")
+            
     return web.json_response({
         "ok": True,
         "success": True,
         "spiritual_thought": data.get("spiritual_thought", ""),
-        "materials": data.get("materials", [])
+        "spiritual_action": data.get("spiritual_action", ""),
+        "materials": data.get("materials", []),
+        "sent_to_telegram": sent_to_telegram
     })
 
 async def start_web_server():

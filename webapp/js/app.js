@@ -618,17 +618,33 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
 async function loadSpiritualMaterials() {
     const listEl = document.getElementById('spiritual-materials-list');
     const thoughtEl = document.getElementById('spiritual-thought-text');
+    const actionBox = document.getElementById('spiritual-action-box');
+    const actionText = document.getElementById('spiritual-action-text');
     if (!listEl) return;
     
     listEl.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);"><span class="spinner"></span> Подбираем духовные материалы...</div>';
     
     try {
-        const resp = await fetch('/api/spiritual_help');
+        const url = userId ? `/api/spiritual_help?user_id=${encodeURIComponent(userId)}` : '/api/spiritual_help';
+        const resp = await fetch(url);
         const data = await resp.json();
         
-        if (data.success) {
+        if (data.success || data.ok) {
             if (thoughtEl) {
                 thoughtEl.textContent = data.spiritual_thought || 'Иегова видит твою борьбу и даст выход из искушения (1 Кор. 10:13).';
+            }
+            
+            if (actionBox && actionText) {
+                if (data.spiritual_action) {
+                    actionText.textContent = data.spiritual_action;
+                    actionBox.classList.remove('hidden');
+                } else {
+                    actionBox.classList.add('hidden');
+                }
+            }
+
+            if (data.sent_to_telegram) {
+                showToast('Духовное подкрепление отправлено в ваш чат Telegram 📖', 'info');
             }
             
             listEl.innerHTML = '';
@@ -663,28 +679,44 @@ async function loadSpiritualMaterials() {
         console.error('Error loading spiritual materials:', e);
     }
     
-    // Fallback материалы
+    // Fallback проверенные материалы (только 100% рабочие ссылки)
     if (thoughtEl) {
         thoughtEl.textContent = 'Иегова верен, Он не допустит искушения сверх сил, но при искушении даст и облегчение (1 Коринфянам 10:13).';
     }
+    if (actionBox && actionText) {
+        actionText.textContent = 'Преклони колени прямо сейчас и от всего сердца попроси у Иеговы силы переломить импульс.';
+        actionBox.classList.remove('hidden');
+    }
     listEl.innerHTML = `
+        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/d/r2/lp-u/1102008082">
+            <div class="spiritual-badge"><span>📚</span><span>wol.jw.org Книга</span></div>
+            <div class="spiritual-title">Мастурбация: насколько серьезна эта привычка и как её победить?</div>
+            <div class="spiritual-desc">Практическое библейское руководство: как преодолевать вину и побеждать плоть.</div>
+            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
+        </div>
+        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/d/r2/lp-u/1102008131">
+            <div class="spiritual-badge"><span>🧠</span><span>wol.jw.org Статья</span></div>
+            <div class="spiritual-title">Как мне избавиться от навязчивых мыслей о сексе?</div>
+            <div class="spiritual-desc">Методы защиты разума, фильтрации контента и переключения внимания на духовное.</div>
+            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
+        </div>
         <div class="spiritual-card" data-url="https://www.jw.org/ru/библейские-учения/вопросы/что-говорит-библия-о-порнографии/">
-            <div class="spiritual-badge"><span>📄</span><span>Статья на jw.org</span></div>
-            <div class="spiritual-title">Что говорит Библия о порнографии?</div>
-            <div class="spiritual-desc">Практические советы, как защитить мысли и избавиться от привычки.</div>
+            <div class="spiritual-badge"><span>📄</span><span>jw.org Статья</span></div>
+            <div class="spiritual-title">Что говорит Библия о порнографии? Грех ли это?</div>
+            <div class="spiritual-desc">Официальная статья: библейские шаги по освобождению от похоти глаз.</div>
             <div class="spiritual-btn">Открыть на jw.org ↗</div>
         </div>
         <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/b/r2/lp-u/nwt/20/4#study=discover&v=20:4:23">
-            <div class="spiritual-badge"><span>📚</span><span>wol.jw.org Библиотека</span></div>
-            <div class="spiritual-title">Храни сердце твоё (Притчи 4:23)</div>
-            <div class="spiritual-desc">Исследование стиха и библейских комментариев.</div>
+            <div class="spiritual-badge"><span>❤️</span><span>wol.jw.org Библия</span></div>
+            <div class="spiritual-title">Больше всего хранимого храни сердце твоё (Притчи 4:23)</div>
+            <div class="spiritual-desc">Исследование стиха и библейских комментариев: источник жизни.</div>
             <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
         </div>
-        <div class="spiritual-card" data-url="https://www.jw.org/ru/поиск/?q=Убегайте+от+блуда">
-            <div class="spiritual-badge"><span>🎬</span><span>Видео на jw.org</span></div>
-            <div class="spiritual-title">Убегайте от блуда (1 Кор. 6:18)</div>
-            <div class="spiritual-desc">Видеоролик о решительности и немедленных действиях при искушении.</div>
-            <div class="spiritual-btn">Открыть на jw.org ↗</div>
+        <div class="spiritual-card" data-url="https://wol.jw.org/ru/wol/s/r2/lp-u?q=%D0%BC%D0%B0%D1%81%D1%82%D1%83%D1%80%D0%B1%D0%B0%D1%86%D0%B8%D1%8F">
+            <div class="spiritual-badge"><span>📑</span><span>wol.jw.org Каталог</span></div>
+            <div class="spiritual-title">Онлайн-библиотека: Все публикации по теме мастурбации</div>
+            <div class="spiritual-desc">Тематический указатель Сторожевой Башни по исследованию вопроса.</div>
+            <div class="spiritual-btn">Открыть на wol.jw.org ↗</div>
         </div>
     `;
     listEl.querySelectorAll('.spiritual-card').forEach(c => {
