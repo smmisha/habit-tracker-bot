@@ -253,6 +253,40 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIsNotNone(primary)
         self.assertTrue("wol.jw.org" in primary["url"])
 
+    async def test_spiritual_help_round_2(self):
+        resp = await self.client.request("POST", "/api/spiritual_help", json={
+            "user_id": 999001,
+            "temptation_type": "masturbation",
+            "round": 2
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertEqual(data.get("round"), 2)
+        primary = data.get("primary_material")
+        self.assertIsNotNone(primary)
+        self.assertTrue("1101989353" in primary["url"])
+
+    async def test_panic_partner_contacted_preserves_streak(self):
+        async with self.session_factory() as session:
+            user_before = await session.get(User, self.user_id)
+            initial_streak_start = user_before.streak_start
+            initial_relapses = user_before.total_relapses
+
+        resp = await self.client.request("POST", "/api/panic", json={
+            "user_id": self.user_id,
+            "action": "partner_contacted"
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("success"))
+
+        async with self.session_factory() as session:
+            user_after = await session.get(User, self.user_id)
+            self.assertEqual(user_after.streak_start, initial_streak_start)
+            self.assertEqual(user_after.total_relapses, initial_relapses)
+
+
     def test_is_on_time_logic(self):
         scheduled = "21:00"
         base_time = datetime(2026, 6, 1, 21, 0, 0)

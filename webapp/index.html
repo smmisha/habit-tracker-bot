@@ -179,8 +179,15 @@
                         </button>
                     </div>
 
-                    <!-- Шаг 2: Духовный ответ, чтение статьи и подтверждение -->
+                    <!-- Шаг 2: Духовный ответ, чтение статьи и подтверждение (Раунд 1) -->
                     <div id="spiritual-step-study" class="spiritual-step-container hidden">
+                        <div class="spiritual-timer-banner glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: rgba(253, 203, 110, 0.12); border: 1px solid rgba(253, 203, 110, 0.35); display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">⏳</span>
+                            <span style="font-size: 12px; color: #ffeaa7; line-height: 1.4;">
+                                <b>Уделите изучению от 20 до 60 минут (или больше).</b> Не торопитесь. Молитесь, размышляйте и вникайте в суть.
+                            </span>
+                        </div>
+
                         <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
                             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -212,33 +219,111 @@
                             <!-- Заполняется динамически -->
                         </div>
 
-                        <!-- Двухэтапный флоу подтверждения -->
+                        <!-- Флоу подтверждения Раунда 1 -->
                         <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
                             <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
-                                Шаги освобождения от тяги:
+                                Шаги освобождения от тяги (после 20-60 мин):
                             </div>
 
                             <button class="btn btn-outline" id="btn-spiritual-mark-read" style="width: 100%; margin-bottom: 10px; border-color: #a29bfe; color: #a29bfe; font-weight: 600;">
                                 📖 1. Я прочитал(а) статью
                             </button>
 
-                            <button class="btn btn-success" id="btn-spiritual-helped" disabled style="width: 100%; opacity: 0.5; transition: all 0.3s ease;">
+                            <button class="btn btn-success" id="btn-spiritual-helped" disabled style="width: 100%; opacity: 0.5; transition: all 0.3s ease; margin-bottom: 10px;">
                                 ✅ 2. Помогло! Тяга отступила
                             </button>
-                        </div>
 
-                        <div class="sos-actions" style="display: flex; flex-direction: column; gap: 10px;">
-                            <button class="btn btn-secondary" id="btn-spiritual-to-relapse" style="background: rgba(255, 59, 48, 0.12); border-color: rgba(255, 59, 48, 0.3); color: #ff6b6b; font-size: 12px;">
-                                ⚠️ Я все-таки сорвался (зафиксировать срыв)
+                            <button class="btn btn-outline" id="btn-spiritual-to-round2" style="width: 100%; border-color: #fdcb6e; color: #ffeaa7; font-weight: 600; font-size: 13px;">
+                                ⏳ Не помогло / Тяга осталась — Раунд 2 (углубиться на 20–60 мин)
                             </button>
                         </div>
+                    </div>
+
+                    <!-- Шаг 2B: Раунд 2 углубленного изучения -->
+                    <div id="spiritual-step-round2" class="spiritual-step-container hidden">
+                        <div class="spiritual-timer-banner glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: rgba(253, 203, 110, 0.12); border: 1px solid rgba(253, 203, 110, 0.35); display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">⏳</span>
+                            <span style="font-size: 12px; color: #ffeaa7; line-height: 1.4;">
+                                <b>Раунд 2: ещё 20–60 минут в слове Бога.</b> Не сдавайся — твой стрик в полной безопасности!
+                            </span>
+                        </div>
+
+                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(108, 92, 231, 0.15); border: 1px solid rgba(162, 155, 254, 0.4);">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                <span style="font-size: 20px;">🛡️</span>
+                                <span style="font-size: 14px; font-weight: 700; color: #a29bfe;">Раунд 2: Углубление</span>
+                            </div>
+                            <p id="round2-thought-text" class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
+                                Загрузка наставления для Раунда 2...
+                            </p>
+                        </div>
+
+                        <div id="round2-action-box" class="glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; background: rgba(0, 184, 148, 0.15); border: 1px solid rgba(85, 239, 196, 0.4);">
+                            <div style="font-size: 11px; font-weight: 700; color: #55efc4; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                                <span>💡</span><span>Духовное действие на Раунд 2:</span>
+                            </div>
+                            <div id="round2-action-text" style="font-size: 13px; color: #ffffff; line-height: 1.4; font-style: italic;"></div>
+                        </div>
+
+                        <p class="sos-text" style="margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-secondary);">
+                            📚 Углубленный материал для победы:
+                        </p>
+                        <div id="round2-card-container" style="margin-bottom: 16px;"></div>
+
+                        <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                                Итог 2-го раунда (после 20-60 мин):
+                            </div>
+                            <button class="btn btn-outline" id="btn-round2-mark-read" style="width: 100%; margin-bottom: 10px; border-color: #a29bfe; color: #a29bfe; font-weight: 600;">
+                                📖 1. Я изучил(а) второй материал
+                            </button>
+                            <button class="btn btn-success" id="btn-round2-helped" disabled style="width: 100%; opacity: 0.5; transition: all 0.3s ease; margin-bottom: 10px;">
+                                ✅ 2. Помогло! Тяга отступила
+                            </button>
+                            <button class="btn btn-outline" id="btn-round2-to-partner" style="width: 100%; border-color: #74b9ff; color: #74b9ff; font-weight: 600; font-size: 13px;">
+                                💬 Все еще не помогло — Написать напарнику лично
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Шаг 3: Написать напарнику лично -->
+                    <div id="spiritual-step-partner" class="spiritual-step-container hidden">
+                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 16px; margin-bottom: 16px; background: rgba(9, 132, 227, 0.12); border: 1px solid rgba(116, 185, 255, 0.35);">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <span style="font-size: 24px;">🤝</span>
+                                <span style="font-size: 15px; font-weight: 700; color: #74b9ff;">Братская помощь: Напиши напарнику</span>
+                            </div>
+                            <p class="sos-text" style="margin: 0 0 10px 0; font-size: 13px; line-height: 1.5; color: #dfe6e9;">
+                                <i>«Двоим лучше, чем одному... Ведь если один упадет, другой поднимет своего товарища. Но что будет с тем, кто упадет, когда рядом нет никого, кто мог бы поднять его?»</i> (Экклезиаст 4:9, 10).
+                            </p>
+                            <p class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #b2bec3;">
+                                Не оставайся один на один с искушением. Напиши напарнику честно: <b>«Мне тяжело, накатило искушение. Помолись за меня / поговори со мной»</b>.
+                            </p>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+                            <button type="button" class="btn btn-primary" id="btn-open-partner-chat" style="background: linear-gradient(135deg, #0984e3, #74b9ff); border: none; font-weight: 600; width: 100%;">
+                                💬 Открыть диалог с напарником
+                            </button>
+
+                            <button type="button" class="btn btn-success" id="btn-confirm-partner-contacted" style="width: 100%; font-weight: 600; background: linear-gradient(135deg, #00b894, #55efc4); border: none; color: #1e272e;">
+                                🤝 Я написал(а) напарнику лично (Стрик сохранен)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Аккуратная ссылка на крайний случай (физический срыв) -->
+                    <div style="text-align: center; margin-top: 15px; margin-bottom: 10px;">
+                        <a href="#" id="link-show-direct-relapse" style="color: #636e72; font-size: 11px; text-decoration: underline;">
+                            Если вы физически сорвались — открыть форму фиксации
+                        </a>
                     </div>
 
                 </div>
             </section>
 
-            <!-- Блок фиксации срыва -->
-            <section class="dashboard-section glass">
+            <!-- Блок фиксации срыва (по умолчанию скрыт при духовной помощи) -->
+            <section class="dashboard-section glass" id="panic-relapse-section">
                 <h2 class="section-title">⚠️ Зафиксировать срыв</h2>
                 <p class="sos-text">Если срыв все-таки произошел, будьте честны с собой. Это не конец пути, а повод сделать выводы и начать заново.</p>
                 <button class="btn btn-secondary" id="btn-show-relapse-form">Записать срыв и сбросить счетчик</button>

@@ -433,9 +433,9 @@ async def handle_api_manage_panic(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
-        action = str(data.get("action", "")).strip()  # "initiate", "start", "helped" or "failed"
+        action = str(data.get("action", "")).strip()  # "initiate", "start", "helped", "failed", "partner_contacted"
         trigger_reason = str(data.get("trigger_reason", "Тяга во время паники")).strip()[:500]
-        if user_id <= 0 or action not in {"initiate", "start", "helped", "failed"}:
+        if user_id <= 0 or action not in {"initiate", "start", "helped", "failed", "partner_contacted"}:
             return web.json_response({"error": "Invalid request payload"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
@@ -524,6 +524,26 @@ async def handle_api_manage_panic(request):
             "message": "Счетчик сброшен после выхода из режима SOS. Пожалуйста, откройте чат с ботом."
         })
         
+    elif action == "partner_contacted":
+        async def send_partner_contacted_ok():
+            try:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "🤝 <b>Ты проявил зрелость и настоящую верность!</b>\n\n"
+                        "Ты не остался один на один с искушением, а обратился за поддержкой к напарнику. "
+                        "Твой стрик чистоты продолжается и находится под защитой!\n\n"
+                        "<i>«Двоим лучше, чем одному... Ведь если один упадет, другой поднимет своего товарища»</i> (Экклезиаст 4:9, 10)."
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Ошибка отправки сообщения о связи с напарником: {e}")
+        asyncio.create_task(send_partner_contacted_ok())
+        return web.json_response({
+            "success": True,
+            "message": "Ты молодец! Стрик сохранен. Держи связь с напарником!"
+        })
+        
     return web.json_response({"error": "Unknown action"}, status=400)
 
 async def handle_api_accept_covenant(request):
@@ -568,6 +588,7 @@ async def handle_api_spiritual_help(request):
     user_id_param = None
     temptation_type = None
     user_notes = None
+    round_param = 1
     
     if request.method == "POST":
         try:
@@ -575,6 +596,8 @@ async def handle_api_spiritual_help(request):
             user_id_param = body.get("user_id")
             temptation_type = body.get("temptation_type")
             user_notes = body.get("user_notes")
+            if "round" in body:
+                round_param = int(body.get("round", 1))
         except Exception:
             pass
             
@@ -584,17 +607,30 @@ async def handle_api_spiritual_help(request):
         temptation_type = request.query.get("temptation_type")
     if not user_notes:
         user_notes = request.query.get("user_notes")
+    if "round" in request.query:
+        try:
+            round_param = int(request.query.get("round", 1))
+        except Exception:
+            pass
         
     data = await ai_service.generate_spiritual_study_materials(
         temptation_type=temptation_type,
-        user_notes=user_notes
+        user_notes=user_notes,
+        round=round_param
     )
     
     sent_to_telegram = False
+    partner_username = None
     if user_id_param:
         try:
             uid = int(user_id_param)
             if uid > 0:
+                from database.models import User
+                async with db_helper.session_factory() as session:
+                    user_row = await session.get(User, uid)
+                    if user_row and user_row.partner_username:
+                        partner_username = user_row.partner_username
+                
                 from handlers.panic import send_spiritual_message_to_user
                 await send_spiritual_message_to_user(bot, uid, data)
                 sent_to_telegram = True
@@ -604,6 +640,8 @@ async def handle_api_spiritual_help(request):
     return web.json_response({
         "ok": True,
         "success": True,
+        "round": round_param,
+        "partner_username": partner_username,
         "spiritual_thought": data.get("spiritual_thought", ""),
         "spiritual_action": data.get("spiritual_action", ""),
         "temptation_type": data.get("temptation_type", "general"),

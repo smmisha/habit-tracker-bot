@@ -615,8 +615,12 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
 });
 
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
+// 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 let selectedTemptationType = null;
 let isArticleReadConfirmed = false;
+let isRound2ReadConfirmed = false;
+let currentSpiritualNotes = '';
+let cachedPartnerUsername = null;
 
 // Обработка чипов искушений
 document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn => {
@@ -636,13 +640,13 @@ document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn =
 // Кнопка запроса духовного решения от ИИ
 document.getElementById('btn-find-spiritual-solution')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-find-spiritual-solution');
-    const userNotes = document.getElementById('spiritual-user-notes')?.value || '';
+    currentSpiritualNotes = document.getElementById('spiritual-user-notes')?.value || '';
     
     btn.disabled = true;
     btn.querySelector('.spinner')?.classList.remove('hidden');
     btn.querySelector('.btn-text').textContent = 'ИИ анализирует и подбирает статью...';
     
-    await loadSpiritualSolution(selectedTemptationType, userNotes);
+    await loadSpiritualSolution(selectedTemptationType, currentSpiritualNotes);
     
     btn.disabled = false;
     btn.querySelector('.spinner')?.classList.add('hidden');
@@ -652,10 +656,12 @@ document.getElementById('btn-find-spiritual-solution')?.addEventListener('click'
 // Кнопка смены темы / возврата к выбору
 document.getElementById('btn-spiritual-change-topic')?.addEventListener('click', () => {
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
+    document.getElementById('spiritual-step-round2')?.classList.add('hidden');
+    document.getElementById('spiritual-step-partner')?.classList.add('hidden');
     document.getElementById('spiritual-step-select')?.classList.remove('hidden');
 });
 
-// Кнопка подтверждения прочтения статьи
+// Кнопка подтверждения прочтения статьи (Раунд 1)
 document.getElementById('btn-spiritual-mark-read')?.addEventListener('click', () => {
     isArticleReadConfirmed = true;
     const btnRead = document.getElementById('btn-spiritual-mark-read');
@@ -669,7 +675,88 @@ document.getElementById('btn-spiritual-mark-read')?.addEventListener('click', ()
         btnHelped.style.opacity = '1';
         btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
     }
-    showToast('Статья отмечена как прочитанная! Подтвердите победу кнопкой ниже.', 'info');
+    showToast('Статья прочитана! Если тяга отступила — подтвердите победу. Если нет — переходите к Раунду 2.', 'info');
+});
+
+// Кнопка перехода к Раунду 2 («Не помогло / Тяга осталась»)
+document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', async () => {
+    document.getElementById('spiritual-step-study')?.classList.add('hidden');
+    document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
+    showToast('Загружаем углубленный материал Раунда 2 (20–60 минут)...', 'info');
+    await loadRound2Solution(selectedTemptationType, currentSpiritualNotes);
+});
+
+// Кнопка подтверждения прочтения статьи (Раунд 2)
+document.getElementById('btn-round2-mark-read')?.addEventListener('click', () => {
+    isRound2ReadConfirmed = true;
+    const btnRead = document.getElementById('btn-round2-mark-read');
+    const btnHelped = document.getElementById('btn-round2-helped');
+    
+    btnRead.classList.add('read-confirmed');
+    btnRead.innerHTML = '✓ 1. Второй материал изучен';
+    
+    if (btnHelped) {
+        btnHelped.disabled = false;
+        btnHelped.style.opacity = '1';
+        btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
+    }
+    showToast('Материал изучен! Если тяга отступила — подтвердите победу. Если нет — напишите напарнику.', 'info');
+});
+
+// Кнопка перехода к экрану напарника («Все еще не помогло»)
+document.getElementById('btn-round2-to-partner')?.addEventListener('click', () => {
+    document.getElementById('spiritual-step-round2')?.classList.add('hidden');
+    document.getElementById('spiritual-step-partner')?.classList.remove('hidden');
+    showToast('Обратитесь за поддержкой к напарнику прямо сейчас 🤝', 'info');
+});
+
+// Кнопка открытия диалога с напарником
+document.getElementById('btn-open-partner-chat')?.addEventListener('click', () => {
+    if (cachedPartnerUsername) {
+        const cleanName = cachedPartnerUsername.replace('@', '').trim();
+        const tgUrl = `https://t.me/${cleanName}`;
+        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openTelegramLink) {
+            Telegram.WebApp.openTelegramLink(tgUrl);
+        } else if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
+            Telegram.WebApp.openLink(tgUrl);
+        } else {
+            window.open(tgUrl, '_blank');
+        }
+    } else {
+        showToast('Откройте диалог с напарником в Telegram и напишите ему о вашей ситуации 💬', 'info');
+    }
+});
+
+// Кнопка подтверждения «Я написал напарнику лично» (Стрик сохранен!)
+document.getElementById('btn-confirm-partner-contacted')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-confirm-partner-contacted');
+    btn.disabled = true;
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'partner_contacted' })
+        });
+    } catch (e) {
+        console.error(e);
+    }
+    
+    showToast('Ты поступил мудро и зрело! Стрик сохранен. Держись вместе с напарником! 🤝', 'success');
+    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
+    document.getElementById('sos-start-screen')?.classList.remove('hidden');
+    btn.disabled = false;
+    switchTab('dashboard');
+});
+
+// Ссылка на крайний случай (физический срыв)
+document.getElementById('link-show-direct-relapse')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    relapseSource = 'panic';
+    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
+    document.getElementById('relapse-form')?.classList.remove('hidden');
+    showToast('Укажите триггер срыва для анализа и извлечения уроков', 'info');
 });
 
 async function loadSpiritualSolution(tType, notes) {
@@ -682,6 +769,9 @@ async function loadSpiritualSolution(tType, notes) {
     const stepStudy = document.getElementById('spiritual-step-study');
     const btnRead = document.getElementById('btn-spiritual-mark-read');
     const btnHelped = document.getElementById('btn-spiritual-helped');
+    
+    // Скрываем блок фиксации срыва во время изучения
+    document.getElementById('panic-relapse-section')?.classList.add('hidden');
     
     // Сброс состояния подтверждения
     isArticleReadConfirmed = false;
@@ -702,12 +792,16 @@ async function loadSpiritualSolution(tType, notes) {
             body: JSON.stringify({
                 user_id: userId,
                 temptation_type: tType,
-                user_notes: notes
+                user_notes: notes,
+                round: 1
             })
         });
         const data = await resp.json();
         
         if (data.success || data.ok) {
+            if (data.partner_username) {
+                cachedPartnerUsername = data.partner_username;
+            }
             if (thoughtEl) {
                 thoughtEl.textContent = data.spiritual_thought;
             }
@@ -737,7 +831,7 @@ async function loadSpiritualSolution(tType, notes) {
                         <div class="spiritual-title" style="font-size: 15px; margin-top: 2px;">${primary.title}</div>
                         <div class="spiritual-desc" style="margin-top: 4px;">${primary.description || ''}</div>
                         <div class="spiritual-btn" style="margin-top: 10px; background: rgba(108, 92, 231, 0.3); border-color: #a29bfe;">
-                            <span>Открыть и изучить материал</span>
+                            <span>Открыть и изучить материал (20–60 мин)</span>
                             <span>↗</span>
                         </div>
                     </div>
@@ -768,19 +862,106 @@ async function loadSpiritualSolution(tType, notes) {
     }
 }
 
+async function loadRound2Solution(tType, notes) {
+    const thoughtEl = document.getElementById('round2-thought-text');
+    const actionBox = document.getElementById('round2-action-box');
+    const actionText = document.getElementById('round2-action-text');
+    const cardContainer = document.getElementById('round2-card-container');
+    const btnRead = document.getElementById('btn-round2-mark-read');
+    const btnHelped = document.getElementById('btn-round2-helped');
+    
+    isRound2ReadConfirmed = false;
+    if (btnRead) {
+        btnRead.classList.remove('read-confirmed');
+        btnRead.innerHTML = '📖 1. Я изучил(а) второй материал';
+    }
+    if (btnHelped) {
+        btnHelped.disabled = true;
+        btnHelped.style.opacity = '0.5';
+        btnHelped.style.boxShadow = 'none';
+    }
+    
+    try {
+        const resp = await fetch('/api/spiritual_help', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                temptation_type: tType,
+                user_notes: notes,
+                round: 2
+            })
+        });
+        const data = await resp.json();
+        
+        if (data.success || data.ok) {
+            if (data.partner_username) {
+                cachedPartnerUsername = data.partner_username;
+            }
+            if (thoughtEl) {
+                thoughtEl.textContent = data.spiritual_thought;
+            }
+            if (actionBox && actionText) {
+                actionText.textContent = data.spiritual_action;
+                actionBox.classList.remove('hidden');
+            }
+            
+            const secondary = data.primary_material || {
+                title: "Бог хочет, чтобы мы были чистыми",
+                type_label: "wol.jw.org Урок",
+                icon: "✨",
+                description: "Нравственная чистота и близкие отношения с Богом.",
+                url: "https://wol.jw.org/ru/wol/d/r2/lp-u/1102021240"
+            };
+            
+            if (cardContainer) {
+                cardContainer.innerHTML = `
+                    <div class="spiritual-card" style="border-width: 2px; border-color: rgba(253, 203, 110, 0.45); background: rgba(253, 203, 110, 0.08);">
+                        <div class="spiritual-badge" style="background: rgba(253, 203, 110, 0.2); color: #ffeaa7;">
+                            <span>${secondary.icon || '🛡️'}</span>
+                            <span>${secondary.type_label || 'wol.jw.org'}</span>
+                        </div>
+                        <div class="spiritual-title" style="font-size: 15px; margin-top: 2px;">${secondary.title}</div>
+                        <div class="spiritual-desc" style="margin-top: 4px;">${secondary.description || ''}</div>
+                        <div class="spiritual-btn" style="margin-top: 10px; background: rgba(253, 203, 110, 0.25); border-color: #fdcb6e; color: #ffeaa7;">
+                            <span>Открыть и изучить материал Раунда 2</span>
+                            <span>↗</span>
+                        </div>
+                    </div>
+                `;
+                
+                cardContainer.querySelector('.spiritual-card')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openLink) {
+                        Telegram.WebApp.openLink(secondary.url);
+                    } else {
+                        window.open(secondary.url, '_blank');
+                    }
+                });
+            }
+        }
+    } catch (e) {
+        console.error('Error loading round 2 solution:', e);
+        showToast('Ошибка при загрузке 2-го раунда', 'error');
+    }
+}
+
 // 3. SOS - Не помогло -> Переход к духовному подкреплению
 document.getElementById('btn-panic-failed').addEventListener('click', () => {
     document.getElementById('sos-dynamic-content')?.classList.add('hidden');
+    document.getElementById('panic-relapse-section')?.classList.add('hidden');
     document.getElementById('sos-spiritual-content')?.classList.remove('hidden');
     
     // Сбрасываем к шагу 1 (выбор искушения)
     document.getElementById('spiritual-step-select')?.classList.remove('hidden');
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
+    document.getElementById('spiritual-step-round2')?.classList.add('hidden');
+    document.getElementById('spiritual-step-partner')?.classList.add('hidden');
     
     showToast('Выберите искушение для целевой помощи 🛡️', 'info');
 });
 
-// 4. Духовный блок: Мне помогло! (двухэтапное подтверждение)
+// 4. Духовный блок: Мне помогло! (Раунд 1)
 document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
     if (!isArticleReadConfirmed) {
         showToast('Пожалуйста, сначала изучите статью и нажмите «Я прочитал(а) статью»', 'info');
@@ -800,29 +981,36 @@ document.getElementById('btn-spiritual-helped')?.addEventListener('click', async
     }
     showToast('Слава Богу! Вы устояли и защитили свой стрик! 💪', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
     document.getElementById('sos-start-screen')?.classList.remove('hidden');
     btn.disabled = false;
     switchTab('dashboard');
 });
 
-// 5. Духовный блок: Я все-таки сорвался -> Открыть форму срыва
-document.getElementById('btn-spiritual-to-relapse')?.addEventListener('click', () => {
-    relapseSource = 'panic';
+// 5. Духовный блок: Мне помогло! (Раунд 2)
+document.getElementById('btn-round2-helped')?.addEventListener('click', async () => {
+    if (!isRound2ReadConfirmed) {
+        showToast('Пожалуйста, сначала изучите второй материал и нажмите «Я изучил(а) второй материал»', 'info');
+        return;
+    }
+    
+    const btn = document.getElementById('btn-round2-helped');
+    btn.disabled = true;
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'helped' })
+        });
+    } catch (e) {
+        console.error(e);
+    }
+    showToast('Слава Богу! Вы победили во 2-м раунде! Стрик сохранен! 💪', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
-    document.getElementById('relapse-form')?.classList.remove('hidden');
-    showToast('Укажите триггер. Напарнику будет отправлено уведомление.', 'info');
-});
-
-// 6. Прямая кнопка срыва из нижнего блока
-document.getElementById('btn-show-relapse-form').addEventListener('click', () => {
-    relapseSource = 'direct';
-    document.getElementById('relapse-form').classList.remove('hidden');
-});
-
-// 7. Отмена срыва (скрыть форму)
-document.getElementById('btn-cancel-relapse').addEventListener('click', () => {
-    document.getElementById('relapse-form').classList.add('hidden');
-    document.getElementById('sos-dynamic-content')?.classList.remove('hidden');
+    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
+    document.getElementById('sos-start-screen')?.classList.remove('hidden');
+    btn.disabled = false;
+    switchTab('dashboard');
 });
 
 // 5. Обработка селекта причин (вывод текстового поля для "Другое")
