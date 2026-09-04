@@ -1,8 +1,9 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from config.config import settings
 
 def get_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     """Главное меню бота с встроенным WebApp дашбордом"""
-    webapp_url = f"https://habit-tracker-bot-s7of.onrender.com/webapp/index.html?user_id={user_id}"
+    webapp_url = f"{settings.webapp_base_url.rstrip('/')}/webapp/index.html?user_id={user_id}"
     
     keyboard = [
         [

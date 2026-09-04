@@ -184,6 +184,8 @@ async def handle_api_stats(request):
         if not user_id_str:
             return web.json_response({"error": "Missing user_id"}, status=400)
         user_id = int(user_id_str)
+        if user_id <= 0:
+            return web.json_response({"error": "Invalid user_id"}, status=400)
     except ValueError:
         return web.json_response({"error": "Invalid user_id"}, status=400)
 
@@ -329,12 +331,17 @@ async def handle_api_save_journal(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
-        content = data.get("content", "").strip()
+        content = str(data.get("content", "")).strip()
+        if user_id <= 0:
+            return web.json_response({"error": "Invalid user_id"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
     if not content or len(content) < 5:
-        return web.json_response({"error": "Заметка слишком короткая"}, status=400)
+        return web.json_response({"error": "Заметка слишком короткая (минимум 5 символов)"}, status=400)
+        
+    if len(content) > 2000:
+        return web.json_response({"error": "Заметка слишком длинная (максимум 2000 символов)"}, status=400)
         
     from database.models import JournalEntry
     from datetime import date
@@ -390,12 +397,14 @@ async def handle_api_log_relapse(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
-        trigger_reason = data.get("trigger_reason", "Срыв зафиксирован через Mini App").strip()
+        trigger_reason = str(data.get("trigger_reason", "Срыв зафиксирован через Mini App")).strip()[:500]
+        if user_id <= 0:
+            return web.json_response({"error": "Invalid user_id"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
     from database.models import User
-    from handlers.tracker import start_confession_flow
+    from handlers.tracker import execute_relapse_reset
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -411,33 +420,23 @@ async def handle_api_log_relapse(request):
     except Exception:
         pass
 
-    # Отправляем клавиатуру выбора триггера срыва в Telegram
-    from keyboards.inline import get_trigger_keyboard
-    try:
-        await bot.send_message(
-            chat_id=user_id,
-            text=(
-                "⚠️ <b>Зафиксирован срыв из Mini App</b>\n\n"
-                "Нам искренне жаль. Но помни: срыв — это не поражение, а повод сделать работу над ошибками.\n\n"
-                "<b>Что послужило главным триггером срыва?</b> Выберите вариант на кнопках ниже:"
-            ),
-            reply_markup=get_trigger_keyboard()
-        )
-    except Exception as e:
-        logger.error(f"Failed to send trigger keyboard to user {user_id}: {e}")
+    # Выполняем сброс счетчика чистоты и оповещение напарника по правилу скользящего окна
+    await execute_relapse_reset(user_id, trigger_reason, bot=bot)
     
     return web.json_response({
         "success": True, 
-        "confession_pending": True,
-        "message": "Выбор триггера срыва отправлен в Telegram. Пожалуйста, откройте чат с ботом."
+        "confession_pending": False,
+        "message": "Счетчик чистоты сброшен. Пожалуйста, откройте чат с ботом."
     })
 
 async def handle_api_manage_panic(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
-        action = data.get("action")  # "start", "helped" or "failed"
-        trigger_reason = data.get("trigger_reason", "Тяга во время паники").strip()
+        action = str(data.get("action", "")).strip()  # "initiate", "start", "helped" or "failed"
+        trigger_reason = str(data.get("trigger_reason", "Тяга во время паники")).strip()[:500]
+        if user_id <= 0 or action not in {"initiate", "start", "helped", "failed"}:
+            return web.json_response({"error": "Invalid request payload"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
@@ -552,21 +551,20 @@ async def handle_api_manage_panic(request):
             pass
             
         from database.models import User
-        from handlers.tracker import start_confession_flow
+        from handlers.tracker import execute_relapse_reset
         
         async with db_helper.session_factory() as session:
             user_db = await session.get(User, user_id)
             if not user_db:
                 return web.json_response({"error": "User not found"}, status=404)
                 
-        # Переводим пользователя в режим ожидания исповеди
-        state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
-        await start_confession_flow(user_id, f"Паника: {trigger_reason}", state=state_ctx, bot=bot)
+        # Выполняем сброс счетчика чистоты и оповещение напарника по правилу скользящего окна
+        await execute_relapse_reset(user_id, f"Паника: {trigger_reason}", bot=bot)
         
         return web.json_response({
             "success": True, 
-            "confession_pending": True,
-            "message": "Запрос на исповедь отправлен в Telegram. Пожалуйста, отправьте голосовое или видеосообщение с признанием."
+            "confession_pending": False,
+            "message": "Счетчик сброшен после выхода из режима SOS. Пожалуйста, откройте чат с ботом."
         })
         
     return web.json_response({"error": "Unknown action"}, status=400)
@@ -575,6 +573,8 @@ async def handle_api_accept_covenant(request):
     try:
         data = await request.json()
         user_id = int(data.get("user_id"))
+        if user_id <= 0:
+            return web.json_response({"error": "Invalid request payload"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         

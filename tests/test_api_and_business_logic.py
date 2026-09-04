@@ -1,0 +1,240 @@
+﻿import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import asyncio
+from datetime import datetime, timedelta, date, timezone
+import unittest
+from unittest.mock import AsyncMock, patch, MagicMock
+
+from aiohttp import web
+from aiohttp.test_utils import AioHTTPTestCase
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy import select, and_
+
+from database.models import Base, User, CheckInLog, RelapseLog, SlipEvent, JournalEntry
+from database.db_helper import db_helper
+from handlers.checkin import is_on_time
+from handlers.tracker import format_timedelta, execute_relapse_reset
+from main import (
+    handle_ping,
+    handle_api_stats,
+    handle_api_save_journal,
+    handle_api_log_relapse,
+    handle_api_manage_panic,
+    handle_api_accept_covenant,
+)
+
+class TestApiAndBusinessLogic(AioHTTPTestCase):
+    async def setUpAsync(self):
+        await super().setUpAsync()
+        self.engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            
+        self.session_factory = async_sessionmaker(
+            bind=self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False
+        )
+        self.orig_engine = db_helper.engine
+        self.orig_factory = db_helper.session_factory
+        db_helper.engine = self.engine
+        db_helper.session_factory = self.session_factory
+        
+        # Add test user
+        self.user_id = 999001
+        async with self.session_factory() as session:
+            user = User(
+                id=self.user_id,
+                username="tester",
+                first_name="Test User",
+                streak_start=datetime.now() - timedelta(days=5),
+                total_relapses=1,
+                checkin_time="21:00",
+                partner_username="partner123"
+            )
+            session.add(user)
+            await session.commit()
+
+    async def tearDownAsync(self):
+        db_helper.engine = self.orig_engine
+        db_helper.session_factory = self.orig_factory
+        await self.engine.dispose()
+        await super().tearDownAsync()
+
+    async def get_application(self):
+        app = web.Application()
+        app.add_routes([
+            web.get("/", handle_ping),
+            web.get("/api/stats", handle_api_stats),
+            web.post("/api/journal", handle_api_save_journal),
+            web.post("/api/relapse", handle_api_log_relapse),
+            web.post("/api/panic", handle_api_manage_panic),
+            web.post("/api/accept_covenant", handle_api_accept_covenant)
+        ])
+        return app
+
+    async def test_ping(self):
+        resp = await self.client.request("GET", "/")
+        self.assertEqual(resp.status, 200)
+        text = await resp.text()
+        self.assertEqual(text, "OK")
+
+    async def test_stats_missing_user_id(self):
+        resp = await self.client.request("GET", "/api/stats")
+        self.assertEqual(resp.status, 400)
+        data = await resp.json()
+        self.assertIn("Missing user_id", data.get("error", ""))
+
+    async def test_stats_invalid_user_id(self):
+        resp = await self.client.request("GET", "/api/stats?user_id=-5")
+        self.assertEqual(resp.status, 400)
+        data = await resp.json()
+        self.assertIn("Invalid user_id", data.get("error", ""))
+
+    async def test_stats_nonexistent_user(self):
+        resp = await self.client.request("GET", "/api/stats?user_id=111222")
+        self.assertEqual(resp.status, 404)
+        data = await resp.json()
+        self.assertIn("User not found", data.get("error", ""))
+
+    async def test_stats_success(self):
+        resp = await self.client.request("GET", f"/api/stats?user_id={self.user_id}")
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertIn("streak_str", data)
+        self.assertIn("total_relapses", data)
+        self.assertEqual(data["total_relapses"], 1)
+        self.assertIn("calendar_days", data)
+        self.assertEqual(len(data["calendar_days"]), 30)
+        self.assertIn("settings", data)
+        self.assertEqual(data["settings"]["checkin_time"], "21:00")
+
+    async def test_journal_empty_or_short(self):
+        resp = await self.client.request("POST", "/api/journal", json={
+            "user_id": self.user_id,
+            "content": "abc"
+        })
+        self.assertEqual(resp.status, 400)
+        data = await resp.json()
+        self.assertIn("слишком короткая", data.get("error", ""))
+
+    async def test_journal_too_long(self):
+        long_content = "x" * 2005
+        resp = await self.client.request("POST", "/api/journal", json={
+            "user_id": self.user_id,
+            "content": long_content
+        })
+        self.assertEqual(resp.status, 400)
+        data = await resp.json()
+        self.assertIn("слишком длинная", data.get("error", ""))
+
+    async def test_journal_save_success(self):
+        with patch("main.bot.send_message", new_callable=AsyncMock):
+            resp = await self.client.request("POST", "/api/journal", json={
+                "user_id": self.user_id,
+                "content": "Сегодня был прекрасный день без компромиссов."
+            })
+            self.assertEqual(resp.status, 200)
+            data = await resp.json()
+            self.assertTrue(data.get("success"))
+
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(JournalEntry).where(JournalEntry.user_id == self.user_id)
+            )
+            entries = result.scalars().all()
+            self.assertEqual(len(entries), 1)
+            self.assertIn("прекрасный день", entries[0].content)
+
+    async def test_relapse_api_no_crash(self):
+        """Verify /api/relapse does NOT crash with start_confession_flow ImportError and executes reset"""
+        with patch("main.bot.send_message", new_callable=AsyncMock) as mock_send:
+            resp = await self.client.request("POST", "/api/relapse", json={
+                "user_id": self.user_id,
+                "trigger_reason": "Стресс на работе"
+            })
+            self.assertEqual(resp.status, 200)
+            data = await resp.json()
+            self.assertTrue(data.get("success"))
+            self.assertFalse(data.get("confession_pending"))
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.total_relapses, 2)
+            
+            # Check slip event created
+            slips = (await session.execute(select(SlipEvent).where(SlipEvent.user_id == self.user_id))).scalars().all()
+            self.assertEqual(len(slips), 1)
+
+    async def test_panic_invalid_action(self):
+        resp = await self.client.request("POST", "/api/panic", json={
+            "user_id": self.user_id,
+            "action": "unknown_action"
+        })
+        self.assertEqual(resp.status, 400)
+
+    async def test_panic_initiate(self):
+        resp = await self.client.request("POST", "/api/panic", json={
+            "user_id": self.user_id,
+            "action": "initiate"
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("success"))
+
+    async def test_panic_failed_no_crash(self):
+        """Verify action=failed in /api/panic does NOT crash and executes reset"""
+        with patch("main.bot.send_message", new_callable=AsyncMock):
+            resp = await self.client.request("POST", "/api/panic", json={
+                "user_id": self.user_id,
+                "action": "failed",
+                "trigger_reason": "Сильная тяга ночью"
+            })
+            self.assertEqual(resp.status, 200)
+            data = await resp.json()
+            self.assertTrue(data.get("success"))
+            self.assertFalse(data.get("confession_pending"))
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.total_relapses, 2)
+
+    async def test_accept_covenant_invalid_payload(self):
+        resp = await self.client.request("POST", "/api/accept_covenant", json={
+            "user_id": -1
+        })
+        self.assertEqual(resp.status, 400)
+
+    def test_is_on_time_logic(self):
+        scheduled = "21:00"
+        base_time = datetime(2026, 6, 1, 21, 0, 0)
+        
+        # Exactly on time
+        self.assertTrue(is_on_time(base_time, scheduled))
+        # 4 minutes early
+        self.assertTrue(is_on_time(base_time - timedelta(minutes=4), scheduled))
+        # 5 minutes late (boundary)
+        self.assertTrue(is_on_time(base_time + timedelta(minutes=5), scheduled))
+        # 6 minutes late (outside window)
+        self.assertFalse(is_on_time(base_time + timedelta(minutes=6), scheduled))
+        # 6 minutes early (outside window)
+        self.assertFalse(is_on_time(base_time - timedelta(minutes=6), scheduled))
+
+    def test_format_timedelta(self):
+        td1 = timedelta(days=2, hours=3, minutes=15, seconds=30)
+        formatted1 = format_timedelta(td1)
+        self.assertIn("2</b> дн.", formatted1)
+        self.assertIn("3</b> ч.", formatted1)
+        self.assertIn("15</b> мин.", formatted1)
+        self.assertIn("30</b> сек.", formatted1)
+
+        td2 = timedelta(minutes=45, seconds=10)
+        formatted2 = format_timedelta(td2)
+        self.assertNotIn("дн.", formatted2)
+        self.assertIn("45</b> мин.", formatted2)
+
+if __name__ == "__main__":
+    unittest.main()

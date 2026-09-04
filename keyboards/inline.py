@@ -68,3 +68,21 @@ def get_excuses_keyboard(forgot_left: int) -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_trigger_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора триггеров срыва"""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="🥱 Скука / Безделье", callback_data="relapse_trigger_bored"),
+            InlineKeyboardButton(text="😫 Стресс / Усталость", callback_data="relapse_trigger_stress")
+        ],
+        [
+            InlineKeyboardButton(text="😔 Одиночество / Грусть", callback_data="relapse_trigger_lonely"),
+            InlineKeyboardButton(text="🔞 Искушение в интернете", callback_data="relapse_trigger_web")
+        ],
+        [
+            InlineKeyboardButton(text="📝 Другое", callback_data="relapse_trigger_other"),
+            InlineKeyboardButton(text="❌ Отмена срыва", callback_data="relapse_trigger_cancel")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

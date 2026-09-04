@@ -8,6 +8,7 @@ from database.models import User, CheckInLog
 from keyboards.inline import get_checkin_keyboard
 from services.userbot_client import userbot
 from services.ai_service import ai_service
+from config.config import settings
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.timezone("Europe/Kyiv"))
@@ -62,7 +63,7 @@ async def check_and_send_checkins():
                                 [
                                     InlineKeyboardButton(
                                         text="📄 Читать и подписать Соглашение",
-                                        web_app=WebAppInfo(url="https://habit-tracker-bot-s7of.onrender.com/webapp/purity_covenant_jw_v2.html")
+                                        web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html")
                                     )
                                 ]
                             ]

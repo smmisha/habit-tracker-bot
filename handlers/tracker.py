@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 import logging
 from aiogram import Router, F
@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select, and_
 from database.db_helper import db_helper
-from database.models import User, RelapseLog, CheckInLog
+from database.models import User, RelapseLog, CheckInLog, SlipEvent
 from keyboards.inline import get_relapse_confirm_keyboard, get_reset_type_keyboard, get_trigger_keyboard
 from config.config import settings
 from services.userbot_client import userbot
@@ -89,24 +89,6 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.fsm.context import FSMContext
 from utils.states import Form
 
-def get_trigger_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура выбора триггеров срыва"""
-    keyboard = [
-        [
-            InlineKeyboardButton(text="🥱 Скука / Безделье", callback_data="relapse_trigger_bored"),
-            InlineKeyboardButton(text="😫 Стресс / Усталость", callback_data="relapse_trigger_stress")
-        ],
-        [
-            InlineKeyboardButton(text="😔 Одиночество / Грусть", callback_data="relapse_trigger_lonely"),
-            InlineKeyboardButton(text="🔞 Искушение в интернете", callback_data="relapse_trigger_web")
-        ],
-        [
-            InlineKeyboardButton(text="📝 Другое", callback_data="relapse_trigger_other"),
-            InlineKeyboardButton(text="❌ Отмена срыва", callback_data="relapse_trigger_cancel")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
 @router.callback_query(F.data == "relapse_confirm")
 async def process_relapse_confirm(callback: CallbackQuery):
     await callback.answer()
@@ -118,17 +100,17 @@ async def process_relapse_confirm(callback: CallbackQuery):
         reply_markup=get_trigger_keyboard()
     )
 
-async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: CallbackQuery = None, message: Message = None):
+async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: CallbackQuery = None, message: Message = None, bot = None):
     """Выполнить сброс счетчика чистоты и залогировать причину"""
     now = datetime.now()
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         
         if not user:
-            return
+            return {"partner_notified": False, "recent_count": 0, "confirm_text": "Пользователь не найден"}
             
         # 1. Сброс стрика и очистка наград
         user.streak_start = now
@@ -195,7 +177,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
                     "Это сигнал потери контроля — пожалуйста, свяжитесь для духовной поддержки."
                 )
                 try:
-                    sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text)
+                    sent = await userbot.send_message_to_partner(business_connection_id, partner_username, alert_text, bot=bot)
                     if sent:
                         partner_notified = True
                         # Помечаем все записи за последние 7 дней как notified_partner = True
@@ -255,8 +237,19 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             await callback.message.edit_text(confirm_text)
         elif message:
             await message.answer(confirm_text)
+        elif bot:
+            await bot.send_message(chat_id=user_id, text=confirm_text)
+        else:
+            from main import bot as default_bot
+            await default_bot.send_message(chat_id=user_id, text=confirm_text)
     except Exception as e:
         logger.error(f"Failed to send confirmation text to user: {e}")
+
+    return {
+        "partner_notified": partner_notified,
+        "recent_count": recent_count,
+        "confirm_text": confirm_text
+    }
 
 @router.callback_query(F.data.startswith("relapse_trigger_"))
 async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):

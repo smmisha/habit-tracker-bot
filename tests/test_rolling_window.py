@@ -1,5 +1,10 @@
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import unittest
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select, and_
@@ -80,7 +85,7 @@ class TestRollingWindow(unittest.IsolatedAsyncioTestCase):
         Test Case 1: 3 relapses occur within a rolling 7-day period.
         Expected: The 3rd relapse triggers a partner notification and marks all as notified.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # First relapse on Day 1 (6 days ago)
         notified1 = await self.simulate_relapse_and_check(now - timedelta(days=6))
@@ -106,7 +111,7 @@ class TestRollingWindow(unittest.IsolatedAsyncioTestCase):
         E.g. Day 1 (8 days ago), Day 2 (7 days and 1 hour ago), Day 9 (now).
         Expected: No notification on Day 9 because older events are outside the 7-day window.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Relapse 1: 8 days ago (outside window)
         notified1 = await self.simulate_relapse_and_check(now - timedelta(days=8))
@@ -132,7 +137,7 @@ class TestRollingWindow(unittest.IsolatedAsyncioTestCase):
         Expected: Since the comparison is occurred_at >= seven_days_ago (inclusive),
         a relapse exactly 7 days ago (inclusive) is counted in the window and triggers the notification.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Relapse 1: exactly 7 days ago
         notified1 = await self.simulate_relapse_and_check(now - timedelta(days=7))
