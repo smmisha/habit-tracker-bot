@@ -558,17 +558,18 @@ async def handle_api_accept_covenant(request):
         except Exception as e:
             logger.warning(f"Не удалось удалить сообщение договора {msg_id} для {user_id}: {e}")
             
-    # Не переходим в waiting_for_partner, так как напарник зафиксирован.
-    # Вместо этого отправляем клавиатуру чек-ина.
-    from keyboards.inline import get_checkin_keyboard
     try:
         await bot.send_message(
             chat_id=user_id,
-            text="✅ <b>Соглашение совести подтверждено!</b>\n\nКак прошел сегодняшний день? Все под контролем?",
-            reply_markup=get_checkin_keyboard()
+            text=(
+                "🕊️ <b>Соглашение совести возобновлено!</b>\n\n"
+                "<i>«Ведь праведник может упасть и семь раз, но всё равно поднимется»</i> (Притчи 24:16).\n\n"
+                "Иегова видит твое искреннее сердце и ценит решимость бороться за духовную чистоту. "
+                "Прошлые ошибки отданы в молитве, взгляд устремлен вперед. Твой новый стрик чистоты начался прямо сейчас! Вперед! 💪"
+            )
         )
     except Exception as e:
-        logger.error(f"Не удалось отправить клавиатуру чек-ина пользователю {user_id}: {e}")
+        logger.error(f"Не удалось отправить сообщение о возобновлении соглашения {user_id}: {e}")
         
     return web.json_response({"success": True})
 

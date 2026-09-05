@@ -224,6 +224,15 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         })
         self.assertEqual(resp.status, 400)
 
+    async def test_accept_covenant_success(self):
+        resp = await self.client.request("POST", "/api/accept_covenant", json={
+            "user_id": 999001,
+            "mode": "restart"
+        })
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("success"))
+
     async def test_spiritual_help(self):
         resp = await self.client.request("GET", "/api/spiritual_help?user_id=999001")
         self.assertEqual(resp.status, 200)

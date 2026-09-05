@@ -107,18 +107,18 @@ async def cmd_covenant(message: Message):
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📜 Читать Соглашение совести",
-                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html")
+                    text="📜 Читать Соглашение совести (Манифест)",
+                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=manifest")
                 )
             ]
         ]
     )
     await message.answer(
         "📜 <b>Соглашение о духовной чистоте перед Иеговой</b>\n\n"
-        "Это ваш личный духовный манифест и четкая граница совести:\n"
+        "Это ваш постоянный духовный манифест и четкая граница совести:\n"
         "• <i>Мысль, отвергнутая без действия — победа, стрик сохраняется.</i>\n"
         "• <i>Умышленный поиск с кадрами — срыв, стрик обнуляется.</i>\n\n"
-        "Вы можете вдумчиво перечитать Соглашение в любое время, нажав кнопку ниже.",
+        "Вы можете в любой момент спокойно перечитать манифест без таймеров и ограничений.",
         reply_markup=inline_kb
     )
 

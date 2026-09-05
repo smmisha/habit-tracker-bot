@@ -262,7 +262,18 @@
   <div class="covenant-header">
     <p class="eyebrow">Личное обязательство христианина</p>
     <h1>Соглашение о духовной чистоте<br>перед Иеговой</h1>
-    <p class="subtitle">Обязательное ежедневное подтверждение перед отправкой отчёта</p>
+    <p class="subtitle" id="covenant-subtitle">Практическое руководство по границам, ответственности и подотчётности</p>
+  </div>
+
+  <!-- Информационные плашки режимов (Манифест / Перезагрузка после срыва) -->
+  <div id="manifest-banner" style="display: none; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; background: rgba(162, 155, 254, 0.1); border: 1px solid rgba(162, 155, 254, 0.35); text-align: center; font-family: var(--font-sans);">
+    <div style="font-size: 15px; font-weight: 600; color: #a29bfe; margin-bottom: 4px;">🕊️ Ваш постоянный духовный манифест</div>
+    <div style="font-size: 13px; color: #dfe6e9; line-height: 1.4;">Этот документ доступен вам в любое время для спокойного чтения и сверки ориентиров совести перед Иеговой.</div>
+  </div>
+
+  <div id="restart-banner" style="display: none; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; background: rgba(253, 203, 110, 0.15); border: 1px solid rgba(253, 203, 110, 0.45); text-align: center; font-family: var(--font-sans);">
+    <div style="font-size: 15px; font-weight: 700; color: #ffeaa7; margin-bottom: 4px;">🕊️ Точка перезагрузки и покаяния</div>
+    <div style="font-size: 13px; color: #ffeaa7; line-height: 1.4;">Остановитесь и выдохните. Посвятите эти 3 минуты глубокому размышлению и молитве перед новым стартом чистой жизни.</div>
   </div>
 
   <div class="section">
@@ -349,8 +360,15 @@
   </div>
 </div>
 
-<!-- Блок с подтверждением соглашения -->
-<div class="accept-section" id="accept-section">
+<!-- Блок действий для режима Манифеста (спокойное чтение в любое время) -->
+<div class="accept-section" id="manifest-action-section" style="display: none;">
+  <button class="btn-confirm" id="btn-close-manifest" style="background: rgba(162, 155, 254, 0.25); border: 1px solid #a29bfe; color: #ffffff;">
+    ✕ Закрыть манифест
+  </button>
+</div>
+
+<!-- Блок с подтверждением соглашения (только для режима перезагрузки после срыва) -->
+<div class="accept-section" id="restart-action-section" style="display: none;">
   <p class="scroll-warning" id="scroll-warning">⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Кнопка подтверждения разблокируется через: 3:00</p>
   
   <label class="checkbox-container disabled" id="checkbox-label">
@@ -359,142 +377,197 @@
   </label>
   
   <button class="btn-confirm disabled" id="btn-confirm" disabled>
-    🟢 Подтвердить и продолжить
+    🟢 Подтвердить и возобновить путь чистоты
   </button>
 </div>
 
 <script>
-  const tg = window.Telegram.WebApp;
-  tg.ready();
-  tg.expand();
-
-  const checkbox = document.getElementById('accept-checkbox');
-  const checkboxLabel = document.getElementById('checkbox-label');
-  const btnConfirm = document.getElementById('btn-confirm');
-  const scrollWarning = document.getElementById('scroll-warning');
-
-  let timeRemaining = 180; // 3 минуты в секундах
-  let timerExpired = false;
-  let scrolledToBottom = false;
-
-  // Функция форматирования времени
-  function formatTime(seconds) {
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    try {
+      tg.ready();
+      tg.expand();
+    } catch (e) {}
   }
 
-  // Обновление текста предупреждения/таймера
-  function updateStatusMessage() {
-      if (!timerExpired) {
-          const timeStr = formatTime(timeRemaining);
-          if (scrolledToBottom) {
-              scrollWarning.innerHTML = `⏳ Текст прокручен. Пожалуйста, завершите вдумчивое чтение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
-          } else {
-              scrollWarning.innerHTML = `⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
-          }
-          scrollWarning.style.display = 'block';
+  // Определяем режим работы страницы
+  const urlParams = new URLSearchParams(window.location.search);
+  let mode = urlParams.get('mode');
+  if (!mode && tg?.initDataUnsafe?.start_param) {
+    mode = tg.initDataUnsafe.start_param;
+  }
+  // По умолчанию: режим свободного чтения манифеста
+  if (!mode || (mode !== 'restart' && mode !== 'relapse')) {
+    mode = 'manifest';
+  }
+
+  const headerSubtitle = document.getElementById('covenant-subtitle');
+  const manifestBanner = document.getElementById('manifest-banner');
+  const restartBanner = document.getElementById('restart-banner');
+  const manifestActionSection = document.getElementById('manifest-action-section');
+  const restartActionSection = document.getElementById('restart-action-section');
+  const btnCloseManifest = document.getElementById('btn-close-manifest');
+
+  if (btnCloseManifest) {
+    btnCloseManifest.addEventListener('click', () => {
+      if (tg && typeof tg.close === 'function') {
+        tg.close();
+      } else if (window.history.length > 1) {
+        window.history.back();
       } else {
-          if (!scrolledToBottom) {
-              scrollWarning.innerHTML = `⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.`;
-              scrollWarning.style.display = 'block';
-          } else {
-              scrollWarning.style.display = 'none';
-          }
+        window.close();
       }
+    });
   }
 
-  // Запуск таймера чтения
-  const timerInterval = setInterval(() => {
-      timeRemaining--;
-      updateStatusMessage();
-      if (timeRemaining <= 0) {
-          clearInterval(timerInterval);
-          timerExpired = true;
-          checkActivation();
-      }
-  }, 1000);
+  if (mode === 'manifest') {
+    // 1. РЕЖИМ ПОСТОЯННОГО МАНИФЕСТА (таймер 0 сек, свободное чтение)
+    if (headerSubtitle) {
+      headerSubtitle.textContent = 'Постоянный манифест духовных границ и личной подотчётности';
+    }
+    if (manifestBanner) manifestBanner.style.display = 'block';
+    if (restartBanner) restartBanner.style.display = 'none';
+    if (manifestActionSection) manifestActionSection.style.display = 'block';
+    if (restartActionSection) restartActionSection.style.display = 'none';
+  } else {
+    // 2. РЕЖИМ ТОЧКИ ПЕРЕЗАГРУЗКИ ПОСЛЕ СРЫВА (таймер 3 минуты, подтверждение)
+    if (headerSubtitle) {
+      headerSubtitle.textContent = 'Точка покаяния, переосмысления и нового старта после срыва';
+    }
+    if (restartBanner) restartBanner.style.display = 'block';
+    if (manifestBanner) manifestBanner.style.display = 'none';
+    if (restartActionSection) restartActionSection.style.display = 'block';
+    if (manifestActionSection) manifestActionSection.style.display = 'none';
 
-  // Функция проверки прокрутки до низа
-  function checkScroll() {
-      const scrollHeight = document.documentElement.scrollHeight;
-      const clientHeight = document.documentElement.clientHeight;
-      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-      
-      const distanceToBottom = scrollHeight - clientHeight - scrollTop;
+    const checkbox = document.getElementById('accept-checkbox');
+    const checkboxLabel = document.getElementById('checkbox-label');
+    const btnConfirm = document.getElementById('btn-confirm');
+    const scrollWarning = document.getElementById('scroll-warning');
 
-      // Если до низа страницы осталось меньше 60px или страница полностью помещается в окно
-      if (distanceToBottom < 60 || scrollHeight <= clientHeight + 10) {
-          scrolledToBottom = true;
-          updateStatusMessage();
-          checkActivation();
-      }
+    let timeRemaining = 180; // 3 минуты в секундах
+    let timerExpired = false;
+    let scrolledToBottom = false;
+
+    // Функция форматирования времени
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    // Обновление текста предупреждения/таймера
+    function updateStatusMessage() {
+        if (!timerExpired) {
+            const timeStr = formatTime(timeRemaining);
+            if (scrolledToBottom) {
+                scrollWarning.innerHTML = `⏳ Текст прокручен. Пожалуйста, завершите вдумчивое размышление. Подтверждение станет доступно через: <b>${timeStr}</b>`;
+            } else {
+                scrollWarning.innerHTML = `⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
+            }
+            scrollWarning.style.display = 'block';
+        } else {
+            if (!scrolledToBottom) {
+                scrollWarning.innerHTML = `⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.`;
+                scrollWarning.style.display = 'block';
+            } else {
+                scrollWarning.style.display = 'none';
+            }
+        }
+    }
+
+    // Запуск таймера чтения
+    const timerInterval = setInterval(() => {
+        timeRemaining--;
+        updateStatusMessage();
+        if (timeRemaining <= 0) {
+            clearInterval(timerInterval);
+            timerExpired = true;
+            checkActivation();
+        }
+    }, 1000);
+
+    // Функция проверки прокрутки до низа
+    function checkScroll() {
+        const scrollHeight = document.documentElement.scrollHeight;
+        const clientHeight = document.documentElement.clientHeight;
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const distanceToBottom = scrollHeight - clientHeight - scrollTop;
+
+        if (distanceToBottom < 60 || scrollHeight <= clientHeight + 10) {
+            scrolledToBottom = true;
+            updateStatusMessage();
+            checkActivation();
+        }
+    }
+
+    // Функция активации элементов управления
+    function checkActivation() {
+        updateStatusMessage();
+        if (timerExpired && scrolledToBottom) {
+            checkboxLabel.classList.remove('disabled');
+            checkbox.removeAttribute('disabled');
+            scrollWarning.style.display = 'none';
+            window.removeEventListener('scroll', checkScroll);
+        }
+    }
+
+    // Слушаем прокрутку
+    window.addEventListener('scroll', checkScroll);
+    setTimeout(checkScroll, 300);
+
+    // Слушаем изменение чекбокса
+    checkbox.addEventListener('change', function() {
+        if (this.checked) {
+            btnConfirm.classList.remove('disabled');
+            btnConfirm.removeAttribute('disabled');
+        } else {
+            btnConfirm.classList.add('disabled');
+            btnConfirm.setAttribute('disabled', 'true');
+        }
+    });
+
+    // Отправка подтверждения на сервер
+    btnConfirm.addEventListener('click', function() {
+        if (this.classList.contains('disabled')) return;
+        
+        const userId = tg?.initDataUnsafe?.user?.id || urlParams.get('user_id');
+        if (!userId) {
+            alert("Ошибка: не удалось определить ваш Telegram ID. Пожалуйста, откройте страницу через официального бота.");
+            return;
+        }
+
+        btnConfirm.classList.add('disabled');
+        btnConfirm.setAttribute('disabled', 'true');
+        btnConfirm.innerHTML = '⌛ Возобновление соглашения...';
+
+        fetch('/api/accept_covenant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, mode: 'restart' })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (tg && typeof tg.close === 'function') {
+                    tg.close();
+                } else {
+                    alert("Соглашение успешно возобновлено! Вы можете закрыть окно и вернуться в бот.");
+                }
+            } else {
+                alert("Ошибка при сохранении: " + (data.error || "Неизвестная ошибка"));
+                btnConfirm.classList.remove('disabled');
+                btnConfirm.removeAttribute('disabled');
+                btnConfirm.innerHTML = '🟢 Подтвердить и возобновить путь чистоты';
+            }
+        })
+        .catch(err => {
+            alert("Ошибка подключения к серверу: " + err);
+            btnConfirm.classList.remove('disabled');
+            btnConfirm.removeAttribute('disabled');
+            btnConfirm.innerHTML = '🟢 Подтвердить и возобновить путь чистоты';
+        });
+    });
   }
-
-  // Функция активации элементов управления
-  function checkActivation() {
-      updateStatusMessage();
-      if (timerExpired && scrolledToBottom) {
-          checkboxLabel.classList.remove('disabled');
-          checkbox.removeAttribute('disabled');
-          scrollWarning.style.display = 'none';
-          window.removeEventListener('scroll', checkScroll);
-      }
-  }
-
-  // Слушаем прокрутку
-  window.addEventListener('scroll', checkScroll);
-  // Первичная проверка на случай маленьких экранов
-  setTimeout(checkScroll, 300);
-
-  // Слушаем изменение чекбокса
-  checkbox.addEventListener('change', function() {
-      if (this.checked) {
-          btnConfirm.classList.remove('disabled');
-          btnConfirm.removeAttribute('disabled');
-      } else {
-          btnConfirm.classList.add('disabled');
-          btnConfirm.setAttribute('disabled', 'true');
-      }
-  });
-
-  // Отправка подтверждения на сервер
-  btnConfirm.addEventListener('click', function() {
-      if (this.classList.contains('disabled')) return;
-      
-      const userId = tg.initDataUnsafe?.user?.id;
-      if (!userId) {
-          alert("Ошибка: не удалось определить ваш Telegram ID. Пожалуйста, откройте страницу через официального бота.");
-          return;
-      }
-
-      btnConfirm.classList.add('disabled');
-      btnConfirm.setAttribute('disabled', 'true');
-      btnConfirm.innerHTML = '⌛ Сохранение соглашения...';
-
-      fetch('/api/accept_covenant', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: userId })
-      })
-      .then(response => response.json())
-      .then(data => {
-          if (data.success) {
-              tg.close();
-          } else {
-              alert("Ошибка при сохранении: " + (data.error || "Неизвестная ошибка"));
-              btnConfirm.classList.remove('disabled');
-              btnConfirm.removeAttribute('disabled');
-              btnConfirm.innerHTML = '🟢 Подтвердить и продолжить';
-          }
-      })
-      .catch(err => {
-          alert("Ошибка подключения к серверу: " + err);
-          btnConfirm.classList.remove('disabled');
-          btnConfirm.removeAttribute('disabled');
-          btnConfirm.innerHTML = '🟢 Подтвердить и продолжить';
-      });
-  });
 </script>
 
 </body>
