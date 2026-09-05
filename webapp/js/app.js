@@ -987,6 +987,7 @@ async function loadSpiritualSolution(tType, notes) {
                         }
                     });
                 });
+            }
             // Переключаем шаги
             stepSelect?.classList.add('hidden');
             stepStudy?.classList.remove('hidden');
