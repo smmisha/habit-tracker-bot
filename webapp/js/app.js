@@ -5,6 +5,166 @@ if (tg) {
     tg.ready();
 }
 
+// Функции тактильного виброотклика (Haptic Feedback)
+function hapticImpact(style = 'light') {
+    try {
+        if (tg && tg.HapticFeedback && typeof tg.HapticFeedback.impactOccurred === 'function') {
+            tg.HapticFeedback.impactOccurred(style);
+        }
+    } catch (e) {
+        console.debug('Haptic impact error:', e);
+    }
+}
+
+function hapticSelection() {
+    try {
+        if (tg && tg.HapticFeedback && typeof tg.HapticFeedback.selectionChanged === 'function') {
+            tg.HapticFeedback.selectionChanged();
+        }
+    } catch (e) {
+        console.debug('Haptic selection error:', e);
+    }
+}
+
+function hapticNotification(type = 'success') {
+    try {
+        if (tg && tg.HapticFeedback && typeof tg.HapticFeedback.notificationOccurred === 'function') {
+            tg.HapticFeedback.notificationOccurred(type);
+        }
+    } catch (e) {
+        console.debug('Haptic notification error:', e);
+    }
+}
+
+// Обертка над fetch для автоматической передачи Telegram initData в заголовках
+async function apiFetch(url, options = {}) {
+    const headers = options.headers ? { ...options.headers } : {};
+    if (tg && tg.initData) {
+        headers['X-Telegram-Init-Data'] = tg.initData;
+    }
+    return fetch(url, { ...options, headers });
+}
+
+// Навигация и нативная кнопка «Назад» в Telegram
+function updateBackButton() {
+    if (!tg || !tg.BackButton) return;
+
+    const isModalOpen = document.getElementById('cognitive-lock-modal')?.classList.contains('active');
+    const activeTab = document.querySelector('.tab-content.active')?.id;
+
+    if (isModalOpen) {
+        tg.BackButton.show();
+        return;
+    }
+
+    if (activeTab === 'tab-dashboard') {
+        tg.BackButton.hide();
+    } else {
+        tg.BackButton.show();
+    }
+}
+
+function handleNativeBack() {
+    hapticImpact('light');
+
+    // 1. Если открыто модальное окно когнитивного замка
+    const modal = document.getElementById('cognitive-lock-modal');
+    if (modal && modal.classList.contains('active')) {
+        closeCognitiveLock();
+        switchTab('dashboard');
+        updateBackButton();
+        return;
+    }
+
+    const activeTab = document.querySelector('.tab-content.active')?.id;
+
+    // 2. Если открыта вкладка «Дневник» -> возврат на дашборд
+    if (activeTab === 'tab-journal') {
+        switchTab('dashboard');
+        updateBackButton();
+        return;
+    }
+
+    // 3. Если открыта вкладка «SOS» -> плавный возврат по глубине шагов
+    if (activeTab === 'tab-sos') {
+        // Форма фиксации срыва
+        const relapseForm = document.getElementById('relapse-form');
+        if (relapseForm && !relapseForm.classList.contains('hidden')) {
+            relapseForm.classList.add('hidden');
+            updateBackButton();
+            return;
+        }
+
+        // Раунд 3: Напарник -> возврат в Раунд 2
+        const stepPartner = document.getElementById('spiritual-step-partner');
+        if (stepPartner && !stepPartner.classList.contains('hidden')) {
+            stepPartner.classList.add('hidden');
+            document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
+            updateBackButton();
+            return;
+        }
+
+        // Раунд 2: Углубленное чтение -> возврат в Раунд 1
+        const stepRound2 = document.getElementById('spiritual-step-round2');
+        if (stepRound2 && !stepRound2.classList.contains('hidden')) {
+            if (round2TimerInterval) {
+                clearInterval(round2TimerInterval);
+                round2TimerInterval = null;
+            }
+            stepRound2.classList.add('hidden');
+            document.getElementById('spiritual-step-study')?.classList.remove('hidden');
+            updateBackButton();
+            return;
+        }
+
+        // Раунд 1: Изучение статьи -> возврат к выбору темы искушения
+        const stepStudy = document.getElementById('spiritual-step-study');
+        if (stepStudy && !stepStudy.classList.contains('hidden')) {
+            stepStudy.classList.add('hidden');
+            document.getElementById('spiritual-step-select')?.classList.remove('hidden');
+            updateBackButton();
+            return;
+        }
+
+        // Блок духовной помощи (выбор темы) -> возврат к базовым советам SOS
+        const spiritualContent = document.getElementById('sos-spiritual-content');
+        if (spiritualContent && !spiritualContent.classList.contains('hidden')) {
+            spiritualContent.classList.add('hidden');
+            document.getElementById('panic-relapse-section')?.classList.remove('hidden');
+            document.getElementById('sos-dynamic-content')?.classList.remove('hidden');
+            updateBackButton();
+            return;
+        }
+
+        // Базовые советы SOS -> возврат на начальный экран SOS
+        const dynamicContent = document.getElementById('sos-dynamic-content');
+        if (dynamicContent && !dynamicContent.classList.contains('hidden')) {
+            dynamicContent.classList.add('hidden');
+            document.getElementById('sos-start-screen')?.classList.remove('hidden');
+            updateBackButton();
+            return;
+        }
+
+        // Начальный экран SOS -> возврат на дашборд
+        switchTab('dashboard');
+        updateBackButton();
+        return;
+    }
+
+    // Резервный возврат на дашборд
+    switchTab('dashboard');
+    updateBackButton();
+}
+
+// Регистрируем слушатель нативной кнопки «Назад»
+if (tg && tg.BackButton) {
+    try {
+        tg.BackButton.onClick(handleNativeBack);
+    } catch (e) {
+        console.debug('BackButton registration error:', e);
+    }
+}
+
 // Извлекаем user_id
 function getUserId() {
     if (tg?.initDataUnsafe?.user?.id) {
@@ -43,6 +203,8 @@ function showToast(message, type = 'success') {
 
 // Переключение вкладок (Tabs Routing)
 function switchTab(tabId) {
+    hapticSelection();
+
     // Скрываем все вкладки
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     // Убираем активный класс у кнопок
@@ -73,6 +235,8 @@ function switchTab(tabId) {
             openCognitiveLock();
         }
     }
+
+    updateBackButton();
 }
 
 // Слушатели для Bottom Nav
@@ -108,7 +272,7 @@ function checkDefaultTab() {
 // Загрузка всей статистики и данных с бэкенда
 async function loadAllData() {
     try {
-        const response = await fetch(`/api/stats?user_id=${userId}`);
+        const response = await apiFetch(`/api/stats?user_id=${userId}`);
         if (!response.ok) {
             throw new Error(`Ошибка: ${response.status}`);
         }
@@ -305,6 +469,7 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
     const text = input.value.trim();
     
     if (text.length < 5) {
+        hapticNotification('error');
         showToast('Заметка слишком короткая (минимум 5 символов)', 'error');
         return;
     }
@@ -314,7 +479,7 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
     btn.querySelector('.btn-text').textContent = 'Сохранение...';
     
     try {
-        const response = await fetch('/api/journal', {
+        const response = await apiFetch('/api/journal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, content: text })
@@ -322,14 +487,17 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
         
         const resData = await response.json();
         if (response.ok && resData.success) {
+            hapticNotification('success');
             showToast(resData.message);
             input.value = ''; // очищаем поле ввода
             await loadAllData(); // перезагружаем историю
         } else {
+            hapticNotification('error');
             showToast(resData.error || 'Ошибка сохранения заметки', 'error');
         }
     } catch (err) {
         console.error(err);
+        hapticNotification('error');
         showToast('Ошибка сети при сохранении', 'error');
     } finally {
         btn.disabled = false;
@@ -459,12 +627,14 @@ function openCognitiveLock() {
     modal.classList.add('active');
     
     setTimeout(() => input.focus(), 100);
+    updateBackButton();
 }
 
 // Закрытие модального окна
 function closeCognitiveLock() {
     const modal = document.getElementById('cognitive-lock-modal');
     modal.classList.remove('active');
+    updateBackButton();
 }
 
 // Слушатель кнопки SOS (показывает когнитивный замок вместо прямого старта)
@@ -497,16 +667,19 @@ function validatePuzzleAnswer() {
     const userAnswer = parseInt(input.value.trim(), 10);
     
     if (isNaN(userAnswer)) {
+        hapticNotification('error');
         showToast('Пожалуйста, введите числовой ответ', 'error');
         return;
     }
     
     if (userAnswer === currentPuzzleAnswer) {
+        hapticNotification('success');
         showToast('Когнитивный замок успешно пройден! Мозг переключен.', 'success');
         isSosUnlocked = true; // Снимаем защиту
         closeCognitiveLock();
         startSosProcess(); // Запускаем загрузку шагов SOS
     } else {
+        hapticNotification('error');
         showToast('Неверно! Попробуйте решить новую задачу.', 'error');
         input.value = '';
         
@@ -523,7 +696,7 @@ function validatePuzzleAnswer() {
 // Отправка запроса на инициализацию таймера "тихой тревоги"
 async function initiatePanicTimer() {
     try {
-        await fetch('/api/panic', {
+        await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'initiate' })
@@ -545,7 +718,7 @@ async function startSosProcess() {
     btn.querySelector('.btn-text').textContent = 'Подключение ИИ-ассистента...';
     
     try {
-        const response = await fetch('/api/panic', {
+        const response = await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'start' })
@@ -575,6 +748,7 @@ async function startSosProcess() {
             // Переключаем экраны
             startScreen.classList.add('hidden');
             dynamicContent.classList.remove('hidden');
+            updateBackButton();
             showToast('Индивидуальные шаги сгенерированы!');
         } else {
             showToast(resData.error || 'Ошибка при загрузке SOS-шагов', 'error');
@@ -595,13 +769,14 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
     btn.disabled = true;
     
     try {
-        const response = await fetch('/api/panic', {
+        const response = await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'helped' })
         });
         const resData = await response.json();
         if (response.ok && resData.success) {
+            hapticNotification('success');
             showToast(resData.message || 'Отлично! Уведомление отправлено в чат.');
             // Сбрасываем экран SOS
             document.getElementById('sos-dynamic-content').classList.add('hidden');
@@ -621,7 +796,7 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
 // Переход от базовых SOS-шагов к духовному подкреплению (jw.org)
 document.getElementById('btn-panic-failed')?.addEventListener('click', async () => {
     try {
-        await fetch('/api/panic', {
+        await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'failed' })
@@ -636,10 +811,10 @@ document.getElementById('btn-panic-failed')?.addEventListener('click', async () 
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.add('hidden');
+    updateBackButton();
     showToast('Переходим к духовному подкреплению (jw.org)...', 'info');
 });
 
-// 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 let selectedTemptationTypes = [];
 let currentSpiritualNotes = '';
@@ -650,6 +825,7 @@ let round2SecondsRemaining = 20 * 60;
 // Обработка чипов искушений (мультивыбор)
 document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+        hapticSelection();
         const currentType = btn.getAttribute('data-type');
         if (btn.classList.contains('active')) {
             btn.classList.remove('active');
@@ -689,12 +865,13 @@ document.getElementById('btn-spiritual-change-topic')?.addEventListener('click',
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.add('hidden');
     document.getElementById('spiritual-step-select')?.classList.remove('hidden');
+    updateBackButton();
 });
 
 // Раунд 1: Кнопка «Помогло! Тяга отступила»
 document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
     try {
-        await fetch('/api/panic', {
+        await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'helped' })
@@ -702,6 +879,7 @@ document.getElementById('btn-spiritual-helped')?.addEventListener('click', async
     } catch (e) {
         console.error(e);
     }
+    hapticNotification('success');
     showToast('Слава Богу! Вы устояли и защитили свой стрик! 💪', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
@@ -709,10 +887,11 @@ document.getElementById('btn-spiritual-helped')?.addEventListener('click', async
     switchTab('dashboard');
 });
 
-// Раунд 1: Кнопка перехода к Раунду 2 («Не помогло — Раунд 2 (погружение от 20 минут)»)
+// Раунд 1: Кнопка перехода к Раунд 2 («Не помогло — Раунд 2 (погружение от 20 минут)»)
 document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', async () => {
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
+    updateBackButton();
     showToast('Загружаем углубленный материал Раунда 2...', 'info');
     await loadRound2Solution(selectedTemptationTypes, currentSpiritualNotes);
 });
@@ -780,6 +959,7 @@ function startRound2Timer() {
                 badge.textContent = '00:00 ✓';
             }
             showToast('20 минут размышления завершены. Выберите результат:', 'success');
+            hapticNotification('success');
         } else {
             updateRound2TimerDisplay();
         }
@@ -808,7 +988,7 @@ document.getElementById('btn-round2-helped')?.addEventListener('click', async ()
         round2TimerInterval = null;
     }
     try {
-        await fetch('/api/panic', {
+        await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'helped' })
@@ -816,6 +996,7 @@ document.getElementById('btn-round2-helped')?.addEventListener('click', async ()
     } catch (e) {
         console.error(e);
     }
+    hapticNotification('success');
     showToast('Слава Богу! Раунд 2 помог успокоить сердце, стрик защищен! 💪', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
@@ -831,6 +1012,7 @@ document.getElementById('btn-round2-to-partner')?.addEventListener('click', () =
     }
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.remove('hidden');
+    updateBackButton();
     showToast('Раунд 3: Напишите напарнику лично прямо сейчас 🤝', 'info');
 });
 
@@ -856,7 +1038,7 @@ document.getElementById('btn-confirm-partner-contacted')?.addEventListener('clic
     const btn = document.getElementById('btn-confirm-partner-contacted');
     btn.disabled = true;
     try {
-        await fetch('/api/panic', {
+        await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, action: 'partner_contacted' })
@@ -865,6 +1047,7 @@ document.getElementById('btn-confirm-partner-contacted')?.addEventListener('clic
         console.error(e);
     }
     
+    hapticNotification('success');
     showToast('Ты поступил мудро и зрело! Стрик сохранен. Держись вместе с напарником! 🤝', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
@@ -880,7 +1063,19 @@ document.getElementById('link-show-direct-relapse')?.addEventListener('click', (
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
     document.getElementById('relapse-form')?.classList.remove('hidden');
+    updateBackButton();
     showToast('Укажите триггер срыва для анализа и извлечения уроков', 'info');
+});
+
+// Кнопки показа и скрытия формы записи срыва
+document.getElementById('btn-show-relapse-form')?.addEventListener('click', () => {
+    document.getElementById('relapse-form')?.classList.remove('hidden');
+    updateBackButton();
+});
+
+document.getElementById('btn-cancel-relapse')?.addEventListener('click', () => {
+    document.getElementById('relapse-form')?.classList.add('hidden');
+    updateBackButton();
 });
 
 async function loadSpiritualSolution(tType, notes) {
@@ -899,7 +1094,7 @@ async function loadSpiritualSolution(tType, notes) {
     
     try {
         const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);
-        const resp = await fetch('/api/spiritual_help', {
+        const resp = await apiFetch('/api/spiritual_help', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -995,6 +1190,7 @@ async function loadSpiritualSolution(tType, notes) {
             // Переключаем шаги
             stepSelect?.classList.add('hidden');
             stepStudy?.classList.remove('hidden');
+            updateBackButton();
             return;
         }
     } catch (e) {
@@ -1014,7 +1210,7 @@ async function loadRound2Solution(tType, notes) {
     
     try {
         const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);
-        const resp = await fetch('/api/spiritual_help', {
+        const resp = await apiFetch('/api/spiritual_help', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1090,6 +1286,7 @@ async function loadRound2Solution(tType, notes) {
                 }
                 
                 cardContainer.innerHTML = html;
+                updateBackButton();
                 
                 cardContainer.querySelectorAll('.spiritual-card').forEach(card => {
                     card.addEventListener('click', (e) => {
@@ -1111,44 +1308,29 @@ async function loadRound2Solution(tType, notes) {
     }
 }
 
-// 3. SOS - Не помогло -> Переход к духовному подкреплению
-document.getElementById('btn-panic-failed').addEventListener('click', () => {
-    document.getElementById('sos-dynamic-content')?.classList.add('hidden');
-    document.getElementById('panic-relapse-section')?.classList.add('hidden');
-    document.getElementById('sos-spiritual-content')?.classList.remove('hidden');
-    
-    // Сбрасываем к шагу 1 (выбор искушения)
-    document.getElementById('spiritual-step-select')?.classList.remove('hidden');
-    document.getElementById('spiritual-step-study')?.classList.add('hidden');
-    document.getElementById('spiritual-step-round2')?.classList.add('hidden');
-    document.getElementById('spiritual-step-partner')?.classList.add('hidden');
-    
-    showToast('Выберите искушение для целевой помощи 🛡️', 'info');
-});
-
-
-
 // 5. Обработка селекта причин (вывод текстового поля для "Другое")
-document.getElementById('relapse-trigger').addEventListener('change', (e) => {
+document.getElementById('relapse-trigger')?.addEventListener('change', (e) => {
+    hapticSelection();
     const val = e.target.value;
     const otherGroup = document.getElementById('other-trigger-group');
     if (val === 'Другое') {
-        otherGroup.classList.remove('hidden');
+        otherGroup?.classList.remove('hidden');
     } else {
-        otherGroup.classList.add('hidden');
+        otherGroup?.classList.add('hidden');
     }
 });
 
 // 6. Подтверждение и отправка срыва
-document.getElementById('btn-submit-relapse').addEventListener('click', async () => {
+document.getElementById('btn-submit-relapse')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-submit-relapse');
     const triggerSelect = document.getElementById('relapse-trigger');
     const otherInput = document.getElementById('other-trigger-input');
     
-    let triggerValue = triggerSelect.value;
+    let triggerValue = triggerSelect?.value || 'Скука / Безделье';
     if (triggerValue === 'Другое') {
-        const text = otherInput.value.trim();
+        const text = (otherInput?.value || '').trim();
         if (text.length < 3) {
+            hapticNotification('error');
             showToast('Пожалуйста, опишите причину подробнее', 'error');
             return;
         }
@@ -1167,7 +1349,7 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
             bodyPayload = { user_id: userId, action: 'failed', trigger_reason: triggerValue };
         }
         
-        const response = await fetch(endpoint, {
+        const response = await apiFetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(bodyPayload)
@@ -1175,6 +1357,7 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
         
         const resData = await response.json();
         if (response.ok && resData.success) {
+            hapticNotification('success');
             if (resData.confession_pending) {
                 showToast(resData.message, 'info');
             } else {
@@ -1182,13 +1365,13 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
             }
             
             // Очищаем форму и возвращаем исходное состояние
-            document.getElementById('relapse-form').classList.add('hidden');
-            document.getElementById('sos-dynamic-content').classList.add('hidden');
-            document.getElementById('sos-start-screen').classList.remove('hidden');
-            document.getElementById('sos-guidelines-box').classList.remove('hidden');
-            otherInput.value = '';
-            triggerSelect.value = 'Скука / Безделье';
-            document.getElementById('other-trigger-group').classList.add('hidden');
+            document.getElementById('relapse-form')?.classList.add('hidden');
+            document.getElementById('sos-dynamic-content')?.classList.add('hidden');
+            document.getElementById('sos-start-screen')?.classList.remove('hidden');
+            document.getElementById('sos-guidelines-box')?.classList.remove('hidden');
+            if (otherInput) otherInput.value = '';
+            if (triggerSelect) triggerSelect.value = 'Скука / Безделье';
+            document.getElementById('other-trigger-group')?.classList.add('hidden');
             
             // Перезагружаем данные и выводим дашборд
             await loadAllData();
@@ -1199,10 +1382,12 @@ document.getElementById('btn-submit-relapse').addEventListener('click', async ()
                 setTimeout(() => tg.close(), 2500); // Даем больше времени прочитать уведомление об исповеди
             }
         } else {
+            hapticNotification('error');
             showToast(resData.error || 'Ошибка сохранения срыва', 'error');
         }
     } catch (err) {
         console.error(err);
+        hapticNotification('error');
         showToast('Ошибка сети при отправке срыва', 'error');
     } finally {
         btn.disabled = false;
@@ -1247,9 +1432,22 @@ function initHomeScreenShortcut() {
     }
 }
 
+// Глобальная делегация виброотклика на кнопки и элементы выбора
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn, .nav-item, .chip-btn');
+    if (btn) {
+        if (btn.classList.contains('nav-item') || btn.classList.contains('chip-btn')) {
+            hapticSelection();
+        } else {
+            hapticImpact('light');
+        }
+    }
+});
+
 // Запуск при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     checkDefaultTab();
     loadAllData();
     initHomeScreenShortcut();
+    updateBackButton();
 });

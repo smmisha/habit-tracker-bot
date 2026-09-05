@@ -30,7 +30,7 @@ body {
     background-color: var(--bg-color);
     color: var(--text-primary);
     min-height: 100vh;
-    padding: 16px 16px calc(16px + var(--nav-height) + 12px) 16px;
+    padding: 16px 16px calc(16px + var(--nav-height) + 12px + env(safe-area-inset-bottom, 0px)) 16px;
     display: flex;
     justify-content: center;
     overflow-x: hidden;
@@ -42,6 +42,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Заголовок */
@@ -538,8 +539,9 @@ textarea:focus, .form-input:focus, .form-select:focus {
     bottom: 0;
     left: 0;
     right: 0;
-    height: var(--nav-height);
-    background: rgba(13, 13, 17, 0.75);
+    min-height: var(--nav-height);
+    height: auto;
+    background: rgba(13, 13, 17, 0.85);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid var(--card-border);
@@ -547,7 +549,8 @@ textarea:focus, .form-input:focus, .form-select:focus {
     justify-content: space-around;
     align-items: center;
     z-index: 100;
-    padding: 0 10px;
+    padding: 6px 10px calc(16px + env(safe-area-inset-bottom, 0px)) 10px;
+    box-sizing: border-box;
 }
 
 .nav-item {
@@ -695,7 +698,7 @@ textarea:focus, .form-input:focus, .form-select:focus {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
-    padding: 20px;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px)) 20px;
 }
 
 .modal-overlay.active {

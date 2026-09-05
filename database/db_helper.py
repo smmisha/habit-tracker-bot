@@ -11,6 +11,9 @@ class DatabaseHelper:
             
         # Настройка асинхронного движка. Для SQLite отключаем пул потоков для безопасности
         connect_args = {}
+        engine_kwargs = {
+            "echo": echo,
+        }
         if url.startswith("sqlite"):
             connect_args = {"check_same_thread": False}
         elif "postgresql" in url:
@@ -18,11 +21,13 @@ class DatabaseHelper:
                 "statement_cache_size": 0,
                 "prepared_statement_cache_size": 0,
             }
+            engine_kwargs["pool_pre_ping"] = True
+            engine_kwargs["pool_recycle"] = 180
             
         self.engine = create_async_engine(
             url,
-            echo=echo,
-            connect_args=connect_args
+            connect_args=connect_args,
+            **engine_kwargs
         )
         
         self.session_factory = async_sessionmaker(

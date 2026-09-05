@@ -14,9 +14,14 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy import select, and_
 
 from database.models import Base, User, CheckInLog, RelapseLog, SlipEvent, JournalEntry
-from database.db_helper import db_helper
+from database.db_helper import db_helper, DatabaseHelper
 from handlers.checkin import is_on_time
 from handlers.tracker import format_timedelta, execute_relapse_reset
+from config.config import settings
+import hmac
+import hashlib
+import json
+from urllib.parse import urlencode
 from main import (
     handle_ping,
     handle_api_stats,
@@ -25,6 +30,7 @@ from main import (
     handle_api_manage_panic,
     handle_api_accept_covenant,
     handle_api_spiritual_help,
+    validate_telegram_init_data,
 )
 
 class TestApiAndBusinessLogic(AioHTTPTestCase):
@@ -355,6 +361,138 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         formatted2 = format_timedelta(td2)
         self.assertNotIn("дн.", formatted2)
         self.assertIn("45</b> мин.", formatted2)
+
+    def _create_mock_init_data(self, user_dict, bot_token=None, tamper=False):
+        token = bot_token or settings.bot_token
+        auth_date = int(datetime.now().timestamp())
+        params = {
+            "auth_date": str(auth_date),
+            "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
+            "user": json.dumps(user_dict, separators=(",", ":")),
+        }
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+        secret_key = hmac.new(b"WebAppData", token.encode("utf-8"), hashlib.sha256).digest()
+        calc_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        if tamper:
+            calc_hash = "invalid_hash_signature_12345"
+        params["hash"] = calc_hash
+        return urlencode(params)
+
+    def test_validate_telegram_init_data_valid(self):
+        user = {"id": 123456, "first_name": "John", "username": "johndoe"}
+        init_data = self._create_mock_init_data(user)
+        result = validate_telegram_init_data(init_data, settings.bot_token)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.get("id"), 123456)
+        self.assertEqual(result.get("username"), "johndoe")
+
+    def test_validate_telegram_init_data_invalid_hash(self):
+        user = {"id": 123456}
+        init_data = self._create_mock_init_data(user, tamper=True)
+        result = validate_telegram_init_data(init_data, settings.bot_token)
+        self.assertIsNone(result)
+
+    def test_validate_telegram_init_data_tampered(self):
+        user = {"id": 123456}
+        init_data = self._create_mock_init_data(user)
+        tampered = init_data.replace("123456", "999999")
+        result = validate_telegram_init_data(tampered, settings.bot_token)
+        self.assertIsNone(result)
+
+    def test_validate_telegram_init_data_wrong_token(self):
+        user = {"id": 123456}
+        init_data = self._create_mock_init_data(user, bot_token="12345:wrong_token")
+        result = validate_telegram_init_data(init_data, settings.bot_token)
+        self.assertIsNone(result)
+
+    def test_validate_telegram_init_data_missing_hash(self):
+        result = validate_telegram_init_data("user=%7B%22id%22%3A123%7D&auth_date=12345", settings.bot_token)
+        self.assertIsNone(result)
+
+    def test_validate_telegram_init_data_empty(self):
+        self.assertIsNone(validate_telegram_init_data("", settings.bot_token))
+        self.assertIsNone(validate_telegram_init_data(None, settings.bot_token))
+        self.assertIsNone(validate_telegram_init_data("test", ""))
+
+    async def test_stats_with_valid_init_data(self):
+        init_data = self._create_mock_init_data({"id": self.user_id})
+        headers = {"X-Telegram-Init-Data": init_data}
+        resp = await self.client.request("GET", "/api/stats", headers=headers)
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertIn("streak_str", data)
+        self.assertIn("calendar_days", data)
+
+    async def test_stats_with_invalid_init_data(self):
+        init_data = self._create_mock_init_data({"id": self.user_id}, tamper=True)
+        headers = {"X-Telegram-Init-Data": init_data}
+        resp = await self.client.request("GET", "/api/stats", headers=headers)
+        self.assertEqual(resp.status, 401)
+        data = await resp.json()
+        self.assertIn("error", data)
+
+    async def test_journal_with_valid_init_data(self):
+        with patch("main.bot.send_message", new_callable=AsyncMock):
+            init_data = self._create_mock_init_data({"id": self.user_id})
+            headers = {"X-Telegram-Init-Data": init_data}
+            resp = await self.client.request("POST", "/api/journal", headers=headers, json={
+                "content": "A valid authenticated journal reflection note"
+            })
+            self.assertEqual(resp.status, 200)
+            data = await resp.json()
+            self.assertTrue(data.get("success"))
+            self.assertIn("message", data)
+
+    async def test_journal_with_invalid_init_data(self):
+        init_data = self._create_mock_init_data({"id": self.user_id}, tamper=True)
+        headers = {"X-Telegram-Init-Data": init_data}
+        resp = await self.client.request("POST", "/api/journal", headers=headers, json={
+            "content": "A valid journal note with bad auth"
+        })
+        self.assertEqual(resp.status, 401)
+
+    async def test_relapse_with_invalid_init_data(self):
+        init_data = self._create_mock_init_data({"id": self.user_id}, tamper=True)
+        headers = {"X-Telegram-Init-Data": init_data}
+        resp = await self.client.request("POST", "/api/relapse", headers=headers, json={
+            "trigger_reason": "Relapse test"
+        })
+        self.assertEqual(resp.status, 401)
+
+    async def test_panic_with_invalid_init_data(self):
+        init_data = self._create_mock_init_data({"id": self.user_id}, tamper=True)
+        headers = {"X-Telegram-Init-Data": init_data}
+        resp = await self.client.request("POST", "/api/panic", headers=headers, json={
+            "action": "start"
+        })
+        self.assertEqual(resp.status, 401)
+
+    async def test_spiritual_help_with_valid_init_data(self):
+        init_data = self._create_mock_init_data({"id": self.user_id})
+        headers = {"X-Telegram-Init-Data": init_data}
+        resp = await self.client.request("GET", "/api/spiritual_help?temptation_type=loneliness", headers=headers)
+        self.assertEqual(resp.status, 200)
+        data = await resp.json()
+        self.assertTrue(data.get("ok"))
+        self.assertIn("materials", data)
+
+    @patch("database.db_helper.create_async_engine")
+    def test_database_helper_postgres_pool_settings(self, mock_create_engine):
+        helper = DatabaseHelper("postgresql+asyncpg://user:pass@localhost/testdb")
+        mock_create_engine.assert_called_once()
+        _, kwargs = mock_create_engine.call_args
+        self.assertTrue(kwargs.get("pool_pre_ping"))
+        self.assertEqual(kwargs.get("pool_recycle"), 180)
+        self.assertEqual(kwargs.get("connect_args", {}).get("statement_cache_size"), 0)
+
+    @patch("database.db_helper.create_async_engine")
+    def test_database_helper_sqlite_pool_settings(self, mock_create_engine):
+        helper = DatabaseHelper("sqlite+aiosqlite:///:memory:")
+        mock_create_engine.assert_called_once()
+        _, kwargs = mock_create_engine.call_args
+        self.assertNotIn("pool_pre_ping", kwargs)
+        self.assertNotIn("pool_recycle", kwargs)
+        self.assertEqual(kwargs.get("connect_args", {}).get("check_same_thread"), False)
 
 if __name__ == "__main__":
     unittest.main()

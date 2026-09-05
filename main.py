@@ -165,8 +165,104 @@ async def handle_business_message(message: Message):
 
 # --- ВЕБ-СЕРВЕР И API ДЛЯ DASHBOARD (WEBAPP) ---
 
+import hmac
+import hashlib
+import json
+from urllib.parse import parse_qsl
 from datetime import datetime, date, timedelta
 from database.models import User, CheckInLog, RelapseLog
+
+def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
+    """
+    Проверяет валидность строки initData от Telegram WebApp по алгоритму:
+    1. Ключ = HMAC-SHA256("WebAppData", bot_token)
+    2. Хеш = HMAC-SHA256(ключ, отсортированные пары "ключ=значение")
+    3. Сравнение с hash из initData (безопасное по времени через hmac.compare_digest)
+    
+    Возвращает словарь с распарсенными данными пользователя (dict) при успехе,
+    либо None при невалидной подписи или ошибке.
+    """
+    if not init_data or not bot_token:
+        return None
+        
+    try:
+        parsed_data = dict(parse_qsl(init_data, keep_blank_values=True))
+        if "hash" not in parsed_data:
+            return None
+            
+        received_hash = parsed_data.pop("hash")
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
+        
+        secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            return None
+            
+        user_raw = parsed_data.get("user")
+        if user_raw:
+            try:
+                user_dict = json.loads(user_raw)
+                return user_dict
+            except Exception:
+                pass
+        return parsed_data
+    except Exception as e:
+        logger.warning(f"Ошибка при валидации initData Telegram: {e}")
+        return None
+
+def extract_authenticated_user_id(request: web.Request, payload: dict | None = None) -> tuple[int | None, web.Response | None]:
+    """
+    Извлекает и верифицирует user_id:
+    1. Если передан initData (в заголовке X-Telegram-Init-Data, query или теле запроса),
+       проверяет цифровую подпись Telegram HMAC-SHA256.
+       Если подпись недействительна -> возвращает (None, 401 Response).
+       Если действительна -> извлекает user_id.
+    2. Если initData отсутствует -> использует user_id из query или payload (fallback для тестов/URL).
+    
+    Возвращает кортеж: (user_id: int | None, error_response: web.Response | None).
+    """
+    init_data_str = (
+        request.headers.get("X-Telegram-Init-Data")
+        or request.query.get("initData")
+        or request.query.get("init_data")
+    )
+    if not init_data_str and payload and isinstance(payload, dict):
+        init_data_str = payload.get("initData") or payload.get("init_data")
+
+    if init_data_str:
+        user_info = validate_telegram_init_data(init_data_str, settings.bot_token)
+        if not user_info:
+            return None, web.json_response({"error": "Invalid Telegram initData signature"}, status=401)
+        
+        user_id = user_info.get("id") if isinstance(user_info, dict) else None
+        if not user_id:
+            return None, web.json_response({"error": "Invalid user in initData"}, status=400)
+        try:
+            user_id = int(user_id)
+            if user_id <= 0:
+                return None, web.json_response({"error": "Invalid user_id"}, status=400)
+            return user_id, None
+        except (ValueError, TypeError):
+            return None, web.json_response({"error": "Invalid user_id in initData"}, status=400)
+
+    # Fallback на user_id
+    raw_user_id = None
+    if payload and isinstance(payload, dict) and "user_id" in payload:
+        raw_user_id = payload.get("user_id")
+    if raw_user_id is None:
+        raw_user_id = request.query.get("user_id")
+
+    if raw_user_id is None or raw_user_id == "":
+        return None, None
+
+    try:
+        user_id = int(raw_user_id)
+        if user_id <= 0:
+            return None, web.json_response({"error": "Invalid user_id"}, status=400)
+        return user_id, None
+    except (ValueError, TypeError):
+        return None, web.json_response({"error": "Invalid user_id"}, status=400)
 
 async def handle_ping(request):
     return web.Response(text="OK")
@@ -181,15 +277,11 @@ async def handle_webapp(request):
 
 async def handle_api_stats(request):
     """API получения статистики пользователя для WebApp"""
-    try:
-        user_id_str = request.query.get('user_id')
-        if not user_id_str:
-            return web.json_response({"error": "Missing user_id"}, status=400)
-        user_id = int(user_id_str)
-        if user_id <= 0:
-            return web.json_response({"error": "Invalid user_id"}, status=400)
-    except ValueError:
-        return web.json_response({"error": "Invalid user_id"}, status=400)
+    user_id, err_resp = extract_authenticated_user_id(request)
+    if err_resp:
+        return err_resp
+    if user_id is None:
+        return web.json_response({"error": "Missing user_id"}, status=400)
 
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -332,13 +424,16 @@ async def handle_api_stats(request):
 async def handle_api_save_journal(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
-        content = str(data.get("content", "")).strip()
-        if user_id <= 0:
-            return web.json_response({"error": "Invalid user_id"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    user_id, err_resp = extract_authenticated_user_id(request, data)
+    if err_resp:
+        return err_resp
+    if user_id is None:
+        return web.json_response({"error": "Invalid request payload"}, status=400)
         
+    content = str(data.get("content", "")).strip()
     if not content or len(content) < 5:
         return web.json_response({"error": "Заметка слишком короткая (минимум 5 символов)"}, status=400)
         
@@ -398,12 +493,16 @@ async def handle_api_save_journal(request):
 async def handle_api_log_relapse(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
-        trigger_reason = str(data.get("trigger_reason", "Срыв зафиксирован через Mini App")).strip()[:500]
-        if user_id <= 0:
-            return web.json_response({"error": "Invalid user_id"}, status=400)
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    user_id, err_resp = extract_authenticated_user_id(request, data)
+    if err_resp:
+        return err_resp
+    if user_id is None:
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    trigger_reason = str(data.get("trigger_reason", "Срыв зафиксирован через Mini App")).strip()[:500]
         
     from database.models import User
     from handlers.tracker import execute_relapse_reset
@@ -434,12 +533,17 @@ async def handle_api_log_relapse(request):
 async def handle_api_manage_panic(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
         action = str(data.get("action", "")).strip()  # "initiate", "start", "helped", "failed", "partner_contacted"
         trigger_reason = str(data.get("trigger_reason", "Тяга во время паники")).strip()[:500]
-        if user_id <= 0 or action not in {"initiate", "start", "helped", "failed", "partner_contacted"}:
+        if action not in {"initiate", "start", "helped", "failed", "partner_contacted"}:
             return web.json_response({"error": "Invalid request payload"}, status=400)
     except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    user_id, err_resp = extract_authenticated_user_id(request, data)
+    if err_resp:
+        return err_resp
+    if user_id is None:
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
     from database.models import User, RelapseLog, JournalEntry
@@ -540,10 +644,13 @@ async def handle_api_manage_panic(request):
 async def handle_api_accept_covenant(request):
     try:
         data = await request.json()
-        user_id = int(data.get("user_id"))
-        if user_id <= 0:
-            return web.json_response({"error": "Invalid request payload"}, status=400)
     except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+        
+    user_id, err_resp = extract_authenticated_user_id(request, data)
+    if err_resp:
+        return err_resp
+    if user_id is None:
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
     # Получаем контекст состояний для пользователя
@@ -577,7 +684,7 @@ async def handle_api_spiritual_help(request):
     """API получения индивидуальной духовной помощи по типам искушений (wol.jw.org / jw.org)"""
     from services.ai_service import ai_service
     
-    user_id_param = None
+    body = None
     temptation_type = None
     temptation_types = None
     user_notes = None
@@ -586,17 +693,19 @@ async def handle_api_spiritual_help(request):
     if request.method == "POST":
         try:
             body = await request.json()
-            user_id_param = body.get("user_id")
-            temptation_type = body.get("temptation_type")
-            temptation_types = body.get("temptation_types")
-            user_notes = body.get("user_notes")
-            if "round" in body:
-                round_param = int(body.get("round", 1))
+            if isinstance(body, dict):
+                temptation_type = body.get("temptation_type")
+                temptation_types = body.get("temptation_types")
+                user_notes = body.get("user_notes")
+                if "round" in body:
+                    round_param = int(body.get("round", 1))
         except Exception:
             pass
             
-    if not user_id_param:
-        user_id_param = request.query.get("user_id")
+    user_id, err_resp = extract_authenticated_user_id(request, body)
+    if err_resp:
+        return err_resp
+            
     if not temptation_type:
         temptation_type = request.query.get("temptation_type")
     if not temptation_types and request.query.get("temptation_types"):
@@ -618,17 +727,15 @@ async def handle_api_spiritual_help(request):
     )
     
     partner_username = None
-    if user_id_param:
+    if user_id:
         try:
-            uid = int(user_id_param)
-            if uid > 0:
-                from database.models import User
-                async with db_helper.session_factory() as session:
-                    user_row = await session.get(User, uid)
-                    if user_row and user_row.partner_username:
-                        partner_username = user_row.partner_username
+            from database.models import User
+            async with db_helper.session_factory() as session:
+                user_row = await session.get(User, user_id)
+                if user_row and user_row.partner_username:
+                    partner_username = user_row.partner_username
         except Exception as e:
-            logger.warning(f"Ошибка получения напарника для пользователя {user_id_param}: {e}")
+            logger.warning(f"Ошибка получения напарника для пользователя {user_id}: {e}")
             
     return web.json_response({
         "ok": True,
