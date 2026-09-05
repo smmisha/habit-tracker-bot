@@ -217,16 +217,35 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         f"{stats_text}"
     )
     
+    confirm_text += (
+        "\n\n🕊️ <b>Точка нового старта:</b>\n"
+        "Срыв — это не поражение, а повод сделать работу над ошибками. "
+        "Перечитайте и подтвердите Соглашение совести перед Иеговой, чтобы обновить свой фокус и продолжить путь чистоты."
+    )
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    from config.config import settings
+    covenant_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📜 Читать и подтвердить Соглашение совести",
+                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html")
+                )
+            ]
+        ]
+    )
+    
     try:
         if callback:
-            await callback.message.edit_text(confirm_text)
+            await callback.message.edit_text(confirm_text, reply_markup=covenant_kb)
         elif message:
-            await message.answer(confirm_text)
+            await message.answer(confirm_text, reply_markup=covenant_kb)
         elif bot:
-            await bot.send_message(chat_id=user_id, text=confirm_text)
+            await bot.send_message(chat_id=user_id, text=confirm_text, reply_markup=covenant_kb)
         else:
             from main import bot as default_bot
-            await default_bot.send_message(chat_id=user_id, text=confirm_text)
+            await default_bot.send_message(chat_id=user_id, text=confirm_text, reply_markup=covenant_kb)
     except Exception as e:
         logger.error(f"Failed to send confirmation text to user: {e}")
 

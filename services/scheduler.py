@@ -54,33 +54,17 @@ async def check_and_send_checkins():
                         session.add(new_log)
                         await session.commit()
                         
-                        # Отправляем сообщение с кнопкой Соглашения пользователю
-                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-                        from main import bot, dp
-                        
-                        keyboard = InlineKeyboardMarkup(
-                            inline_keyboard=[
-                                [
-                                    InlineKeyboardButton(
-                                        text="📄 Читать и подписать Соглашение",
-                                        web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html")
-                                    )
-                                ]
-                            ]
-                        )
+                        # Отправляем сообщение с прямыми кнопками чек-ина
+                        from keyboards.inline import get_checkin_keyboard
+                        from main import bot
                         
                         sent_msg = await bot.send_message(
                             chat_id=user.id,
-                            text="🔔 <b>Время ежедневного отчета!</b>\n\n"
-                                 "Пожалуйста, откройте и подтвердите Соглашение совести перед заполнением отчёта.",
-                             reply_markup=keyboard
+                            text="🔔 <b>Время ежедневного отчета!</b>\n\nКак прошел сегодняшний день? Все под контролем?",
+                            reply_markup=get_checkin_keyboard()
                         )
                         
-                        # Сохраняем ID сообщения в контексте FSM
-                        state_ctx = dp.fsm.resolve_context(bot, user.id, user.id)
-                        await state_ctx.update_data(covenant_msg_id=sent_msg.message_id)
-                        
-                        logger.info(f"Отправлен ежедневный чек-ин (соглашение) пользователю {user.id}")
+                        logger.info(f"Отправлен ежедневный чек-ин пользователю {user.id}")
             except Exception as e:
                 logger.error(f"Ошибка при обработке чек-ина для пользователя {user.id}: {e}")
 

@@ -87,37 +87,3 @@ def get_trigger_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-
-TEMPTATION_ITEMS = [
-    ("masturbation", "✊ Мастурбация"),
-    ("porn", "🔞 Порнография"),
-    ("sexting", "💬 Секстинг / Чат"),
-    ("premarital_sex", "💔 Секс с девушкой"),
-    ("general", "🧠 Навязчивые мысли"),
-]
-
-def get_temptation_multiselect_keyboard(selected_types: list = None) -> InlineKeyboardMarkup:
-    """Инлайн-клавиатура множественного выбора искушений с чекбоксами"""
-    if selected_types is None:
-        selected_types = []
-        
-    keyboard = []
-    for key, label in TEMPTATION_ITEMS:
-        box = "✅" if key in selected_types else "⬜"
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"{box} {label}",
-                callback_data=f"toggle_temptation:{key}"
-            )
-        ])
-        
-    count = len(selected_types)
-    submit_text = f"🔍 Получить духовное решение ({count})" if count > 0 else "🔍 Получить духовное решение"
-    keyboard.append([
-        InlineKeyboardButton(text=submit_text, callback_data="submit_temptations")
-    ])
-    keyboard.append([
-        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_spiritual")
-    ])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-

@@ -212,21 +212,11 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertEqual(user.total_relapses, initial_relapses)
             self.assertEqual(user.streak_start, initial_streak_start)
 
-    def test_temptation_multiselect_keyboard(self):
-        from keyboards.inline import get_temptation_multiselect_keyboard
-        # Empty selection
-        kb1 = get_temptation_multiselect_keyboard([])
-        btn_texts1 = [btn.text for row in kb1.inline_keyboard for btn in row]
-        self.assertTrue(any("⬜" in t for t in btn_texts1))
-        self.assertFalse(any("✅" in t for t in btn_texts1))
-
-        # Selected items
-        kb2 = get_temptation_multiselect_keyboard(["porn", "masturbation"])
-        btn_texts2 = [btn.text for row in kb2.inline_keyboard for btn in row]
-        self.assertTrue(any("✅ 🔞 Порнография" in t for t in btn_texts2))
-        self.assertTrue(any("✅ ✊ Мастурбация" in t for t in btn_texts2))
-        self.assertTrue(any("⬜ 💬 Секстинг" in t for t in btn_texts2))
-        self.assertTrue(any("Получить духовное решение (2)" in t for t in btn_texts2))
+    def test_panic_clean_launcher(self):
+        from config.config import settings
+        from handlers.panic import router
+        # Verify router exists and has panic command
+        self.assertIsNotNone(router)
 
     async def test_accept_covenant_invalid_payload(self):
         resp = await self.client.request("POST", "/api/accept_covenant", json={

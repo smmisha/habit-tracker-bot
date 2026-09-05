@@ -40,6 +40,8 @@ async def set_commands(bot: Bot):
     """Настройка команд меню бота"""
     commands = [
         BotCommand(command="start", description="🏠 Главное меню"),
+        BotCommand(command="covenant", description="📜 Соглашение совести"),
+        BotCommand(command="panic", description="🆘 SOS / Духовная помощь"),
         BotCommand(command="settings", description="⚙️ Настройки"),
         BotCommand(command="cancel", description="❌ Отменить операцию")
     ]
@@ -614,7 +616,6 @@ async def handle_api_spiritual_help(request):
         round=round_param
     )
     
-    sent_to_telegram = False
     partner_username = None
     if user_id_param:
         try:
@@ -625,12 +626,8 @@ async def handle_api_spiritual_help(request):
                     user_row = await session.get(User, uid)
                     if user_row and user_row.partner_username:
                         partner_username = user_row.partner_username
-                
-                from handlers.panic import send_spiritual_message_to_user
-                await send_spiritual_message_to_user(bot, uid, data)
-                sent_to_telegram = True
         except Exception as e:
-            logger.warning(f"Не удалось отправить духовное сообщение пользователю {user_id_param} в Telegram: {e}")
+            logger.warning(f"Ошибка получения напарника для пользователя {user_id_param}: {e}")
             
     return web.json_response({
         "ok": True,
@@ -644,7 +641,7 @@ async def handle_api_spiritual_help(request):
         "temptation_title": data.get("temptation_title", "Духовное подкрепление"),
         "primary_material": data.get("primary_material"),
         "materials": data.get("materials", []),
-        "sent_to_telegram": sent_to_telegram
+        "sent_to_telegram": False
     })
 
 async def start_web_server():

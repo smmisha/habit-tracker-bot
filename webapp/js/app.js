@@ -638,10 +638,10 @@ document.getElementById('btn-panic-failed')?.addEventListener('click', async () 
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 // 2. Индивидуальная духовная помощь (wol.jw.org / jw.org)
 let selectedTemptationTypes = [];
-let isArticleReadConfirmed = false;
-let isRound2ReadConfirmed = false;
 let currentSpiritualNotes = '';
 let cachedPartnerUsername = null;
+let round2TimerInterval = null;
+let round2SecondsRemaining = 20 * 60;
 
 // Обработка чипов искушений (мультивыбор)
 document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn => {
@@ -677,30 +677,35 @@ document.getElementById('btn-find-spiritual-solution')?.addEventListener('click'
 
 // Кнопка смены темы / возврата к выбору
 document.getElementById('btn-spiritual-change-topic')?.addEventListener('click', () => {
+    if (round2TimerInterval) {
+        clearInterval(round2TimerInterval);
+        round2TimerInterval = null;
+    }
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.add('hidden');
     document.getElementById('spiritual-step-select')?.classList.remove('hidden');
 });
 
-// Кнопка подтверждения прочтения статьи (Раунд 1)
-document.getElementById('btn-spiritual-mark-read')?.addEventListener('click', () => {
-    isArticleReadConfirmed = true;
-    const btnRead = document.getElementById('btn-spiritual-mark-read');
-    const btnHelped = document.getElementById('btn-spiritual-helped');
-    
-    btnRead.classList.add('read-confirmed');
-    btnRead.innerHTML = '✓ 1. Статья прочитана';
-    
-    if (btnHelped) {
-        btnHelped.disabled = false;
-        btnHelped.style.opacity = '1';
-        btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
+// Раунд 1: Кнопка «Помогло! Тяга отступила»
+document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'helped' })
+        });
+    } catch (e) {
+        console.error(e);
     }
-    showToast('Статья прочитана! Если тяга отступила — подтвердите победу. Если нет — переходите к Раунду 2.', 'info');
+    showToast('Слава Богу! Вы устояли и защитили свой стрик! 💪', 'success');
+    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
+    document.getElementById('sos-start-screen')?.classList.remove('hidden');
+    switchTab('dashboard');
 });
 
-// Кнопка перехода к Раунду 2 («Не помогло / Тяга осталась»)
+// Раунд 1: Кнопка перехода к Раунду 2 («Не помогло — Раунд 2 (погружение от 20 минут)»)
 document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', async () => {
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
@@ -708,28 +713,121 @@ document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', as
     await loadRound2Solution(selectedTemptationTypes, currentSpiritualNotes);
 });
 
-// Кнопка подтверждения прочтения статьи (Раунд 2)
-document.getElementById('btn-round2-mark-read')?.addEventListener('click', () => {
-    isRound2ReadConfirmed = true;
-    const btnRead = document.getElementById('btn-round2-mark-read');
-    const btnHelped = document.getElementById('btn-round2-helped');
+// Функции управления таймером Раунда 2
+function startRound2Timer() {
+    if (round2TimerInterval) {
+        clearInterval(round2TimerInterval);
+        round2TimerInterval = null;
+    }
     
-    btnRead.classList.add('read-confirmed');
-    btnRead.innerHTML = '✓ 1. Второй материал изучен';
+    round2SecondsRemaining = 20 * 60; // 20 минут
+    updateRound2TimerDisplay();
+    
+    const btnHelped = document.getElementById('btn-round2-helped');
+    const btnPartner = document.getElementById('btn-round2-to-partner');
+    const timerStatus = document.getElementById('round2-timer-status');
+    const badge = document.getElementById('round2-timer-badge');
     
     if (btnHelped) {
-        btnHelped.disabled = false;
-        btnHelped.style.opacity = '1';
-        btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
+        btnHelped.disabled = true;
+        btnHelped.style.opacity = '0.4';
     }
-    showToast('Материал изучен! Если тяга отступила — подтвердите победу. Если нет — напишите напарнику.', 'info');
+    if (btnPartner) {
+        btnPartner.disabled = true;
+        btnPartner.style.opacity = '0.4';
+    }
+    if (badge) {
+        badge.style.background = 'rgba(253, 203, 110, 0.25)';
+        badge.style.borderColor = '#fdcb6e';
+        badge.style.color = '#ffeaa7';
+    }
+    if (timerStatus) {
+        timerStatus.innerHTML = `⏳ Погрузитесь в чтение и молитву. Кнопки станут активны через <b id="round2-timer-remaining">20:00</b>`;
+        timerStatus.style.color = '#fdcb6e';
+    }
+    
+    round2TimerInterval = setInterval(() => {
+        round2SecondsRemaining--;
+        if (round2SecondsRemaining <= 0) {
+            clearInterval(round2TimerInterval);
+            round2TimerInterval = null;
+            round2SecondsRemaining = 0;
+            updateRound2TimerDisplay();
+            
+            // Разблокируем кнопки
+            if (btnHelped) {
+                btnHelped.disabled = false;
+                btnHelped.style.opacity = '1';
+                btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
+            }
+            if (btnPartner) {
+                btnPartner.disabled = false;
+                btnPartner.style.opacity = '1';
+                btnPartner.style.boxShadow = '0 0 15px rgba(116, 185, 255, 0.3)';
+            }
+            if (timerStatus) {
+                timerStatus.innerHTML = `✅ <b>20 минут размышления завершены!</b> Оцените результат изучения:`;
+                timerStatus.style.color = '#55efc4';
+            }
+            if (badge) {
+                badge.style.background = 'rgba(0, 184, 148, 0.25)';
+                badge.style.borderColor = '#00b894';
+                badge.style.color = '#55efc4';
+                badge.textContent = '00:00 ✓';
+            }
+            showToast('20 минут размышления завершены. Выберите результат:', 'success');
+        } else {
+            updateRound2TimerDisplay();
+        }
+    }, 1000);
+}
+
+function updateRound2TimerDisplay() {
+    const minutes = Math.floor(round2SecondsRemaining / 60);
+    const seconds = round2SecondsRemaining % 60;
+    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    
+    const badge = document.getElementById('round2-timer-badge');
+    const remainingSpan = document.getElementById('round2-timer-remaining');
+    if (badge && round2SecondsRemaining > 0) {
+        badge.textContent = timeStr;
+    }
+    if (remainingSpan) {
+        remainingSpan.textContent = timeStr;
+    }
+}
+
+// Раунд 2: Кнопка «Помогло! Тяга отступила»
+document.getElementById('btn-round2-helped')?.addEventListener('click', async () => {
+    if (round2TimerInterval) {
+        clearInterval(round2TimerInterval);
+        round2TimerInterval = null;
+    }
+    try {
+        await fetch('/api/panic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, action: 'helped' })
+        });
+    } catch (e) {
+        console.error(e);
+    }
+    showToast('Слава Богу! Раунд 2 помог успокоить сердце, стрик защищен! 💪', 'success');
+    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
+    document.getElementById('sos-start-screen')?.classList.remove('hidden');
+    switchTab('dashboard');
 });
 
-// Кнопка перехода к экрану напарника («Все еще не помогло»)
+// Раунд 2: Кнопка перехода к Раунду 3 («Не помогло — Раунд 3: Написать напарнику лично»)
 document.getElementById('btn-round2-to-partner')?.addEventListener('click', () => {
+    if (round2TimerInterval) {
+        clearInterval(round2TimerInterval);
+        round2TimerInterval = null;
+    }
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.remove('hidden');
-    showToast('Обратитесь за поддержкой к напарнику прямо сейчас 🤝', 'info');
+    showToast('Раунд 3: Напишите напарнику лично прямо сейчас 🤝', 'info');
 });
 
 // Кнопка открытия диалога с напарником
@@ -794,18 +892,6 @@ async function loadSpiritualSolution(tType, notes) {
     
     // Скрываем блок фиксации срыва во время изучения
     document.getElementById('panic-relapse-section')?.classList.add('hidden');
-    
-    // Сброс состояния подтверждения
-    isArticleReadConfirmed = false;
-    if (btnRead) {
-        btnRead.classList.remove('read-confirmed');
-        btnRead.innerHTML = '📖 1. Я прочитал(а) статью';
-    }
-    if (btnHelped) {
-        btnHelped.disabled = true;
-        btnHelped.style.opacity = '0.5';
-        btnHelped.style.boxShadow = 'none';
-    }
     
     try {
         const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);
@@ -901,12 +987,6 @@ async function loadSpiritualSolution(tType, notes) {
                         }
                     });
                 });
-            }
-            
-            if (data.sent_to_telegram) {
-                showToast('Целевая статья и духовное наставление отправлены вам в чат Telegram 📖', 'info');
-            }
-            
             // Переключаем шаги
             stepSelect?.classList.add('hidden');
             stepStudy?.classList.remove('hidden');
@@ -923,19 +1003,9 @@ async function loadRound2Solution(tType, notes) {
     const actionBox = document.getElementById('round2-action-box');
     const actionText = document.getElementById('round2-action-text');
     const cardContainer = document.getElementById('round2-card-container');
-    const btnRead = document.getElementById('btn-round2-mark-read');
-    const btnHelped = document.getElementById('btn-round2-helped');
     
-    isRound2ReadConfirmed = false;
-    if (btnRead) {
-        btnRead.classList.remove('read-confirmed');
-        btnRead.innerHTML = '📖 1. Я изучил(а) второй материал';
-    }
-    if (btnHelped) {
-        btnHelped.disabled = true;
-        btnHelped.style.opacity = '0.5';
-        btnHelped.style.boxShadow = 'none';
-    }
+    // Запускаем 20-минутный таймер Раунда 2
+    startRound2Timer();
     
     try {
         const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);
@@ -1051,57 +1121,7 @@ document.getElementById('btn-panic-failed').addEventListener('click', () => {
     showToast('Выберите искушение для целевой помощи 🛡️', 'info');
 });
 
-// 4. Духовный блок: Мне помогло! (Раунд 1)
-document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
-    if (!isArticleReadConfirmed) {
-        showToast('Пожалуйста, сначала изучите статью и нажмите «Я прочитал(а) статью»', 'info');
-        return;
-    }
-    
-    const btn = document.getElementById('btn-spiritual-helped');
-    btn.disabled = true;
-    try {
-        await fetch('/api/panic', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'helped' })
-        });
-    } catch (e) {
-        console.error(e);
-    }
-    showToast('Слава Богу! Вы устояли и защитили свой стрик! 💪', 'success');
-    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
-    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
-    document.getElementById('sos-start-screen')?.classList.remove('hidden');
-    btn.disabled = false;
-    switchTab('dashboard');
-});
 
-// 5. Духовный блок: Мне помогло! (Раунд 2)
-document.getElementById('btn-round2-helped')?.addEventListener('click', async () => {
-    if (!isRound2ReadConfirmed) {
-        showToast('Пожалуйста, сначала изучите второй материал и нажмите «Я изучил(а) второй материал»', 'info');
-        return;
-    }
-    
-    const btn = document.getElementById('btn-round2-helped');
-    btn.disabled = true;
-    try {
-        await fetch('/api/panic', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'helped' })
-        });
-    } catch (e) {
-        console.error(e);
-    }
-    showToast('Слава Богу! Вы победили во 2-м раунде! Стрик сохранен! 💪', 'success');
-    document.getElementById('sos-spiritual-content')?.classList.add('hidden');
-    document.getElementById('panic-relapse-section')?.classList.remove('hidden');
-    document.getElementById('sos-start-screen')?.classList.remove('hidden');
-    btn.disabled = false;
-    switchTab('dashboard');
-});
 
 // 5. Обработка селекта причин (вывод текстового поля для "Другое")
 document.getElementById('relapse-trigger').addEventListener('change', (e) => {
