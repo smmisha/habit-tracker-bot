@@ -239,6 +239,10 @@ function renderChart(triggers) {
         triggersChart.destroy();
     }
     
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js is not loaded');
+        return;
+    }
     const ctx = canvas.getContext('2d');
     triggersChart = new Chart(ctx, {
         type: 'doughnut',
