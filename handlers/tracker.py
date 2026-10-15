@@ -103,7 +103,8 @@ async def process_relapse_confirm(callback: CallbackQuery):
 async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: CallbackQuery = None, message: Message = None, bot = None):
     """Выполнить сброс счетчика чистоты и залогировать причину"""
     now = datetime.now()
-    now_utc = datetime.now(timezone.utc)
+    # Используем naive UTC datetime для совместимости с TIMESTAMP WITHOUT TIME ZONE в PostgreSQL (asyncpg)
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -125,7 +126,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         )
         session.add(log)
         
-        # 3. Логирование срыва в slip_events (в UTC)
+        # 3. Логирование срыва в slip_events (в UTC без tzinfo для asyncpg)
         slip = SlipEvent(
             user_id=user_id,
             occurred_at=now_utc,
@@ -133,13 +134,12 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         )
         session.add(slip)
         
-        # 4. Обновляем активный чек-ин на "relapsed", если он находится в статусе pending
+        # 4. Обновляем все активные чек-ины в статусе pending на "relapsed" (защита от MultipleResultsFound)
         checkin_result = await session.execute(
             select(CheckInLog)
             .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
         )
-        active_checkin = checkin_result.scalar_one_or_none()
-        if active_checkin:
+        for active_checkin in checkin_result.scalars().all():
             active_checkin.status = "relapsed"
             active_checkin.timestamp = now
             

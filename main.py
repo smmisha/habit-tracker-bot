@@ -122,7 +122,7 @@ async def handle_business_message(message: Message):
                 )
             )
         )
-        active_checkin = checkin_result.scalar_one_or_none()
+        active_checkin = checkin_result.scalars().first()
         
         if active_checkin:
             now = datetime.now()
@@ -521,8 +521,15 @@ async def handle_api_log_relapse(request):
     except Exception:
         pass
 
-    # Выполняем сброс счетчика чистоты и оповещение напарника по правилу скользящего окна
-    await execute_relapse_reset(user_id, trigger_reason, bot=bot)
+    # Выполняем сброс счетчика чистоты и оповещение напарника
+    try:
+        await execute_relapse_reset(user_id, trigger_reason, bot=bot)
+    except Exception as e:
+        logger.exception(f"Ошибка при фиксации срыва для пользователя {user_id}: {e}")
+        return web.json_response(
+            {"success": False, "error": f"Ошибка сервера при сохранении срыва: {e}"},
+            status=500
+        )
     
     return web.json_response({
         "success": True, 

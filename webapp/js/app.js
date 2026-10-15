@@ -1069,6 +1069,7 @@ document.getElementById('link-show-direct-relapse')?.addEventListener('click', (
 
 // Кнопки показа и скрытия формы записи срыва
 document.getElementById('btn-show-relapse-form')?.addEventListener('click', () => {
+    relapseSource = 'direct';
     document.getElementById('relapse-form')?.classList.remove('hidden');
     updateBackButton();
 });
@@ -1341,13 +1342,8 @@ document.getElementById('btn-submit-relapse')?.addEventListener('click', async (
     btn.textContent = 'Обработка...';
     
     try {
-        let endpoint = '/api/relapse';
-        let bodyPayload = { user_id: userId, trigger_reason: triggerValue };
-        
-        if (relapseSource === 'panic') {
-            endpoint = '/api/panic';
-            bodyPayload = { user_id: userId, action: 'failed', trigger_reason: triggerValue };
-        }
+        const endpoint = '/api/relapse';
+        const bodyPayload = { user_id: userId, trigger_reason: triggerValue, source: relapseSource };
         
         const response = await apiFetch(endpoint, {
             method: 'POST',
@@ -1355,8 +1351,17 @@ document.getElementById('btn-submit-relapse')?.addEventListener('click', async (
             body: JSON.stringify(bodyPayload)
         });
         
-        const resData = await response.json();
-        if (response.ok && resData.success) {
+        let resData = null;
+        try {
+            resData = await response.json();
+        } catch (parseErr) {
+            console.error('JSON parse error on /api/relapse:', parseErr);
+            hapticNotification('error');
+            showToast(`Ошибка сервера (${response.status}) при сохранении срыва`, 'error');
+            return;
+        }
+
+        if (response.ok && resData && resData.success) {
             hapticNotification('success');
             if (resData.confession_pending) {
                 showToast(resData.message, 'info');
@@ -1365,8 +1370,11 @@ document.getElementById('btn-submit-relapse')?.addEventListener('click', async (
             }
             
             // Очищаем форму и возвращаем исходное состояние
+            relapseSource = 'direct';
             document.getElementById('relapse-form')?.classList.add('hidden');
             document.getElementById('sos-dynamic-content')?.classList.add('hidden');
+            document.getElementById('sos-spiritual-content')?.classList.add('hidden');
+            document.getElementById('panic-relapse-section')?.classList.remove('hidden');
             document.getElementById('sos-start-screen')?.classList.remove('hidden');
             document.getElementById('sos-guidelines-box')?.classList.remove('hidden');
             if (otherInput) otherInput.value = '';
@@ -1377,13 +1385,13 @@ document.getElementById('btn-submit-relapse')?.addEventListener('click', async (
             await loadAllData();
             switchTab('dashboard');
             
-            // По возможности закрываем Mini App, чтобы пользователь сразу зашел в ИИ-чат
+            // По возможности закрываем Mini App, чтобы пользователь сразу зашел в чат
             if (tg) {
-                setTimeout(() => tg.close(), 2500); // Даем больше времени прочитать уведомление об исповеди
+                setTimeout(() => tg.close(), 2500);
             }
         } else {
             hapticNotification('error');
-            showToast(resData.error || 'Ошибка сохранения срыва', 'error');
+            showToast((resData && resData.error) || `Ошибка сохранения срыва (${response.status})`, 'error');
         }
     } catch (err) {
         console.error(err);

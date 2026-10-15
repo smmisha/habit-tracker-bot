@@ -66,7 +66,7 @@ async def process_checkin_clean(callback: CallbackQuery):
                 )
             )
         )
-        active_checkin = checkin_result.scalar_one_or_none()
+        active_checkin = checkin_result.scalars().first()
         
         # Если активной записи нет, создаем ее для сегодняшнего дня
         if not active_checkin:
@@ -146,7 +146,7 @@ async def save_excuse(user_id: int, excuse_text: str, callback: CallbackQuery = 
             select(CheckInLog)
             .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
         )
-        active_checkin = checkin_result.scalar_one_or_none()
+        active_checkin = checkin_result.scalars().first()
         
         if active_checkin:
             active_checkin.status = "clean"
