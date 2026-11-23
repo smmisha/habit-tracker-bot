@@ -31,12 +31,13 @@ async def check_and_send_checkins():
                 # Определяем локальное время пользователя
                 user_tz = pytz.timezone(user.timezone)
                 local_now = datetime.now(user_tz)
-                local_time_str = local_now.strftime("%H:%M")
+                hour, minute = map(int, user.checkin_time.split(":"))
+                today_date = local_now.date()
+                scheduled_today = user_tz.localize(datetime.combine(today_date, time(hour, minute)))
+                elapsed_sec = (local_now - scheduled_today).total_seconds()
                 
-                # Если время совпадает с назначенным
-                if local_time_str == user.checkin_time:
-                    today_date = local_now.date()
-                    
+                # Запускаем в 2-часовом окне (защита от пропуска минуты из-за дрейфа или рестарта)
+                if 0 <= elapsed_sec < 7200:
                     # Проверяем, отправляли ли уже чек-ин на сегодня
                     checkin_result = await session.execute(
                         select(CheckInLog)
@@ -58,22 +59,19 @@ async def check_and_send_checkins():
                                 pass
                             user.last_checkin_message_id = None
 
-                        # Создаем новую запись чек-ина со статусом "pending"
-                        new_log = CheckInLog(
-                            user_id=user.id,
-                            checkin_date=today_date,
-                            status="pending"
-                        )
-                        session.add(new_log)
-                        await session.commit()
-                        
-                        # Отправляем сообщение с прямыми кнопками чек-ина
+                        # Отправляем сообщение с прямыми кнопками чек-ина (до фиксации в БД, чтобы сбой сети не скрыл чек-ин)
                         sent_msg = await bot.send_message(
                             chat_id=user.id,
                             text="🔔 <b>Время ежедневного отчета!</b>\n\nКак прошел сегодняшний день? Все под контролем?",
                             reply_markup=get_checkin_keyboard()
                         )
-                        new_log.message_id = sent_msg.message_id
+                        new_log = CheckInLog(
+                            user_id=user.id,
+                            checkin_date=today_date,
+                            status="pending",
+                            message_id=sent_msg.message_id
+                        )
+                        session.add(new_log)
                         user.last_checkin_message_id = sent_msg.message_id
                         await session.commit()
                         

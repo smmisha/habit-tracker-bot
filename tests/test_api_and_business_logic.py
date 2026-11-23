@@ -707,5 +707,42 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertEqual(user.consecutive_missed_checkins, 0)
             cb.message.edit_text.assert_awaited()
 
+    async def test_check_and_send_checkins_drift_tolerant(self):
+        import pytz
+        from services.scheduler import check_and_send_checkins
+
+        kyiv_tz = pytz.timezone("Europe/Kyiv")
+        fake_now_kyiv = kyiv_tz.localize(datetime(2026, 11, 23, 21, 1, 10))  # 21:01 (drifted 1 min past 21:00)
+
+        mock_sent = MagicMock()
+        mock_sent.message_id = 555
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.is_active = True
+            user.checkin_time = "21:00"
+            user.timezone = "Europe/Kyiv"
+            await session.commit()
+
+        with patch("services.scheduler.datetime") as mock_dt, \
+             patch("main.bot.send_message", new_callable=AsyncMock, return_value=mock_sent) as mock_send:
+            mock_dt.now.side_effect = lambda tz=None: fake_now_kyiv if tz else datetime(2026, 11, 23, 21, 1, 10)
+            mock_dt.combine = datetime.combine
+
+            # First tick at 21:01 sends even though scheduled was 21:00
+            await check_and_send_checkins()
+            self.assertEqual(mock_send.call_count, 1)
+
+            # Second tick at 21:02 must NOT send duplicate
+            await check_and_send_checkins()
+            self.assertEqual(mock_send.call_count, 1)
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.last_checkin_message_id, 555)
+            log = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == self.user_id))).scalar_one()
+            self.assertEqual(log.checkin_date, date(2026, 11, 23))
+            self.assertEqual(log.message_id, 555)
+
 if __name__ == "__main__":
     unittest.main()
