@@ -3,101 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Habit Tracker</title>
-    <!-- Подключение шрифтов -->
+    <title>Чистый путь</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <!-- Стили -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <!-- Telegram WebApp JS SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Chart.js для графиков -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="app-container">
-        <!-- Заголовок (плавающий или статичный) -->
         <header class="app-header">
-            <h1 class="glow-text" id="header-title">HABIT TRACKER</h1>
-            <p class="subtitle" id="header-subtitle">Загрузка аналитики...</p>
+            <h1 id="header-title">Чистый путь</h1>
+            <p class="subtitle" id="header-subtitle">Загрузка данных...</p>
         </header>
 
-        <!-- ВКЛАДКА 1: ДАШБОРД -->
+        <!-- Вкладка 1: Дашборд -->
         <div id="tab-dashboard" class="tab-content active">
-            <!-- Карточка мотивации -->
-            <div class="quote-card glass glow-blue">
-                <span class="quote-icon">💬</span>
-                <p class="quote-text" id="daily-quote">Загрузка мотивации...</p>
+            <div class="quote-card">
+                <span class="quote-icon" aria-hidden="true">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                </span>
+                <p class="quote-text" id="daily-quote">Загрузка мысли дня...</p>
             </div>
 
-            <!-- Карточки ключевой статистики -->
-            <div class="stats-grid">
-                <div class="stat-card glass glow-green">
-                    <div class="stat-icon">⏳</div>
-                    <div class="stat-info">
-                        <span class="stat-label">Текущий стрик</span>
-                        <span class="stat-value" id="current-streak">0 дн.</span>
+            <div class="stats-hero">
+                <div class="stat-primary">
+                    <div class="stat-header-row">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <span>Текущий стрик</span>
                     </div>
+                    <div class="stat-value-hero" id="current-streak">0 дн.</div>
+                    <div class="stat-caption">Время в чистоте</div>
                 </div>
-                <div class="stat-card glass glow-red">
-                    <div class="stat-icon">⚠️</div>
-                    <div class="stat-info">
-                        <span class="stat-label">Всего срывов</span>
-                        <span class="stat-value" id="total-relapses">0</span>
+                <div class="stat-secondary">
+                    <div class="stat-header-row">
+                        <span>Срывы</span>
                     </div>
+                    <div class="stat-value-side" id="total-relapses">0</div>
+                    <div class="stat-caption">За всё время</div>
                 </div>
             </div>
 
-            <!-- Добавление на главный экран -->
-            <div id="add-to-home-container" class="hidden">
-                <button class="btn btn-secondary" id="btn-add-to-home" style="border-color: rgba(96, 239, 255, 0.3); box-shadow: 0 4px 15px rgba(96, 239, 255, 0.1);">
-                    📲 Добавить на главный экран
-                </button>
-            </div>
+            <div class="action-stack">
+                <div id="add-to-home-container" class="hidden">
+                    <button class="btn btn-secondary" id="btn-add-to-home">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
+                        <span>Добавить на главный экран</span>
+                    </button>
+                </div>
 
-            <!-- Соглашение о духовной чистоте (Постоянный Манифест) -->
-            <div style="margin-bottom: 15px; text-align: center;">
-                <a href="purity_covenant_jw_v2.html?mode=manifest" class="btn btn-outline" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; padding: 10px 18px; border-color: rgba(162, 155, 254, 0.4); color: #a29bfe; text-decoration: none; border-radius: 12px; width: 100%; box-sizing: border-box; background: rgba(162, 155, 254, 0.06);">
-                    📜 <span>Мой манифест чистоты перед Иеговой</span>
+                <a href="purity_covenant_jw_v2.html?mode=manifest" class="btn-manifest">
+                    <span class="btn-manifest-left">
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+                        <span>Мой манифест чистоты перед Иеговой</span>
+                    </span>
+                    <svg class="icon btn-manifest-chevron" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
                 </a>
             </div>
 
-            <!-- Сетка календаря (GitHub style) -->
-            <section class="dashboard-section glass">
-                <h2 class="section-title">📅 Календарь за последние 30 дней</h2>
+            <section class="dashboard-section">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+                    <span>Календарь за последние 30 дней</span>
+                </h2>
                 <div class="calendar-wrapper">
-                    <div class="calendar-grid" id="calendar-grid">
-                        <!-- Заполняется динамически -->
-                    </div>
+                    <div class="calendar-grid" id="calendar-grid"></div>
                 </div>
                 <div class="calendar-legend">
                     <div class="legend-item"><span class="legend-color clean"></span> Чисто</div>
-                    <div class="legend-item"><span class="legend-color late"></span> Забыл</div>
+                    <div class="legend-item"><span class="legend-color late"></span> Авто (&gt;24ч)</div>
                     <div class="legend-item"><span class="legend-color relapse"></span> Срыв</div>
-                    <div class="legend-item"><span class="legend-color no-data"></span> Пропуск</div>
+                    <div class="legend-item"><span class="legend-color no-data"></span> Нет данных</div>
                 </div>
             </section>
 
-            <!-- График триггеров срывов -->
-            <section class="dashboard-section glass">
-                <h2 class="section-title">📊 Аналитика триггеров срывов</h2>
+            <section class="dashboard-section">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                    <span>Аналитика триггеров</span>
+                </h2>
                 <div class="chart-container">
-                    <canvas id="triggers-chart"></canvas>
+                    <div id="triggers-bars" class="triggers-bars"></div>
                     <div id="no-chart-data" class="no-data-msg hidden">
-                        🎉 Нет срывов! Вы отлично справляетесь!
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        <span>За этот период срывов не зафиксировано</span>
                     </div>
                 </div>
             </section>
         </div>
 
-        <!-- ВКЛАДКА 2: ДНЕВНИК -->
+        <!-- Вкладка 2: Дневник -->
         <div id="tab-journal" class="tab-content">
-            <!-- Форма новой заметки -->
-            <section class="dashboard-section glass">
-                <h2 class="section-title">✍️ Заметка за сегодня</h2>
+            <section class="dashboard-section">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <span>Заметка за сегодня</span>
+                </h2>
                 <div class="form-group">
-                    <textarea id="journal-input" placeholder="Как проходит твой сегодняшний день? Опиши мысли, уровень стресса, тяги, или что помогло остаться чистым..." rows="4"></textarea>
+                    <textarea id="journal-input" placeholder="Опиши мысли, уровень стресса, тягу или что помогло сохранить чистоту сегодня..." rows="4"></textarea>
                 </div>
                 <button class="btn btn-primary" id="btn-save-journal">
                     <span class="btn-text">Сохранить запись</span>
@@ -105,247 +108,257 @@
                 </button>
             </section>
 
-            <!-- История дневника -->
-            <section class="dashboard-section glass">
-                <h2 class="section-title">📖 Последние записи</h2>
-                <div class="journal-history" id="journal-history">
-                    <!-- Заполняется динамически -->
-                </div>
+            <section class="dashboard-section">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                    <span>Последние записи</span>
+                </h2>
+                <div class="journal-history" id="journal-history"></div>
             </section>
         </div>
 
-        <!-- ВКЛАДКА 3: SOS / СРЫВ -->
+        <!-- Вкладка 3: Помощь / Срыв -->
         <div id="tab-sos" class="tab-content">
-            <!-- Рекомендации SOS -->
-            <section class="dashboard-section glass" id="sos-guidelines-box">
-                <h2 class="section-title">🆘 Скорая помощь при тяге (SOS)</h2>
-                
+            <section class="dashboard-section" id="sos-guidelines-box">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Поддержка при тяге</span>
+                </h2>
+
                 <!-- Начальный экран SOS -->
                 <div id="sos-start-screen" class="sos-start-screen">
-                    <p class="sos-text" style="margin-bottom: 15px;">
-                        Чувствуешь сильный импульс? Не сдавайся! Нажми кнопку ниже, чтобы запустить персонализированную ИИ-помощь, 
-                        которая подберет 3 шага первой помощи специально под твое текущее состояние.
+                    <p class="sos-text">
+                        Если ощущаешь сильный импульс, остановись на минуту. Нажми кнопку ниже — подберём три конкретных шага первой помощи под текущее состояние.
                     </p>
                     <button class="btn btn-danger" id="btn-start-sos">
-                        <span class="btn-text">🆘 Мне тяжело / Нужна помощь</span>
+                        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        <span class="btn-text">Мне тяжело, нужна помощь</span>
                         <span class="spinner hidden"></span>
                     </button>
                 </div>
-                
-                <!-- Динамический блок советов (заполняется через JS) -->
+
+                <!-- Динамический блок советов -->
                 <div id="sos-dynamic-content" class="sos-dynamic-content hidden">
-                    <p class="sos-text" style="margin-bottom: 12px; font-weight: 500; color: var(--accent-blue);">
-                        🧠 ИИ-ассистент подобрал 3 индивидуальных действия для тебя:
-                    </p>
-                    <div id="sos-guidelines-list" class="sos-guidelines-list" style="display: flex; flex-direction: column; gap: 12px;">
-                        <!-- Сюда вставляются карточки -->
-                    </div>
-                    <div class="sos-actions" style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px;">
-                        <button class="btn btn-success" id="btn-panic-helped">✅ Мне помогло / Тяга ушла</button>
-                        <button class="btn btn-primary" id="btn-panic-failed" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe); border: none; font-weight: 600;">📖 Не помогло / Духовное подкрепление (jw.org)</button>
+                    <p class="sos-ai-intro">Три шага на ближайшие минуты:</p>
+                    <div id="sos-guidelines-list" class="sos-guidelines-list"></div>
+                    <div class="sos-actions">
+                        <button class="btn btn-success" id="btn-panic-helped">
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                            <span>Мне помогло, тяга отступила</span>
+                        </button>
+                        <button class="btn btn-secondary" id="btn-panic-failed">
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            <span>Нужно духовное подкрепление (jw.org)</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Блок духовного подкрепления (jw.org / wol.jw.org) -->
+                <!-- Блок духовного подкрепления -->
                 <div id="sos-spiritual-content" class="sos-spiritual-content hidden">
-                    
-                    <!-- Шаг 1: Выбор искушения и ввод ощущений -->
+
+                    <!-- Шаг 1: Выбор искушения и заметки -->
                     <div id="spiritual-step-select" class="spiritual-step-container">
-                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 15px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                <span style="font-size: 20px;">🛡️</span>
-                                <span style="font-size: 15px; font-weight: 700; color: #a29bfe;">Духовная защита: Что происходит?</span>
+                        <div class="spiritual-banner">
+                            <div class="spiritual-banner-header">
+                                <div class="spiritual-banner-title-wrap">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span class="spiritual-banner-title">Духовная защита</span>
+                                </div>
                             </div>
-                            <p class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
-                                Выберите тип искушения или опишите ощущения своими словами. ИИ подберет точное наставление и <b>одну прицельную публикацию</b> для изучения прямо сейчас.
+                            <p class="sos-text" style="margin-bottom: 0;">
+                                Выбери характер искушения или опиши состояние своими словами. Подберём наставление и <strong>прицельную публикацию</strong> для чтения сейчас.
                             </p>
                         </div>
 
-                        <div class="form-group" style="margin-bottom: 12px;">
-                            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">
-                                Отметьте искушения (можно выбрать несколько):
-                            </label>
+                        <div class="form-group">
+                            <span class="field-label">Характер искушения (можно несколько):</span>
                             <div class="temptation-chips" id="temptation-chips-container">
-                                <button type="button" class="chip-btn" data-type="masturbation">✊ Мастурбация</button>
-                                <button type="button" class="chip-btn" data-type="porn">🔞 Порнография</button>
-                                <button type="button" class="chip-btn" data-type="sexting">💬 Секстинг / Чат</button>
-                                <button type="button" class="chip-btn" data-type="premarital_sex">💔 Секс с девушкой</button>
-                                <button type="button" class="chip-btn span-2" data-type="general">🧠 Навязчивые / нечистые мысли</button>
+                                <button type="button" class="chip-btn" data-type="masturbation">Мастурбация</button>
+                                <button type="button" class="chip-btn" data-type="porn">Порнография</button>
+                                <button type="button" class="chip-btn" data-type="sexting">Секстинг / Чат</button>
+                                <button type="button" class="chip-btn" data-type="premarital_sex">Близость вне брака</button>
+                                <button type="button" class="chip-btn span-2" data-type="general">Навязчивые или нечистые мысли</button>
                             </div>
                         </div>
 
-                        <div class="form-group" style="margin-bottom: 16px;">
-                            <label for="spiritual-user-notes" style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">
-                                Или опишите свои ощущения своими словами:
-                            </label>
+                        <div class="form-group">
+                            <label for="spiritual-user-notes">Или опиши ощущения своими словами:</label>
                             <textarea id="spiritual-user-notes" rows="3" class="spiritual-textarea" placeholder="Например: увидел фото, накатило одиночество, тянет написать..."></textarea>
                         </div>
 
-                        <button class="btn btn-primary" id="btn-find-spiritual-solution" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe); border: none; font-weight: 600; width: 100%;">
-                            <span class="btn-text">🔍 Получить духовное решение</span>
+                        <button class="btn btn-primary" id="btn-find-spiritual-solution">
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
+                            <span class="btn-text">Подобрать духовное решение</span>
                             <span class="spinner hidden"></span>
                         </button>
                     </div>
 
-                    <!-- Шаг 2: Духовный ответ, чтение статьи и подтверждение (Раунд 1) -->
+                    <!-- Шаг 2: Раунд 1 — Изучение статьи -->
                     <div id="spiritual-step-study" class="spiritual-step-container hidden">
-                        <div class="spiritual-timer-banner glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; background: rgba(253, 203, 110, 0.12); border: 1px solid rgba(253, 203, 110, 0.35); display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 18px;">📖</span>
-                            <span style="font-size: 12px; color: #ffeaa7; line-height: 1.4;">
-                                <b>Чтение без спешки и ограничений по времени.</b> Главное — не количество минут, а чтобы Слово Бога затронуло и успокоило сердце (от 20 минут или сколько потребуется).
-                            </span>
+                        <div class="spiritual-timer-banner">
+                            <div class="spiritual-timer-left">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                                <div class="spiritual-timer-sub">
+                                    <strong>Чтение без спешки.</strong> Важно не количество минут, а чтобы Слово Бога успокоило сердце (от 20 минут или сколько потребуется).
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(108, 92, 231, 0.12); border: 1px solid rgba(162, 155, 254, 0.3);">
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="font-size: 20px;">📖</span>
-                                    <span id="spiritual-cat-badge" style="font-size: 13px; font-weight: 700; color: #a29bfe;">Духовное наставление</span>
+                        <div class="spiritual-banner">
+                            <div class="spiritual-banner-header">
+                                <div class="spiritual-banner-title-wrap">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                                    <span id="spiritual-cat-badge" class="spiritual-banner-title">Духовное наставление</span>
                                 </div>
-                                <button type="button" id="btn-spiritual-change-topic" style="background: none; border: none; color: #b2bec3; font-size: 11px; cursor: pointer; text-decoration: underline;">
+                                <button type="button" id="btn-spiritual-change-topic" class="btn-link-subtle">
                                     Сменить тему
                                 </button>
                             </div>
-                            <p id="spiritual-thought-text" class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
+                            <p id="spiritual-thought-text" class="sos-text" style="margin-bottom: 0;">
                                 Загрузка духовного наставления...
                             </p>
                         </div>
 
-                        <div id="spiritual-action-box" class="glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; background: rgba(0, 184, 148, 0.15); border: 1px solid rgba(85, 239, 196, 0.4);">
-                            <div style="font-size: 11px; font-weight: 700; color: #55efc4; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-                                <span>💡</span><span>Духовный шаг прямо сейчас:</span>
+                        <div id="spiritual-action-box" class="spiritual-action-box">
+                            <div class="spiritual-action-label">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
+                                <span>Духовный шаг прямо сейчас</span>
                             </div>
-                            <div id="spiritual-action-text" style="font-size: 13px; color: #ffffff; line-height: 1.4; font-style: italic;"></div>
+                            <div id="spiritual-action-text" class="spiritual-action-text"></div>
                         </div>
 
-                        <p class="sos-text" style="margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-secondary);">
-                            🎯 Целевая статья для победы над этим искушением:
+                        <p class="spiritual-section-heading">
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <span>Целевая публикация для чтения:</span>
                         </p>
 
-                        <!-- Одна прицельная карточка материала -->
-                        <div id="spiritual-primary-card-container" style="margin-bottom: 16px;">
-                            <!-- Заполняется динамически -->
-                        </div>
+                        <div id="spiritual-primary-card-container" class="spiritual-cards-slot"></div>
 
-                        <!-- Флоу действий Раунда 1 -->
-                        <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
-                                Прочитайте материал и оцените состояние:
+                        <div class="spiritual-confirmation-box">
+                            <div class="spiritual-confirm-hint">
+                                Прочитай материал и оцени своё состояние:
                             </div>
-
-                            <button class="btn btn-success" id="btn-spiritual-helped" style="width: 100%; margin-bottom: 10px; font-weight: 600;">
-                                ✅ Помогло! Тяга отступила
+                            <button class="btn btn-success" id="btn-spiritual-helped">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                                <span>Помогло, тяга отступила</span>
                             </button>
-
-                            <button class="btn btn-outline" id="btn-spiritual-to-round2" style="width: 100%; border-color: #fdcb6e; color: #ffeaa7; font-weight: 600; font-size: 13px;">
-                                ⏳ Не помогло — Раунд 2 (погружение от 20 минут)
+                            <button class="btn btn-outline-amber" id="btn-spiritual-to-round2">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                <span>Не помогло — Раунд 2 (20 минут)</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Шаг 2B: Раунд 2 — Углубленное изучение с таймером от 20 минут -->
+                    <!-- Шаг 2B: Раунд 2 — Углубленное изучение -->
                     <div id="spiritual-step-round2" class="spiritual-step-container hidden">
-                        <div class="spiritual-timer-banner glass" style="border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; background: rgba(253, 203, 110, 0.15); border: 1px solid rgba(253, 203, 110, 0.45); display: flex; align-items: center; justify-content: space-between;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <span style="font-size: 20px;">⏳</span>
+                        <div class="spiritual-timer-banner is-round2">
+                            <div class="spiritual-timer-left">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                 <div>
-                                    <div style="font-size: 13px; font-weight: 700; color: #ffeaa7;">Раунд 2: Таймер погружения</div>
-                                    <div style="font-size: 11px; color: #dfe6e9;">Уделите молитве и размышлению не менее 20 минут</div>
+                                    <div class="spiritual-timer-title">Раунд 2: время погружения</div>
+                                    <div class="spiritual-timer-sub">Посвяти молитве и размышлению не менее 20 минут</div>
                                 </div>
                             </div>
-                            <div id="round2-timer-badge" style="background: rgba(253, 203, 110, 0.25); border: 1px solid #fdcb6e; color: #ffeaa7; padding: 6px 12px; border-radius: 12px; font-weight: 800; font-size: 16px; font-variant-numeric: tabular-nums;">
-                                20:00
-                            </div>
+                            <div id="round2-timer-badge" class="round2-timer-badge">20:00</div>
                         </div>
 
-                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 14px; margin-bottom: 12px; background: rgba(108, 92, 231, 0.15); border: 1px solid rgba(162, 155, 254, 0.4);">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                <span style="font-size: 20px;">🛡️</span>
-                                <span style="font-size: 14px; font-weight: 700; color: #a29bfe;">Раунд 2: Углубленное размышление</span>
+                        <div class="spiritual-banner spiritual-banner-round2">
+                            <div class="spiritual-banner-header">
+                                <div class="spiritual-banner-title-wrap">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span class="spiritual-banner-title">Углубленное размышление</span>
+                                </div>
                             </div>
-                            <p id="round2-thought-text" class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #dfe6e9;">
+                            <p id="round2-thought-text" class="sos-text" style="margin-bottom: 0;">
                                 Загрузка наставления для Раунда 2...
                             </p>
                         </div>
 
-                        <div id="round2-action-box" class="glass" style="border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; background: rgba(0, 184, 148, 0.15); border: 1px solid rgba(85, 239, 196, 0.4);">
-                            <div style="font-size: 11px; font-weight: 700; color: #55efc4; text-transform: uppercase; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-                                <span>💡</span><span>Духовное действие на Раунд 2:</span>
+                        <div id="round2-action-box" class="spiritual-action-box">
+                            <div class="spiritual-action-label">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
+                                <span>Духовное действие на Раунд 2</span>
                             </div>
-                            <div id="round2-action-text" style="font-size: 13px; color: #ffffff; line-height: 1.4; font-style: italic;"></div>
+                            <div id="round2-action-text" class="spiritual-action-text"></div>
                         </div>
 
-                        <p class="sos-text" style="margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-secondary);">
-                            📚 Углубленный материал для победы:
+                        <p class="spiritual-section-heading">
+                            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            <span>Углубленный материал:</span>
                         </p>
-                        <div id="round2-card-container" style="margin-bottom: 16px;"></div>
+                        <div id="round2-card-container" class="spiritual-cards-slot"></div>
 
-                        <!-- Блок завершения Раунда 2 (с активным 20-мин таймером) -->
-                        <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div id="round2-timer-status" style="font-size: 12px; color: #fdcb6e; margin-bottom: 10px; text-align: center;">
-                                ⏳ Погрузитесь в чтение и молитву. Кнопки станут активны через <b id="round2-timer-remaining">20:00</b>
+                        <div class="spiritual-confirmation-box">
+                            <div id="round2-timer-status" class="round2-timer-status">
+                                Погрузитесь в чтение и молитву. Кнопки станут активны через <b id="round2-timer-remaining">20:00</b>
                             </div>
-                            <button class="btn btn-success" id="btn-round2-helped" disabled style="width: 100%; opacity: 0.4; transition: all 0.3s ease; margin-bottom: 10px; font-weight: 600;">
-                                ✅ Помогло! Сердце успокоилось, тяга отступила
+                            <button class="btn btn-success" id="btn-round2-helped" disabled>
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                                <span>Помогло, сердце успокоилось</span>
                             </button>
-                            <button class="btn btn-outline" id="btn-round2-to-partner" disabled style="width: 100%; opacity: 0.4; border-color: #74b9ff; color: #74b9ff; font-weight: 600; font-size: 13px;">
-                                💬 Не помогло — Раунд 3: Написать напарнику лично
+                            <button class="btn btn-outline" id="btn-round2-to-partner" disabled>
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Раунд 3: написать напарнику лично</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Шаг 3: Раунд 3 — Написать напарнику лично -->
+                    <!-- Шаг 3: Раунд 3 — Личное обращение к напарнику -->
                     <div id="spiritual-step-partner" class="spiritual-step-container hidden">
-                        <div class="spiritual-banner glass" style="border-radius: 12px; padding: 16px; margin-bottom: 16px; background: rgba(9, 132, 227, 0.12); border: 1px solid rgba(116, 185, 255, 0.35);">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                <span style="font-size: 24px;">🤝</span>
-                                <span style="font-size: 15px; font-weight: 700; color: #74b9ff;">Раунд 3: Напиши напарнику лично</span>
+                        <div class="spiritual-banner spiritual-banner-partner">
+                            <div class="spiritual-banner-header">
+                                <div class="spiritual-banner-title-wrap">
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                    <span class="spiritual-banner-title">Раунд 3: напиши напарнику лично</span>
+                                </div>
                             </div>
-                            <p class="sos-text" style="margin: 0 0 10px 0; font-size: 13px; line-height: 1.5; color: #dfe6e9;">
-                                <i>«Двоим лучше, чем одному... Ведь если один упадет, другой поднимет своего товарища. Но что будет с тем, кто упадет, когда рядом нет никого, кто мог бы поднять его?»</i> (Экклезиаст 4:9, 10).
+                            <p class="partner-scripture">
+                                «Двоим лучше, чем одному... Ведь если один упадёт, другой поднимет своего товарища. Но что будет с тем, кто упадёт, когда рядом нет никого, кто мог бы поднять его?» (Экклезиаст 4:9, 10)
                             </p>
-                            <p class="sos-text" style="margin: 0; font-size: 13px; line-height: 1.45; color: #b2bec3;">
-                                Не оставайся один на один с искушением. Напиши напарнику честно: <b>«Мне тяжело, накатило искушение. Помолись за меня / поговори со мной»</b>.
+                            <p class="sos-text" style="margin-bottom: 0;">
+                                Не оставайся один на один с искушением. Напиши напарнику честно: <strong>«Мне тяжело, накатило искушение. Помолись за меня или поговори со мной»</strong>.
                             </p>
                         </div>
 
-                        <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
-                            <button type="button" class="btn btn-primary" id="btn-open-partner-chat" style="background: linear-gradient(135deg, #0984e3, #74b9ff); border: none; font-weight: 600; width: 100%;">
-                                💬 Открыть диалог с напарником
+                        <div class="partner-actions-stack">
+                            <button type="button" class="btn btn-primary" id="btn-open-partner-chat">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Открыть диалог с напарником</span>
                             </button>
 
-                            <button type="button" class="btn btn-success" id="btn-confirm-partner-contacted" style="width: 100%; font-weight: 600; background: linear-gradient(135deg, #00b894, #55efc4); border: none; color: #1e272e;">
-                                🤝 Я написал(а) напарнику лично (Стрик сохранен)
+                            <button type="button" class="btn btn-success" id="btn-confirm-partner-contacted">
+                                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                                <span>Я написал напарнику (стрик сохранён)</span>
                             </button>
                         </div>
                     </div>
 
-                    <!-- Аккуратная ссылка на крайний случай (физический срыв) -->
-                    <div style="text-align: center; margin-top: 15px; margin-bottom: 10px;">
-                        <a href="#" id="link-show-direct-relapse" style="color: #636e72; font-size: 11px; text-decoration: underline;">
-                            Если вы физически сорвались — открыть форму фиксации
+                    <div class="spiritual-fallback-wrap">
+                        <a href="#" id="link-show-direct-relapse" class="btn-link-subtle">
+                            Если срыв произошёл — открыть форму фиксации
                         </a>
                     </div>
-
                 </div>
             </section>
 
-            <!-- Блок фиксации срыва (по умолчанию скрыт при духовной помощи) -->
-            <section class="dashboard-section glass" id="panic-relapse-section">
-                <h2 class="section-title">⚠️ Зафиксировать срыв</h2>
-                <p class="sos-text">Если срыв все-таки произошел, будьте честны с собой. Это не конец пути, а повод сделать выводы и начать заново.</p>
-                <button class="btn btn-secondary" id="btn-show-relapse-form">Записать срыв и сбросить счетчик</button>
-                
-                <!-- Форма записи срыва (скрыта по умолчанию) -->
+            <!-- Блок фиксации срыва -->
+            <section class="dashboard-section" id="panic-relapse-section">
+                <h2 class="section-title">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+                    <span>Зафиксировать срыв</span>
+                </h2>
+                <p class="sos-text">Если срыв всё-таки произошёл, будь честен с собой. Это повод сделать выводы и начать заново.</p>
+                <button class="btn btn-secondary" id="btn-show-relapse-form">Записать срыв и сбросить счётчик</button>
+
                 <div id="relapse-form" class="relapse-form-container hidden">
                     <div class="form-group">
                         <label for="relapse-trigger">Что послужило главным триггером?</label>
                         <select id="relapse-trigger" class="form-select">
-                            <option value="Скука / Безделье">🥱 Скука / Безделье</option>
-                            <option value="Стресс / Усталость">😫 Стресс / Усталость</option>
-                            <option value="Одиночество / Грусть">😔 Одиночество / Грусть</option>
-                            <option value="Искушение в интернете">🔞 Искушение в интернете</option>
-                            <option value="Другое">📝 Другое (указать ниже)</option>
+                            <option value="Скука / Безделье">Скука или безделье</option>
+                            <option value="Стресс / Усталость">Стресс или усталость</option>
+                            <option value="Одиночество / Грусть">Одиночество или грусть</option>
+                            <option value="Искушение в интернете">Искушение в интернете</option>
+                            <option value="Другое">Другое (указать ниже)</option>
                         </select>
                     </div>
                     <div class="form-group hidden" id="other-trigger-group">
@@ -361,50 +374,55 @@
         </div>
 
         <footer class="app-footer">
-            <p>Каждая секунда делает тебя сильнее</p>
+            <p>Честность и постоянство строят устойчивость</p>
         </footer>
 
-        <!-- Нижняя панель навигации (Bottom Nav) -->
+        <!-- Нижняя панель навигации -->
         <nav class="bottom-nav">
             <button class="nav-item active" data-tab="dashboard">
-                <span class="nav-icon">📊</span>
-                <span class="nav-label">Дашборд</span>
+                <span class="nav-icon" aria-hidden="true">
+                    <svg class="icon icon-lg" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                </span>
+                <span class="nav-label">Сводка</span>
             </button>
             <button class="nav-item" data-tab="journal">
-                <span class="nav-icon">📝</span>
+                <span class="nav-icon" aria-hidden="true">
+                    <svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                </span>
                 <span class="nav-label">Дневник</span>
             </button>
             <button class="nav-item" data-tab="sos">
-                <span class="nav-icon">🆘</span>
-                <span class="nav-label">SOS / Срыв</span>
+                <span class="nav-icon" aria-hidden="true">
+                    <svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </span>
+                <span class="nav-label">Помощь</span>
             </button>
         </nav>
     </div>
 
-    <!-- Модальное окно Когнитивного Замка (SOS) -->
+    <!-- Модальное окно Когнитивного Замка -->
     <div id="cognitive-lock-modal" class="modal-overlay">
-        <div class="modal-card glass">
-            <h3 class="modal-title">🧠 Когнитивный замок</h3>
+        <div class="modal-card">
+            <h3 class="modal-title">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>Когнитивный замок</span>
+            </h3>
             <p class="modal-desc">
-                Чтобы активировать SOS-помощь и отвлечь мозг от импульса, решите задачу ниже:
+                Чтобы переключить внимание перед открытием помощи, решите задачу ниже:
             </p>
-            <div id="puzzle-text" class="puzzle-container">
-                <!-- Заполняется динамически -->
+            <div id="puzzle-text" class="puzzle-container"></div>
+            <div class="form-group">
+                <input type="number" id="puzzle-answer" placeholder="Введите ответ" class="form-input puzzle-answer-input">
             </div>
-            <div class="form-group" style="margin-top: 5px;">
-                <input type="number" id="puzzle-answer" placeholder="Введите ответ..." class="form-input" style="text-align: center; font-size: 18px;">
-            </div>
-            <div class="modal-actions" style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 5px; width: 100%;">
+            <div class="modal-actions">
                 <button class="btn btn-primary" id="btn-submit-puzzle">Проверить</button>
                 <button class="btn btn-gray" id="btn-close-puzzle">Отмена</button>
             </div>
         </div>
     </div>
 
-    <!-- Компонент всплывающих уведомлений (Toast) -->
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- Логика работы приложения -->
     <script src="js/app.js"></script>
 </body>
 </html>

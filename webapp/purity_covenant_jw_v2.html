@@ -2,37 +2,40 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Соглашение о духовной чистоте перед Иеговой</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --color-text-primary: #ffffff;
-      --color-text-secondary: #85899e;
-      --color-text-tertiary: #5c5f73;
-      --color-border-primary: rgba(255, 255, 255, 0.08);
-      --color-border-secondary: rgba(0, 255, 135, 0.3);
-      --color-border-tertiary: rgba(255, 255, 255, 0.04);
-      --color-background-secondary: rgba(255, 255, 255, 0.02);
-      --color-background-warning: rgba(255, 59, 48, 0.06);
-      --color-border-warning: rgba(255, 59, 48, 0.2);
-      --color-text-warning: #ff453a;
-      --color-background-info: rgba(96, 239, 255, 0.06);
-      --color-border-info: rgba(96, 239, 255, 0.2);
-      --color-text-info: #64d2ff;
+      --cov-bg-deep: #12110f;
+      --cov-bg-base: #161513;
+      --cov-bg-surface: #1c1a18;
+      --cov-bg-raised: #262421;
+      --cov-text-primary: #efe9de;
+      --cov-text-secondary: #aaa398;
+      --cov-text-muted: #8a847a;
+      --cov-border-subtle: rgba(239, 233, 222, 0.08);
+      --cov-border-strong: rgba(239, 233, 222, 0.16);
+      --cov-border-scripture: rgba(76, 195, 138, 0.35);
+      --cov-bg-warning: rgba(229, 72, 77, 0.08);
+      --cov-border-warning: rgba(229, 72, 77, 0.24);
+      --cov-text-warning: #e5484d;
+      --cov-amber: #d4a259;
+      --cov-amber-soft: rgba(212, 162, 89, 0.10);
+      --cov-amber-border: rgba(212, 162, 89, 0.28);
       --font-serif: 'Playfair Display', Georgia, serif;
-      --font-sans: 'Outfit', sans-serif;
-      --border-radius-md: 8px;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --border-radius-md: 12px;
       --border-radius-lg: 16px;
     }
 
     body {
-      background-color: #0b0c10;
-      color: var(--color-text-primary);
+      background-color: var(--cov-bg-base);
+      color: var(--cov-text-primary);
       font-family: var(--font-sans);
       margin: 0;
       padding: 0;
@@ -40,177 +43,234 @@
     }
 
     .covenant-wrap {
-      max-width: 660px;
+      max-width: 620px;
       margin: 0 auto;
-      padding: 2rem 1rem 160px 1rem; /* Extra padding at bottom for sticky action bar */
-      font-family: var(--font-serif);
-      color: var(--color-text-primary);
+      padding: 24px 16px calc(168px + env(safe-area-inset-bottom, 0px)) 16px;
+      color: var(--cov-text-primary);
     }
     .covenant-header {
-      text-align: center;
-      margin-bottom: 2rem;
-      padding-bottom: 1.5rem;
-      border-bottom: 0.5px solid var(--color-border-primary);
+      text-align: left;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--cov-border-subtle);
     }
     .covenant-header .eyebrow {
       font-family: var(--font-sans);
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--color-text-secondary);
-      margin-bottom: 0.75rem;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--cov-text-muted);
+      margin-bottom: 8px;
     }
     .covenant-header h1 {
       font-family: var(--font-serif);
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 500;
-      line-height: 1.4;
-      margin: 0 0 0.5rem;
+      line-height: 1.3;
+      letter-spacing: -0.01em;
+      color: var(--cov-text-primary);
+      margin: 0 0 8px;
     }
     .covenant-header .subtitle {
-      font-size: 13px;
-      color: var(--color-text-secondary);
+      font-size: 13.5px;
+      line-height: 1.45;
+      color: var(--cov-text-secondary);
+      font-family: var(--font-sans);
+      margin: 0;
+    }
+    .mode-banner {
+      display: none;
+      border-radius: var(--border-radius-md);
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      background-color: var(--cov-bg-surface);
+      border: 1px solid var(--cov-border-subtle);
       font-family: var(--font-sans);
     }
-    .section { margin-bottom: 1.75rem; }
+    .mode-banner.is-restart {
+      background-color: var(--cov-amber-soft);
+      border-color: var(--cov-amber-border);
+    }
+    .mode-banner-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--cov-text-primary);
+      margin-bottom: 4px;
+    }
+    .mode-banner.is-restart .mode-banner-title {
+      color: var(--cov-amber);
+    }
+    .mode-banner-title .icon {
+      color: var(--cov-amber);
+    }
+    .mode-banner-desc {
+      font-size: 13px;
+      color: var(--cov-text-secondary);
+      line-height: 1.5;
+    }
+    .section { margin-bottom: 24px; }
     .section-label {
       font-family: var(--font-sans);
-      font-size: 10px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--color-text-tertiary);
-      margin-bottom: 0.6rem;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--cov-text-secondary);
+      margin: 0 0 10px;
     }
     .body-text {
       font-size: 15px;
-      line-height: 1.8;
-      color: var(--color-text-primary);
-      margin: 0 0 0.9rem;
+      line-height: 1.7;
+      color: var(--cov-text-primary);
+      margin: 0 0 12px;
       font-family: var(--font-sans);
     }
+    .body-text strong {
+      font-weight: 600;
+      color: var(--cov-text-primary);
+    }
     .scripture-block {
-      border-left: 2px solid var(--color-border-secondary);
-      padding: 0.75rem 1rem;
-      margin: 1rem 0;
-      background: var(--color-background-secondary);
+      border-left: 2px solid var(--cov-border-scripture);
+      padding: 12px 16px;
+      margin: 16px 0;
+      background: var(--cov-bg-surface);
       border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
     }
     .scripture-block .verse {
-      font-size: 14px;
+      font-family: var(--font-serif);
+      font-size: 15px;
       font-style: italic;
-      line-height: 1.75;
-      color: var(--color-text-secondary);
-      margin: 0 0 0.3rem;
+      line-height: 1.65;
+      color: var(--cov-text-primary);
+      margin: 0 0 6px;
     }
     .scripture-block .ref {
       font-family: var(--font-sans);
-      font-size: 11px;
-      color: var(--color-text-tertiary);
+      font-size: 12px;
+      color: var(--cov-text-muted);
       margin: 0;
     }
     .sins-list {
-      margin: 0.75rem 0;
+      margin: 12px 0;
       padding: 0;
       list-style: none;
     }
     .sins-list li {
       font-size: 14px;
       font-family: var(--font-sans);
-      color: var(--color-text-secondary);
-      padding: 0.35rem 0;
-      border-bottom: 0.5px solid var(--color-border-tertiary);
+      line-height: 1.55;
+      color: var(--cov-text-secondary);
+      padding: 8px 0;
+      border-bottom: 1px solid var(--cov-border-subtle);
       display: flex;
-      align-items: center;
-      gap: 8px;
+      align-items: flex-start;
+      gap: 10px;
     }
     .sins-list li:last-child { border-bottom: none; }
     .sins-list li::before {
       content: "·";
-      color: var(--color-text-tertiary);
+      color: var(--cov-text-muted);
       font-size: 18px;
-      line-height: 1;
+      line-height: 1.1;
+      flex-shrink: 0;
     }
     .divider {
       border: none;
-      border-top: 0.5px solid var(--color-border-tertiary);
-      margin: 2rem 0;
+      border-top: 1px solid var(--cov-border-subtle);
+      margin: 24px 0;
     }
     .warning-block {
-      background: var(--color-background-warning);
-      border: 0.5px solid var(--color-border-warning);
-      border-radius: var(--border-radius-lg);
-      padding: 1rem 1.25rem;
-      margin: 1.5rem 0;
+      background: var(--cov-bg-warning);
+      border: 1px solid var(--cov-border-warning);
+      border-radius: var(--border-radius-md);
+      padding: 14px 16px;
+      margin: 16px 0;
     }
     .warning-block p {
       font-family: var(--font-sans);
       font-size: 14px;
-      line-height: 1.65;
-      color: var(--color-text-warning);
+      line-height: 1.6;
+      color: var(--cov-text-primary);
       margin: 0;
     }
+    .warning-block strong {
+      color: var(--cov-text-warning);
+      font-weight: 600;
+    }
     .partner-block {
-      background: var(--color-background-info);
-      border: 0.5px solid var(--color-border-info);
-      border-radius: var(--border-radius-lg);
-      padding: 1rem 1.25rem;
-      margin: 1.5rem 0;
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
+      background: var(--cov-bg-surface);
+      border: 1px solid var(--cov-border-strong);
+      border-radius: var(--border-radius-md);
+      padding: 14px 16px;
+      margin: 12px 0;
     }
     .partner-block .partner-text {
       font-family: var(--font-sans);
       font-size: 14px;
-      line-height: 1.65;
-      color: var(--color-text-info);
+      line-height: 1.6;
+      color: var(--cov-text-secondary);
     }
     .partner-block .partner-id {
-      font-weight: 500;
+      font-weight: 600;
       font-size: 15px;
+      color: var(--cov-text-primary);
       display: block;
-      margin-top: 4px;
+      margin: 6px 0;
+      font-variant-numeric: tabular-nums;
     }
     .seal-row {
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-top: 2rem;
-      padding-top: 1.5rem;
-      border-top: 0.5px solid var(--color-border-primary);
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--cov-border-subtle);
     }
     .seal-text {
       font-family: var(--font-sans);
-      font-size: 12px;
-      color: var(--color-text-secondary);
+      font-size: 12.5px;
+      color: var(--cov-text-muted);
       line-height: 1.5;
+      margin: 0;
     }
 
-    /* Стили для формы согласия внизу */
+    /* Нижняя панель действия */
     .accept-section {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(11, 12, 16, 0.95);
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 1rem;
+      background: rgba(22, 21, 19, 0.95);
+      border-top: 1px solid var(--cov-border-subtle);
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)) 16px;
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 10px;
       z-index: 100;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .accept-inner {
+      width: 100%;
+      max-width: 620px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
     .scroll-warning {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       font-family: var(--font-sans);
-      font-size: 13px;
-      color: #ff9f0a;
+      font-size: 12.5px;
+      color: var(--cov-amber);
       text-align: center;
       margin: 0;
       font-weight: 500;
       line-height: 1.4;
+      font-variant-numeric: tabular-nums;
     }
     .checkbox-container {
       display: flex;
@@ -218,41 +278,60 @@
       gap: 10px;
       cursor: pointer;
       font-size: 13px;
-      line-height: 1.4;
+      line-height: 1.45;
       user-select: none;
-      color: var(--color-text-secondary);
-      transition: opacity 0.3s;
+      color: var(--cov-text-primary);
+      transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1);
       font-family: var(--font-sans);
     }
     .checkbox-container.disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: not-allowed;
     }
     .checkbox-container input {
       margin-top: 2px;
       width: 18px;
       height: 18px;
+      accent-color: var(--cov-text-primary);
       cursor: pointer;
+      flex-shrink: 0;
     }
     .btn-confirm {
       width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 16px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      font-size: 14.5px;
       font-weight: 600;
-      color: #0b0c10;
-      background: linear-gradient(135deg, #00ff87 0%, #60efff 100%);
+      color: #161513;
+      background-color: #efe9de;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
       cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(0, 255, 135, 0.2);
+      transition: background-color 140ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms cubic-bezier(0.22, 1, 0.36, 1);
       font-family: var(--font-sans);
     }
+    .btn-confirm:hover:not(.disabled) {
+      background-color: #f6f2ea;
+    }
     .btn-confirm.disabled {
-      background: #1f2026;
-      color: #5c5f73;
+      background-color: var(--cov-bg-raised);
+      border-color: var(--cov-border-subtle);
+      color: var(--cov-text-muted);
       cursor: not-allowed;
       box-shadow: none;
+    }
+    .btn-manifest-close {
+      background-color: var(--cov-bg-raised);
+      border: 1px solid var(--cov-border-strong);
+      color: var(--cov-text-primary);
+      box-shadow: none;
+    }
+    .btn-manifest-close:hover {
+      background-color: #2e2b28;
     }
   </style>
 </head>
@@ -266,14 +345,20 @@
   </div>
 
   <!-- Информационные плашки режимов (Манифест / Перезагрузка после срыва) -->
-  <div id="manifest-banner" style="display: none; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; background: rgba(162, 155, 254, 0.1); border: 1px solid rgba(162, 155, 254, 0.35); text-align: center; font-family: var(--font-sans);">
-    <div style="font-size: 15px; font-weight: 600; color: #a29bfe; margin-bottom: 4px;">🕊️ Ваш постоянный духовный манифест</div>
-    <div style="font-size: 13px; color: #dfe6e9; line-height: 1.4;">Этот документ доступен вам в любое время для спокойного чтения и сверки ориентиров совести перед Иеговой.</div>
+  <div id="manifest-banner" class="mode-banner">
+    <div class="mode-banner-title">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      <span>Постоянный духовный манифест</span>
+    </div>
+    <div class="mode-banner-desc">Этот документ доступен в любое время для спокойного чтения и сверки ориентиров совести перед Иеговой.</div>
   </div>
 
-  <div id="restart-banner" style="display: none; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; background: rgba(253, 203, 110, 0.15); border: 1px solid rgba(253, 203, 110, 0.45); text-align: center; font-family: var(--font-sans);">
-    <div style="font-size: 15px; font-weight: 700; color: #ffeaa7; margin-bottom: 4px;">🕊️ Точка перезагрузки и покаяния</div>
-    <div style="font-size: 13px; color: #ffeaa7; line-height: 1.4;">Остановитесь и выдохните. Посвятите эти 3 минуты глубокому размышлению и молитве перед новым стартом чистой жизни.</div>
+  <div id="restart-banner" class="mode-banner is-restart">
+    <div class="mode-banner-title">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>Точка перезагрузки и покаяния</span>
+    </div>
+    <div class="mode-banner-desc">Остановитесь и выдохните. Посвятите эти 3 минуты глубокому размышлению и молитве перед новым стартом чистой жизни.</div>
   </div>
 
   <div class="section">
@@ -362,23 +447,29 @@
 
 <!-- Блок действий для режима Манифеста (спокойное чтение в любое время) -->
 <div class="accept-section" id="manifest-action-section" style="display: none;">
-  <button class="btn-confirm" id="btn-close-manifest" style="background: rgba(162, 155, 254, 0.25); border: 1px solid #a29bfe; color: #ffffff;">
-    ✕ Закрыть манифест
-  </button>
+  <div class="accept-inner">
+    <button class="btn-confirm btn-manifest-close" id="btn-close-manifest">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+      <span>Закрыть манифест</span>
+    </button>
+  </div>
 </div>
 
 <!-- Блок с подтверждением соглашения (только для режима перезагрузки после срыва) -->
 <div class="accept-section" id="restart-action-section" style="display: none;">
-  <p class="scroll-warning" id="scroll-warning">⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Кнопка подтверждения разблокируется через: 3:00</p>
-  
-  <label class="checkbox-container disabled" id="checkbox-label">
-    <input type="checkbox" id="accept-checkbox" disabled>
-    <span class="label-text">Я прочитал и искренне принимаю условия Соглашения о духовной чистоте перед Иеговой</span>
-  </label>
-  
-  <button class="btn-confirm disabled" id="btn-confirm" disabled>
-    🟢 Подтвердить и возобновить путь чистоты
-  </button>
+  <div class="accept-inner">
+    <p class="scroll-warning" id="scroll-warning">Пожалуйста, вдумчиво прочитайте Соглашение. Кнопка подтверждения разблокируется через: <b>3:00</b></p>
+    
+    <label class="checkbox-container disabled" id="checkbox-label">
+      <input type="checkbox" id="accept-checkbox" disabled>
+      <span class="label-text">Я прочитал и искренне принимаю условия Соглашения о духовной чистоте перед Иеговой</span>
+    </label>
+    
+    <button class="btn-confirm disabled" id="btn-confirm" disabled>
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+      <span>Подтвердить и возобновить путь чистоты</span>
+    </button>
+  </div>
 </div>
 
 <script>
@@ -387,6 +478,8 @@
     try {
       tg.ready();
       tg.expand();
+      if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#161513');
+      if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#161513');
     } catch (e) {}
   }
 
@@ -460,15 +553,15 @@
         if (!timerExpired) {
             const timeStr = formatTime(timeRemaining);
             if (scrolledToBottom) {
-                scrollWarning.innerHTML = `⏳ Текст прокручен. Пожалуйста, завершите вдумчивое размышление. Подтверждение станет доступно через: <b>${timeStr}</b>`;
+                scrollWarning.innerHTML = `Текст прокручен. Завершите вдумчивое размышление. Подтверждение станет доступно через: <b>${timeStr}</b>`;
             } else {
-                scrollWarning.innerHTML = `⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
+                scrollWarning.innerHTML = `Пожалуйста, вдумчиво прочитайте Соглашение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
             }
-            scrollWarning.style.display = 'block';
+            scrollWarning.style.display = 'flex';
         } else {
             if (!scrolledToBottom) {
-                scrollWarning.innerHTML = `⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.`;
-                scrollWarning.style.display = 'block';
+                scrollWarning.textContent = 'Пролистайте документ до самого конца, чтобы активировать подтверждение.';
+                scrollWarning.style.display = 'flex';
             } else {
                 scrollWarning.style.display = 'none';
             }
@@ -536,9 +629,10 @@
             return;
         }
 
+        const confirmDefaultHtml = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Подтвердить и возобновить путь чистоты</span>';
         btnConfirm.classList.add('disabled');
         btnConfirm.setAttribute('disabled', 'true');
-        btnConfirm.innerHTML = '⌛ Возобновление соглашения...';
+        btnConfirm.textContent = 'Возобновление соглашения...';
 
         fetch('/api/accept_covenant', {
             method: 'POST',
@@ -551,20 +645,20 @@
                 if (tg && typeof tg.close === 'function') {
                     tg.close();
                 } else {
-                    alert("Соглашение успешно возобновлено! Вы можете закрыть окно и вернуться в бот.");
+                    alert("Соглашение успешно возобновлено. Вы можете закрыть окно и вернуться в бот.");
                 }
             } else {
                 alert("Ошибка при сохранении: " + (data.error || "Неизвестная ошибка"));
                 btnConfirm.classList.remove('disabled');
                 btnConfirm.removeAttribute('disabled');
-                btnConfirm.innerHTML = '🟢 Подтвердить и возобновить путь чистоты';
+                btnConfirm.innerHTML = confirmDefaultHtml;
             }
         })
         .catch(err => {
             alert("Ошибка подключения к серверу: " + err);
             btnConfirm.classList.remove('disabled');
             btnConfirm.removeAttribute('disabled');
-            btnConfirm.innerHTML = '🟢 Подтвердить и возобновить путь чистоты';
+            btnConfirm.innerHTML = confirmDefaultHtml;
         });
     });
   }

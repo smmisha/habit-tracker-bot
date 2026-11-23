@@ -3,6 +3,12 @@ const tg = window.Telegram?.WebApp;
 if (tg) {
     tg.expand(); // Разворачиваем на весь экран
     tg.ready();
+    try {
+        if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#161513');
+        if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#161513');
+    } catch (e) {
+        console.debug('Telegram theme color sync skipped:', e);
+    }
 }
 
 // Функции тактильного виброотклика (Haptic Feedback)
@@ -185,19 +191,32 @@ let isSosUnlocked = false;
 // Уведомления (Toast)
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
+    if (!container) return;
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
-    let icon = '✅';
-    if (type === 'error') icon = '❌';
-    if (type === 'info') icon = 'ℹ️';
-    
-    toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+
+    let iconSvg = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+    if (type === 'error') {
+        iconSvg = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>';
+    } else if (type === 'info') {
+        iconSvg = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>';
+    }
+
+    const iconWrap = document.createElement('span');
+    iconWrap.className = 'toast-icon';
+    iconWrap.innerHTML = iconSvg;
+
+    const textWrap = document.createElement('span');
+    textWrap.textContent = message;
+
+    toast.appendChild(iconWrap);
+    toast.appendChild(textWrap);
     container.appendChild(toast);
-    
+
     setTimeout(() => {
-        toast.style.animation = 'slideDown 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) reverse';
-        setTimeout(() => toast.remove(), 300);
+        toast.classList.add('is-leaving');
+        setTimeout(() => toast.remove(), 180);
     }, 3000);
 }
 
@@ -225,11 +244,11 @@ function switchTab(tabId) {
     // Обновляем заголовки
     const headerTitle = document.getElementById('header-title');
     if (tabId === 'dashboard') {
-        headerTitle.textContent = 'DASHBOARD';
+        headerTitle.textContent = 'Чистый путь';
     } else if (tabId === 'journal') {
-        headerTitle.textContent = 'ДНЕВНИК';
+        headerTitle.textContent = 'Дневник';
     } else if (tabId === 'sos') {
-        headerTitle.textContent = 'HELP / SOS';
+        headerTitle.textContent = 'Помощь';
         if (!isSosUnlocked) {
             initiatePanicTimer();
             openCognitiveLock();
@@ -305,7 +324,10 @@ async function loadAllData() {
 // Отображение карточек статистики
 function renderStats(data) {
     document.getElementById('current-streak').textContent = data.streak_str || '0 дн.';
-    document.getElementById('total-relapses').textContent = data.total_relapses ?? '0';
+    const relapsesVal = data.total_relapses ?? 0;
+    const relapsesEl = document.getElementById('total-relapses');
+    relapsesEl.textContent = relapsesVal;
+    relapsesEl.classList.toggle('has-relapses', Number(relapsesVal) > 0);
 }
 
 // Рендеринг календаря
@@ -314,7 +336,7 @@ function renderCalendar(days) {
     grid.innerHTML = '';
     
     if (!days || days.length === 0) {
-        grid.innerHTML = '<div style="grid-column: span 7; text-align: center; color: var(--text-secondary);">Нет данных за 30 дней</div>';
+        grid.innerHTML = '<div class="empty-state-note" style="grid-column: span 7;">Нет данных за 30 дней</div>';
         return;
     }
     
@@ -356,7 +378,7 @@ function renderCalendar(days) {
             if (day.relapse_count > 1) {
                 const subLabel = document.createElement('span');
                 subLabel.className = 'day-label-sub';
-                subLabel.innerHTML = `x${day.relapse_count}`;
+                subLabel.textContent = `x${day.relapse_count}`;
                 dayEl.appendChild(subLabel);
             }
         } else {
@@ -368,76 +390,78 @@ function renderCalendar(days) {
         if (day.status === 'clean') {
             if (day.excuse_reason) {
                 if (day.excuse_reason.includes('Авто-отметка')) {
-                    tooltipText += 'Чисто (авто-зачёт >24ч) ✨';
+                    tooltipText += 'чисто (авто-зачёт >24ч)';
                 } else {
-                    tooltipText += `Чисто, опоздание (${day.excuse_reason}) ⏰`;
+                    tooltipText += `чисто, с опозданием (${day.excuse_reason})`;
                 }
             } else {
-                tooltipText += 'Чистый день! 💪';
+                tooltipText += 'чистый день';
             }
+        } else if (day.status === 'relapsed') {
+            tooltipText += `срывов: ${day.relapse_count}`;
+        } else {
+            tooltipText += 'нет данных';
         }
-        else if (day.status === 'relapsed') tooltipText += `Срывов: ${day.relapse_count} ⚠️`;
-        else tooltipText += 'Нет отметки 💤';
         
         dayEl.title = tooltipText;
         grid.appendChild(dayEl);
     });
 }
 
-// Рендеринг графика триггеров
-let triggersChart = null;
+// Рендеринг аналитики триггеров (спокойный ранжированный список вместо радужной диаграммы)
 function renderChart(triggers) {
-    const canvas = document.getElementById('triggers-chart');
+    const barsContainer = document.getElementById('triggers-bars');
     const noDataMsg = document.getElementById('no-chart-data');
-    
-    const labels = Object.keys(triggers || {});
-    const values = Object.values(triggers || {});
-    const totalTriggers = values.reduce((sum, val) => sum + val, 0);
-    
+    if (!barsContainer || !noDataMsg) return;
+
+    const entries = Object.entries(triggers || {}).filter(([, val]) => Number(val) > 0);
+    const totalTriggers = entries.reduce((sum, [, val]) => sum + Number(val), 0);
+
+    barsContainer.innerHTML = '';
+
     if (totalTriggers === 0) {
-        canvas.classList.add('hidden');
+        barsContainer.classList.add('hidden');
         noDataMsg.classList.remove('hidden');
         return;
     }
-    
-    canvas.classList.remove('hidden');
+
+    barsContainer.classList.remove('hidden');
     noDataMsg.classList.add('hidden');
-    
-    if (triggersChart) {
-        triggersChart.destroy();
-    }
-    
-    if (typeof Chart === 'undefined') {
-        console.warn('Chart.js is not loaded');
-        return;
-    }
-    const ctx = canvas.getContext('2d');
-    triggersChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: values,
-                backgroundColor: ['#ff3b30', '#ff9500', '#af52de', '#5856d6', '#007aff', '#34c759'],
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.1)'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: '#85899e',
-                        font: { family: 'Outfit', size: 11 },
-                        padding: 12
-                    }
-                }
-            },
-            cutout: '72%'
-        }
+
+    entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+
+    entries.forEach(([label, rawCount]) => {
+        const count = Number(rawCount);
+        const pct = Math.round((count / totalTriggers) * 100);
+
+        const row = document.createElement('div');
+        row.className = 'trigger-row';
+
+        const meta = document.createElement('div');
+        meta.className = 'trigger-meta';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'trigger-name';
+        nameEl.textContent = label;
+
+        const countEl = document.createElement('span');
+        countEl.className = 'trigger-count';
+        countEl.textContent = `${count} (${pct}%)`;
+
+        meta.appendChild(nameEl);
+        meta.appendChild(countEl);
+
+        const track = document.createElement('div');
+        track.className = 'trigger-track';
+
+        const fill = document.createElement('div');
+        fill.className = 'trigger-fill';
+        fill.style.width = `${Math.max(4, pct)}%`;
+
+        track.appendChild(fill);
+        row.appendChild(meta);
+        row.appendChild(track);
+        barsContainer.appendChild(row);
     });
 }
 
@@ -447,7 +471,7 @@ function renderJournalHistory(history) {
     container.innerHTML = '';
     
     if (!history || history.length === 0) {
-        container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); font-size: 13px;">Записей пока нет. Самое время начать!</p>';
+        container.innerHTML = '<p class="empty-state-note">Записей пока нет</p>';
         return;
     }
     
@@ -458,10 +482,16 @@ function renderJournalHistory(history) {
         const dateObj = new Date(item.date);
         const formattedDate = dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
         
-        card.innerHTML = `
-            <div class="journal-date">📅 ${formattedDate}</div>
-            <div class="journal-content">${item.content}</div>
-        `;
+        const dateEl = document.createElement('div');
+        dateEl.className = 'journal-date';
+        dateEl.textContent = formattedDate;
+
+        const contentEl = document.createElement('div');
+        contentEl.className = 'journal-content';
+        contentEl.textContent = item.content;
+
+        card.appendChild(dateEl);
+        card.appendChild(contentEl);
         container.appendChild(card);
     });
 }
@@ -522,7 +552,7 @@ function generatePuzzle() {
     
     // Сброс стилей к дефолтным (для формул)
     puzzleText.style.fontSize = "20px";
-    puzzleText.style.fontWeight = "700";
+    puzzleText.style.fontWeight = "600";
     puzzleText.style.lineHeight = "1.2";
     puzzleText.style.textAlign = "center";
     
@@ -678,13 +708,13 @@ function validatePuzzleAnswer() {
     
     if (userAnswer === currentPuzzleAnswer) {
         hapticNotification('success');
-        showToast('Когнитивный замок успешно пройден! Мозг переключен.', 'success');
+        showToast('Когнитивный замок пройден. Внимание переключено', 'success');
         isSosUnlocked = true; // Снимаем защиту
         closeCognitiveLock();
         startSosProcess(); // Запускаем загрузку шагов SOS
     } else {
         hapticNotification('error');
-        showToast('Неверно! Попробуйте решить новую задачу.', 'error');
+        showToast('Ответ неверный. Попробуйте новую задачу', 'error');
         input.value = '';
         
         // Эффект тряски при ошибке
@@ -719,7 +749,7 @@ async function startSosProcess() {
     
     btn.disabled = true;
     btn.querySelector('.spinner').classList.remove('hidden');
-    btn.querySelector('.btn-text').textContent = 'Подключение ИИ-ассистента...';
+    btn.querySelector('.btn-text').textContent = 'Подбор шагов помощи...';
     
     try {
         const response = await apiFetch('/api/panic', {
@@ -734,18 +764,25 @@ async function startSosProcess() {
             listContainer.innerHTML = '';
             resData.guidelines.forEach((step, idx) => {
                 const card = document.createElement('div');
-                card.className = 'guideline-card glass';
-                card.style.display = 'flex';
-                card.style.gap = '16px';
-                card.style.alignItems = 'center';
-                
-                card.innerHTML = `
-                    <span class="num">${idx + 1}</span>
-                    <div class="text">
-                        <h3>${step.title}</h3>
-                        <p>${step.description}</p>
-                    </div>
-                `;
+                card.className = 'guideline-card';
+
+                const numEl = document.createElement('span');
+                numEl.className = 'num';
+                numEl.textContent = String(idx + 1);
+
+                const textEl = document.createElement('div');
+                textEl.className = 'text';
+
+                const titleEl = document.createElement('h3');
+                titleEl.textContent = step.title;
+
+                const descEl = document.createElement('p');
+                descEl.textContent = step.description;
+
+                textEl.appendChild(titleEl);
+                textEl.appendChild(descEl);
+                card.appendChild(numEl);
+                card.appendChild(textEl);
                 listContainer.appendChild(card);
             });
             
@@ -753,17 +790,17 @@ async function startSosProcess() {
             startScreen.classList.add('hidden');
             dynamicContent.classList.remove('hidden');
             updateBackButton();
-            showToast('Индивидуальные шаги сгенерированы!');
+            showToast('Шаги первой помощи готовы');
         } else {
-            showToast(resData.error || 'Ошибка при загрузке SOS-шагов', 'error');
+            showToast(resData.error || 'Ошибка при загрузке шагов помощи', 'error');
         }
     } catch (err) {
         console.error(err);
-        showToast('Ошибка сети при запуске SOS', 'error');
+        showToast('Ошибка сети при запуске помощи', 'error');
     } finally {
         btn.disabled = false;
         btn.querySelector('.spinner').classList.add('hidden');
-        btn.querySelector('.btn-text').textContent = '🆘 Мне тяжело / Нужна помощь';
+        btn.querySelector('.btn-text').textContent = 'Мне тяжело, нужна помощь';
     }
 }
 
@@ -781,7 +818,7 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
         const resData = await response.json();
         if (response.ok && resData.success) {
             hapticNotification('success');
-            showToast(resData.message || 'Отлично! Уведомление отправлено в чат.');
+            showToast(resData.message || 'Отметка сохранена, уведомление отправлено в чат');
             // Сбрасываем экран SOS
             document.getElementById('sos-dynamic-content').classList.add('hidden');
             document.getElementById('sos-start-screen').classList.remove('hidden');
@@ -850,13 +887,13 @@ document.getElementById('btn-find-spiritual-solution')?.addEventListener('click'
     
     btn.disabled = true;
     btn.querySelector('.spinner')?.classList.remove('hidden');
-    btn.querySelector('.btn-text').textContent = 'ИИ анализирует и подбирает материалы...';
+    btn.querySelector('.btn-text').textContent = 'Подбор материалов...';
     
     await loadSpiritualSolution(selectedTemptationTypes, currentSpiritualNotes);
     
     btn.disabled = false;
     btn.querySelector('.spinner')?.classList.add('hidden');
-    btn.querySelector('.btn-text').textContent = '🔍 Получить духовное решение';
+    btn.querySelector('.btn-text').textContent = 'Подобрать духовное решение';
 });
 
 // Кнопка смены темы / возврата к выбору
@@ -884,7 +921,7 @@ document.getElementById('btn-spiritual-helped')?.addEventListener('click', async
         console.error(e);
     }
     hapticNotification('success');
-    showToast('Слава Богу! Вы устояли и защитили свой стрик! 💪', 'success');
+    showToast('Вы устояли и сохранили стрик', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
     document.getElementById('sos-start-screen')?.classList.remove('hidden');
@@ -896,7 +933,7 @@ document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', as
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
     updateBackButton();
-    showToast('Загружаем углубленный материал Раунда 2...', 'info');
+    showToast('Загрузка материала для Раунда 2...', 'info');
     await loadRound2Solution(selectedTemptationTypes, currentSpiritualNotes);
 });
 
@@ -917,20 +954,16 @@ function startRound2Timer() {
     
     if (btnHelped) {
         btnHelped.disabled = true;
-        btnHelped.style.opacity = '0.4';
     }
     if (btnPartner) {
         btnPartner.disabled = true;
-        btnPartner.style.opacity = '0.4';
     }
     if (badge) {
-        badge.style.background = 'rgba(253, 203, 110, 0.25)';
-        badge.style.borderColor = '#fdcb6e';
-        badge.style.color = '#ffeaa7';
+        badge.classList.remove('is-done');
     }
     if (timerStatus) {
-        timerStatus.innerHTML = `⏳ Погрузитесь в чтение и молитву. Кнопки станут активны через <b id="round2-timer-remaining">20:00</b>`;
-        timerStatus.style.color = '#fdcb6e';
+        timerStatus.classList.remove('is-done');
+        timerStatus.innerHTML = 'Погрузитесь в чтение и молитву. Кнопки станут активны через <b id="round2-timer-remaining">20:00</b>';
     }
     
     round2TimerInterval = setInterval(() => {
@@ -944,25 +977,19 @@ function startRound2Timer() {
             // Разблокируем кнопки
             if (btnHelped) {
                 btnHelped.disabled = false;
-                btnHelped.style.opacity = '1';
-                btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
             }
             if (btnPartner) {
                 btnPartner.disabled = false;
-                btnPartner.style.opacity = '1';
-                btnPartner.style.boxShadow = '0 0 15px rgba(116, 185, 255, 0.3)';
             }
             if (timerStatus) {
-                timerStatus.innerHTML = `✅ <b>20 минут размышления завершены!</b> Оцените результат изучения:`;
-                timerStatus.style.color = '#55efc4';
+                timerStatus.classList.add('is-done');
+                timerStatus.innerHTML = '<b>20 минут размышления завершены.</b> Оцените состояние:';
             }
             if (badge) {
-                badge.style.background = 'rgba(0, 184, 148, 0.25)';
-                badge.style.borderColor = '#00b894';
-                badge.style.color = '#55efc4';
-                badge.textContent = '00:00 ✓';
+                badge.classList.add('is-done');
+                badge.textContent = '00:00';
             }
-            showToast('20 минут размышления завершены. Выберите результат:', 'success');
+            showToast('20 минут размышления завершены. Выберите результат', 'success');
             hapticNotification('success');
         } else {
             updateRound2TimerDisplay();
@@ -1001,7 +1028,7 @@ document.getElementById('btn-round2-helped')?.addEventListener('click', async ()
         console.error(e);
     }
     hapticNotification('success');
-    showToast('Слава Богу! Раунд 2 помог успокоить сердце, стрик защищен! 💪', 'success');
+    showToast('Раунд 2 помог успокоить сердце, стрик защищён', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
     document.getElementById('sos-start-screen')?.classList.remove('hidden');
@@ -1017,7 +1044,7 @@ document.getElementById('btn-round2-to-partner')?.addEventListener('click', () =
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.remove('hidden');
     updateBackButton();
-    showToast('Раунд 3: Напишите напарнику лично прямо сейчас 🤝', 'info');
+    showToast('Раунд 3: напишите напарнику лично', 'info');
 });
 
 // Кнопка открытия диалога с напарником
@@ -1033,7 +1060,7 @@ document.getElementById('btn-open-partner-chat')?.addEventListener('click', () =
             window.open(tgUrl, '_blank');
         }
     } else {
-        showToast('Откройте диалог с напарником в Telegram и напишите ему о вашей ситуации 💬', 'info');
+        showToast('Откройте диалог с напарником в Telegram и напишите ему', 'info');
     }
 });
 
@@ -1052,7 +1079,7 @@ document.getElementById('btn-confirm-partner-contacted')?.addEventListener('clic
     }
     
     hapticNotification('success');
-    showToast('Ты поступил мудро и зрело! Стрик сохранен. Держись вместе с напарником! 🤝', 'success');
+    showToast('Мудрый шаг. Стрик сохранён, держись вместе с напарником', 'success');
     document.getElementById('sos-spiritual-content')?.classList.add('hidden');
     document.getElementById('panic-relapse-section')?.classList.remove('hidden');
     document.getElementById('sos-start-screen')?.classList.remove('hidden');
@@ -1082,6 +1109,44 @@ document.getElementById('btn-cancel-relapse')?.addEventListener('click', () => {
     document.getElementById('relapse-form')?.classList.add('hidden');
     updateBackButton();
 });
+
+function buildSpiritualCard(material, { cardClass = '', badgeClass = '', ctaLabel = 'Открыть публикацию' } = {}) {
+    const card = document.createElement('div');
+    card.className = `spiritual-card ${cardClass}`.trim();
+    if (material.url) {
+        card.setAttribute('data-url', material.url);
+    }
+
+    const badge = document.createElement('div');
+    badge.className = `spiritual-badge ${badgeClass}`.trim();
+    badge.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>';
+    const badgeLabel = document.createElement('span');
+    badgeLabel.textContent = material.type_label || 'wol.jw.org';
+    badge.appendChild(badgeLabel);
+
+    const title = document.createElement('div');
+    title.className = 'spiritual-title';
+    title.textContent = material.title || '';
+
+    const desc = document.createElement('div');
+    desc.className = 'spiritual-desc';
+    desc.textContent = material.description || '';
+
+    const btn = document.createElement('div');
+    btn.className = 'spiritual-btn';
+    const btnLabel = document.createElement('span');
+    btnLabel.textContent = ctaLabel;
+    btn.appendChild(btnLabel);
+    btn.insertAdjacentHTML('beforeend', '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="7" x2="17" y1="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>');
+
+    card.appendChild(badge);
+    card.appendChild(title);
+    if (material.description) {
+        card.appendChild(desc);
+    }
+    card.appendChild(btn);
+    return card;
+}
 
 async function loadSpiritualSolution(tType, notes) {
     const thoughtEl = document.getElementById('spiritual-thought-text');
@@ -1137,48 +1202,27 @@ async function loadSpiritualSolution(tType, notes) {
             };
             
             if (primaryContainer) {
-                let html = `
-                    <div class="spiritual-card" data-url="${primary.url}" style="border-width: 2px; border-color: rgba(162, 155, 254, 0.45); background: rgba(108, 92, 231, 0.08); cursor: pointer;">
-                        <div class="spiritual-badge">
-                            <span>${primary.icon || '📖'}</span>
-                            <span>${primary.type_label || 'wol.jw.org'}</span>
-                        </div>
-                        <div class="spiritual-title" style="font-size: 15px; margin-top: 2px;">${primary.title}</div>
-                        <div class="spiritual-desc" style="margin-top: 4px;">${primary.description || ''}</div>
-                        <div class="spiritual-btn" style="margin-top: 10px; background: rgba(108, 92, 231, 0.3); border-color: #a29bfe;">
-                            <span>Открыть и изучить материал</span>
-                            <span>↗</span>
-                        </div>
-                    </div>
-                `;
-                
+                primaryContainer.innerHTML = '';
+                primaryContainer.appendChild(buildSpiritualCard(primary, {
+                    cardClass: 'spiritual-card-primary',
+                    badgeClass: 'is-amber',
+                    ctaLabel: 'Открыть и изучить материал'
+                }));
+
                 if (materials.length > 1) {
-                    html += `
-                        <div style="margin-top: 14px; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: #a29bfe; text-transform: uppercase; letter-spacing: 0.5px;">
-                            📚 Дополнительные материалы по выбранным темам:
-                        </div>
-                    `;
+                    const heading = document.createElement('div');
+                    heading.className = 'spiritual-section-heading';
+                    heading.textContent = 'Дополнительные материалы по выбранным темам:';
+                    primaryContainer.appendChild(heading);
+
                     for (let i = 1; i < materials.length; i++) {
-                        const m = materials[i];
-                        html += `
-                            <div class="spiritual-card" data-url="${m.url}" style="margin-top: 8px; border-width: 1px; border-color: rgba(162, 155, 254, 0.3); background: rgba(255, 255, 255, 0.03); cursor: pointer;">
-                                <div class="spiritual-badge" style="background: rgba(255, 255, 255, 0.08); color: #dfe6e9;">
-                                    <span>${m.icon || '📖'}</span>
-                                    <span>${m.type_label || 'wol.jw.org'}</span>
-                                </div>
-                                <div class="spiritual-title" style="font-size: 14px; margin-top: 2px;">${m.title}</div>
-                                <div class="spiritual-desc" style="margin-top: 3px; font-size: 12px;">${m.description || ''}</div>
-                                <div class="spiritual-btn" style="margin-top: 8px; font-size: 12px; padding: 6px 10px;">
-                                    <span>Открыть статью</span>
-                                    <span>↗</span>
-                                </div>
-                            </div>
-                        `;
+                        primaryContainer.appendChild(buildSpiritualCard(materials[i], {
+                            cardClass: 'spiritual-card-secondary',
+                            ctaLabel: 'Открыть статью'
+                        }));
                     }
                 }
-                
-                primaryContainer.innerHTML = html;
-                
+
                 primaryContainer.querySelectorAll('.spiritual-card').forEach(card => {
                     card.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -1250,49 +1294,30 @@ async function loadRound2Solution(tType, notes) {
             };
             
             if (cardContainer) {
-                let html = `
-                    <div class="spiritual-card" data-url="${secondary.url}" style="border-width: 2px; border-color: rgba(253, 203, 110, 0.45); background: rgba(253, 203, 110, 0.08); cursor: pointer;">
-                        <div class="spiritual-badge" style="background: rgba(253, 203, 110, 0.2); color: #ffeaa7;">
-                            <span>${secondary.icon || '🛡️'}</span>
-                            <span>${secondary.type_label || 'wol.jw.org'}</span>
-                        </div>
-                        <div class="spiritual-title" style="font-size: 15px; margin-top: 2px;">${secondary.title}</div>
-                        <div class="spiritual-desc" style="margin-top: 4px;">${secondary.description || ''}</div>
-                        <div class="spiritual-btn" style="margin-top: 10px; background: rgba(253, 203, 110, 0.25); border-color: #fdcb6e; color: #ffeaa7;">
-                            <span>Открыть и изучить материал Раунда 2</span>
-                            <span>↗</span>
-                        </div>
-                    </div>
-                `;
-                
+                cardContainer.innerHTML = '';
+                cardContainer.appendChild(buildSpiritualCard(secondary, {
+                    cardClass: 'spiritual-card-round2',
+                    badgeClass: 'is-amber',
+                    ctaLabel: 'Открыть материал Раунда 2'
+                }));
+
                 if (materials.length > 1) {
-                    html += `
-                        <div style="margin-top: 14px; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: #fdcb6e; text-transform: uppercase; letter-spacing: 0.5px;">
-                            📚 Дополнительные материалы Раунда 2:
-                        </div>
-                    `;
+                    const heading = document.createElement('div');
+                    heading.className = 'spiritual-section-heading';
+                    heading.textContent = 'Дополнительные материалы Раунда 2:';
+                    cardContainer.appendChild(heading);
+
                     for (let i = 1; i < materials.length; i++) {
-                        const m = materials[i];
-                        html += `
-                            <div class="spiritual-card" data-url="${m.url}" style="margin-top: 8px; border-width: 1px; border-color: rgba(253, 203, 110, 0.3); background: rgba(255, 255, 255, 0.03); cursor: pointer;">
-                                <div class="spiritual-badge" style="background: rgba(255, 255, 255, 0.08); color: #dfe6e9;">
-                                    <span>${m.icon || '🛡️'}</span>
-                                    <span>${m.type_label || 'wol.jw.org'}</span>
-                                </div>
-                                <div class="spiritual-title" style="font-size: 14px; margin-top: 2px;">${m.title}</div>
-                                <div class="spiritual-desc" style="margin-top: 3px; font-size: 12px;">${m.description || ''}</div>
-                                <div class="spiritual-btn" style="margin-top: 8px; font-size: 12px; padding: 6px 10px; background: rgba(253, 203, 110, 0.15); border-color: #fdcb6e; color: #ffeaa7;">
-                                    <span>Открыть статью</span>
-                                    <span>↗</span>
-                                </div>
-                            </div>
-                        `;
+                        cardContainer.appendChild(buildSpiritualCard(materials[i], {
+                            cardClass: 'spiritual-card-secondary',
+                            badgeClass: 'is-amber',
+                            ctaLabel: 'Открыть статью'
+                        }));
                     }
                 }
-                
-                cardContainer.innerHTML = html;
+
                 updateBackButton();
-                
+
                 cardContainer.querySelectorAll('.spiritual-card').forEach(card => {
                     card.addEventListener('click', (e) => {
                         e.preventDefault();
