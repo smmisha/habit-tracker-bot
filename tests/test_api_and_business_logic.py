@@ -494,5 +494,35 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertNotIn("pool_recycle", kwargs)
         self.assertEqual(kwargs.get("connect_args", {}).get("check_same_thread"), False)
 
+    def test_scheduler_not_started_when_bot_paused(self):
+        from services import scheduler as sched_mod
+        with patch.object(settings, "bot_paused", True), \
+             patch.object(sched_mod.scheduler, "start") as mock_start, \
+             patch.object(sched_mod.scheduler, "add_job") as mock_add_job:
+            sched_mod.setup_scheduler()
+            mock_start.assert_not_called()
+            mock_add_job.assert_not_called()
+
+    async def test_missed_deadlines_skips_inactive_user(self):
+        from services.scheduler import check_missed_deadlines
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.is_active = False
+            session.add(CheckInLog(
+                user_id=self.user_id,
+                checkin_date=date.today() - timedelta(days=2),
+                status="pending"
+            ))
+            await session.commit()
+
+        with patch("main.bot.send_message", new_callable=AsyncMock) as mock_send:
+            await check_missed_deadlines()
+            mock_send.assert_not_called()
+
+        async with self.session_factory() as session:
+            logs = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == self.user_id))).scalars().all()
+            self.assertEqual(len(logs), 1)
+            self.assertEqual(logs[0].status, "pending")
+
 if __name__ == "__main__":
     unittest.main()

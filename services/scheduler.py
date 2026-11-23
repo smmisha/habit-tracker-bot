@@ -88,7 +88,7 @@ async def check_missed_deadlines():
                 user_result = await session.execute(select(User).where(User.id == log.user_id))
                 user = user_result.scalar_one_or_none()
                 
-                if not user:
+                if not user or not user.is_active:
                     continue
                     
                 # Вычисляем дедлайн (запланированное время + 20 часов)
@@ -337,6 +337,10 @@ async def send_silent_panic_alert(user_id: int):
 
 def setup_scheduler():
     """Инициализация и запуск планировщика"""
+    if settings.bot_paused:
+        logger.warning("Планировщик APScheduler НЕ запущен (режим паузы bot_paused=True).")
+        return
+
     # Чек-ины проверяются каждую минуту
     scheduler.add_job(check_and_send_checkins, "interval", minutes=1)
     # Дедлайны 20 часов проверяются каждые 5 минут

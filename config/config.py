@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     mistral_api_key: str = Field(default="")
     mini_app_link: str = Field(default="https://t.me/XXXhabitTracker_bot/xxxhabit")
     webapp_base_url: str = Field(default="https://habit-tracker-bot-s7of.onrender.com")
+    bot_paused: bool = Field(default=True)
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

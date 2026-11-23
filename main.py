@@ -763,6 +763,7 @@ async def start_web_server():
     app = web.Application()
     app.add_routes([
         web.get("/", handle_ping),
+        web.post("/maintenance", handle_ping),
         web.get("/dashboard", handle_webapp),
         web.get("/api/stats", handle_api_stats),
         web.get("/api/spiritual_help", handle_api_spiritual_help),
@@ -800,6 +801,20 @@ async def main():
         except Exception as e:
             logger.error(f"Ошибка во время автоматического переноса базы: {e}")
 
+    # Запускаем фоновый веб-сервер (нужен для healthcheck Render и работы WebApp)
+    asyncio.create_task(start_web_server())
+
+    if settings.bot_paused:
+        logger.warning("⏸️ Бот остановлен (settings.bot_paused=True). Планировщик и polling отключены.")
+        await db_helper.init_db()
+        try:
+            await asyncio.Event().wait()
+        except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):
+            logger.info("Остановленный процесс бота завершает работу.")
+        finally:
+            await db_helper.dispose()
+        return
+
     # Подключаем роутеры
     dp.include_router(common_router)
     dp.include_router(tracker_router)
@@ -810,9 +825,6 @@ async def main():
     # Регистрируем события запуска и остановки
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
-    
-    # Запускаем фоновый веб-сервер
-    asyncio.create_task(start_web_server())
     
     # Запуск поллинга
     try:
