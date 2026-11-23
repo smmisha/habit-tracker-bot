@@ -56,7 +56,7 @@ async def process_checkin_clean(callback: CallbackQuery):
         local_now = get_user_local_time(user.timezone)
         today_date = local_now.date()
         
-        # Ищем вчерашний или сегодняшний незаконченный чек-ин
+        # Ищем открытые чек-ины (в пределах 24ч окна)
         checkin_result = await session.execute(
             select(CheckInLog)
             .where(
@@ -65,68 +65,76 @@ async def process_checkin_clean(callback: CallbackQuery):
                     CheckInLog.status == "pending"
                 )
             )
+            .order_by(CheckInLog.checkin_date.desc())
         )
-        active_checkin = checkin_result.scalars().first()
+        pending_logs = checkin_result.scalars().all()
         
-        # Если активной записи нет, создаем ее для сегодняшнего дня
-        if not active_checkin:
-            active_checkin = CheckInLog(user_id=user_id, checkin_date=today_date, status="pending")
-            session.add(active_checkin)
-            await session.flush()
-            
-        # Проверяем, вовремя ли сделана отметка
-        if is_on_time(local_now, user.checkin_time):
-            # ВОВРЕМЯ
-            active_checkin.status = "clean"
-            active_checkin.timestamp = datetime.now()
-            
-            # Вычисляем текущий стрик для ИИ-помощника
-            delta = datetime.now() - user.streak_start
-            streak_days = delta.days
-            
-            await session.commit()
-            
-            import html
-            try:
-                await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
-            except Exception as e:
-                logger.warning(f"Failed to send 'Connecting AI' status in checkin_clean: {e}")
-                
-            try:
-                ai_response = await ai_service.generate_clean_checkin_response(streak_days)
-            except Exception as e:
-                logger.error(f"Error calling AI service in checkin_clean: {e}")
-                ai_response = f"Отлично! Твой день прошел чисто. Текущий стрик: {streak_days} дн. Продолжай в том же духе!"
-                
-            ai_response_escaped = html.escape(ai_response)
-            clean_text = (
-                "☀️ <b>Отметка выполнена! Твой день прошел чисто!</b>\n\n"
-                f"{ai_response_escaped}"
-            )
-            try:
-                await callback.message.edit_text(clean_text)
-            except Exception as e:
-                logger.error(f"Failed to edit message in checkin_clean: {e}")
-                try:
-                    await callback.message.answer(clean_text)
-                except Exception as e2:
-                    logger.error(f"Failed to send clean checkin answer fallback: {e2}")
-            try:
-                await callback.answer()
-            except Exception:
-                pass
+        if pending_logs:
+            now_dt = datetime.now()
+            for ch in pending_logs:
+                ch.status = "clean"
+                ch.timestamp = now_dt
+                ch.excuse_reason = None
         else:
-            # ОПОЗДАНИЕ (запускается опрос о причинах)
-            forgot_left = 3 - user.forgot_count
-            await callback.message.edit_text(
-                "⏰ Ты делаешь отметку с опозданием.\n"
-                "Пожалуйста, выбери причину пропуска графика:",
-                reply_markup=get_excuses_keyboard(forgot_left)
-            )
+            session.add(CheckInLog(
+                user_id=user_id,
+                checkin_date=today_date,
+                status="clean",
+                timestamp=datetime.now(),
+                excuse_reason=None
+            ))
+            
+        # Любой ручной ответ сбрасывает счетчик молчания
+        user.consecutive_missed_checkins = 0
+        user.last_checkin_message_id = None
+        user.is_active = True
+        
+        delta = datetime.now() - user.streak_start
+        streak_days = max(0, delta.days)
+        
+        await session.commit()
+        
+        import html
+        try:
+            await callback.message.edit_text("⏳ <i>Подключаю ИИ-ассистента...</i>")
+        except Exception as e:
+            logger.warning(f"Failed to send 'Connecting AI' status in checkin_clean: {e}")
+            
+        try:
+            ai_response = await ai_service.generate_clean_checkin_response(streak_days)
+        except Exception as e:
+            logger.error(f"Error calling AI service in checkin_clean: {e}")
+            ai_response = f"Отлично! Твой день прошел чисто. Текущий стрик: {streak_days} дн. Продолжай в том же духе!"
+            
+        ai_response_escaped = html.escape(ai_response)
+        clean_text = (
+            "☀️ <b>Отметка выполнена! Твой день прошел чисто!</b>\n\n"
+            f"{ai_response_escaped}"
+        )
+        try:
+            await callback.message.edit_text(clean_text)
+        except Exception as e:
+            logger.error(f"Failed to edit message in checkin_clean: {e}")
+            try:
+                await callback.message.answer(clean_text)
+            except Exception as e2:
+                logger.error(f"Failed to send clean checkin answer fallback: {e2}")
+        try:
             await callback.answer()
+        except Exception:
+            pass
 
 @router.callback_query(F.data == "checkin_relapsed")
 async def process_checkin_relapsed(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    async with db_helper.session_factory() as session:
+        user = await session.get(User, user_id)
+        if user:
+            user.consecutive_missed_checkins = 0
+            user.last_checkin_message_id = None
+            user.is_active = True
+            await session.commit()
+
     await callback.answer()
     from keyboards.inline import get_trigger_keyboard
     await callback.message.edit_text(
@@ -152,7 +160,12 @@ async def save_excuse(user_id: int, excuse_text: str, callback: CallbackQuery = 
             active_checkin.status = "clean"
             active_checkin.timestamp = datetime.now()
             active_checkin.excuse_reason = excuse_text
-            await session.commit()
+        user_obj = await session.get(User, user_id)
+        if user_obj:
+            user_obj.consecutive_missed_checkins = 0
+            user_obj.last_checkin_message_id = None
+            user_obj.is_active = True
+        await session.commit()
             
         text = f"✅ Причина пропуска сохранена: <b>«{excuse_text}»</b>. Стрик продолжается! 💪"
         if callback:

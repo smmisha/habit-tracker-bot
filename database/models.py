@@ -43,6 +43,10 @@ class User(Base):
     # ID последнего отправленного сообщения со стихом дня для последующего удаления
     last_verse_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
+    # ID последнего отправленного чек-ина и счетчик подряд идущих дней без ручного ответа
+    last_checkin_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    consecutive_missed_checkins: Mapped[int] = mapped_column(default=0)
+
     # ИИ-помощник: учет заданных вопросов
     ai_questions_used_today: Mapped[int] = mapped_column(default=0)
     last_ai_query_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -76,8 +80,9 @@ class CheckInLog(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
-    # Причина пропуска, если отметка пройдена в дополнительный период
+    # Причина пропуска / пометка авто-зачета (>24ч)
     excuse_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="checkins")
 
@@ -103,3 +108,10 @@ class SlipEvent(Base):
     notified_partner: Mapped[bool] = mapped_column(default=False)
 
     user: Mapped["User"] = relationship(back_populates="slip_events")
+
+
+class SystemMigration(Base):
+    __tablename__ = "system_migrations"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    applied_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

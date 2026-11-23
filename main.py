@@ -52,6 +52,15 @@ async def on_startup():
     """Действия при запуске бота"""
     logger.info("Запуск инициализации базы данных...")
     await db_helper.init_db()
+
+    logger.info("Проверка одноразового сброса истории (19.11.2026)...")
+    await db_helper.apply_nov_2026_fresh_start_reset()
+
+    logger.info("Снятие старого webhook (если был установлен)...")
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logger.warning(f"Не удалось удалить webhook при старте: {e}")
     
     logger.info("Настройка команд меню...")
     await set_commands(bot)
@@ -108,8 +117,8 @@ async def handle_business_message(message: Message):
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         
-        # Проверяем, что сообщение отправлено пользователем, подключившим этого бота
-        if not user or user.business_connection_id != connection_id:
+        # Проверяем, что сообщение отправлено активным пользователем, подключившим этого бота
+        if not user or not user.is_active or user.business_connection_id != connection_id:
             return
             
         # Проверяем наличие активного ожидающего чек-ина
@@ -126,42 +135,10 @@ async def handle_business_message(message: Message):
         
         if active_checkin:
             now = datetime.now()
-            
-            # Если активность еще не зафиксирована
             if not user.activity_start:
                 user.activity_start = now
-                user.activity_last = now
-                await session.commit()
-                logger.info(f"Бизнес-активность: зафиксировано начало общения в Telegram для {user_id}")
-            else:
-                # Обновляем время последней активности
-                user.activity_last = now
-                elapsed = now - user.activity_start
-                await session.commit()
-                
-                if elapsed >= timedelta(minutes=30):
-                    logger.warning(f"Бизнес-активность: пользователь {user_id} общался более 30 минут без отметки!")
-                    
-                    # Помечаем чек-ин пропущенным
-                    active_checkin.status = "missed"
-                    active_checkin.timestamp = now
-                    active_checkin.excuse_reason = "Проигнорировал чек-ин (был онлайн >30 мин)"
-                    
-                    # Сбрасываем таймер активности
-                    user.activity_start = None
-                    user.activity_last = None
-                    partner_username = user.partner_username
-                    await session.commit()
-                    
-                    # Отправляем предупреждение самому пользователю
-                    try:
-                        await bot.send_message(
-                            chat_id=user_id,
-                            text="🚨 <b>Вы общаетесь в Telegram уже более 30 минут, но не прошли ежедневный чек-ин!</b>\n\n"
-                                 "Пожалуйста, пройдите чек-ин прямо сейчас."
-                        )
-                    except Exception as e:
-                        logger.error(f"Не удалось отправить уведомление в ЛС боту: {e}")
+            user.activity_last = now
+            await session.commit()
 
 # --- ВЕБ-СЕРВЕР И API ДЛЯ DASHBOARD (WEBAPP) ---
 
@@ -466,6 +443,10 @@ async def handle_api_save_journal(request):
             session.add(entry)
             action_text = "сохранена"
             
+        user_obj = await session.get(User, user_id)
+        if user_obj:
+            user_obj.consecutive_missed_checkins = 0
+
         await session.commit()
         
     # Запускаем фоновый анализ записи на предмет компромиссов/самообмана
@@ -513,6 +494,9 @@ async def handle_api_log_relapse(request):
         
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
+
+        user.consecutive_missed_checkins = 0
+        await session.commit()
             
     # Отменяем таймер тихой тревоги, если он был активен
     from services.scheduler import scheduler
@@ -564,6 +548,9 @@ async def handle_api_manage_panic(request):
         
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
+
+        user.consecutive_missed_checkins = 0
+        await session.commit()
             
         partner_username = user.partner_username
         business_connection_id = user.business_connection_id

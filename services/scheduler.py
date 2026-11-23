@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.timezone("Europe/Kyiv"))
 
 async def check_and_send_checkins():
-    """Каждую минуту проверяет, кому пора отправить чек-ин"""
+    """Каждую минуту проверяет авто-зачет просрочек и отправляет активным пользователям вечерний чек-ин"""
+    await check_missed_deadlines()
+
     from main import bot
     async with db_helper.session_factory() as session:
         # Получаем всех активных пользователей
@@ -23,6 +25,9 @@ async def check_and_send_checkins():
         
         for user in users:
             try:
+                if (user.consecutive_missed_checkins or 0) >= 7:
+                    continue
+
                 # Определяем локальное время пользователя
                 user_tz = pytz.timezone(user.timezone)
                 local_now = datetime.now(user_tz)
@@ -42,9 +47,17 @@ async def check_and_send_checkins():
                             )
                         )
                     )
-                    existing = checkin_result.scalar_one_or_none()
+                    existing = checkin_result.scalars().first()
                     
                     if not existing:
+                        # Удаляем предыдущее неотвеченное сообщение чек-ина, если оно осталось в чате
+                        if user.last_checkin_message_id:
+                            try:
+                                await bot.delete_message(chat_id=user.id, message_id=user.last_checkin_message_id)
+                            except Exception:
+                                pass
+                            user.last_checkin_message_id = None
+
                         # Создаем новую запись чек-ина со статусом "pending"
                         new_log = CheckInLog(
                             user_id=user.id,
@@ -55,14 +68,14 @@ async def check_and_send_checkins():
                         await session.commit()
                         
                         # Отправляем сообщение с прямыми кнопками чек-ина
-                        from keyboards.inline import get_checkin_keyboard
-                        from main import bot
-                        
                         sent_msg = await bot.send_message(
                             chat_id=user.id,
                             text="🔔 <b>Время ежедневного отчета!</b>\n\nКак прошел сегодняшний день? Все под контролем?",
                             reply_markup=get_checkin_keyboard()
                         )
+                        new_log.message_id = sent_msg.message_id
+                        user.last_checkin_message_id = sent_msg.message_id
+                        await session.commit()
                         
                         logger.info(f"Отправлен ежедневный чек-ин пользователю {user.id}")
             except Exception as e:
@@ -70,76 +83,89 @@ async def check_and_send_checkins():
 
 async def check_missed_deadlines():
     """
-    Проверяет просроченные чек-ины (свыше 20 часов).
-    Запускается каждые 5-10 минут.
+    Обрабатывает чек-ины, на которые не было ответа более 24 часов:
+    - Закрывает день как 'clean' (сдержался по умолчанию) без лишних уведомлений.
+    - Удаляет зависшее сообщение с кнопками, чтобы не захламлять чат.
+    - На 7-й день тишины подряд переводит бота в режим паузы (is_active = False).
     """
     from main import bot
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
     async with db_helper.session_factory() as session:
-        # Ищем все незавершенные чек-ины
+        # Ищем все незавершенные чек-ины в хронологическом порядке
         result = await session.execute(
             select(CheckInLog)
             .where(CheckInLog.status == "pending")
+            .order_by(CheckInLog.checkin_date.asc())
         )
         pending_logs = result.scalars().all()
         
         for log in pending_logs:
             try:
-                # Получаем пользователя
                 user_result = await session.execute(select(User).where(User.id == log.user_id))
                 user = user_result.scalar_one_or_none()
                 
                 if not user or not user.is_active:
                     continue
                     
-                # Вычисляем дедлайн (запланированное время + 20 часов)
+                # Вычисляем порог авто-зачета (запланированное время + 24 часа)
                 user_tz = pytz.timezone(user.timezone)
                 hour, minute = map(int, user.checkin_time.split(":"))
                 
-                # Создаем datetime на дату чек-ина
                 scheduled_naive = datetime.combine(log.checkin_date, time(hour, minute))
-                # Делаем локализованным в таймзоне пользователя
                 scheduled_dt = user_tz.localize(scheduled_naive)
-                
-                # Дедлайн = время отметки + 20 часов
-                deadline_dt = scheduled_dt + timedelta(hours=20)
-                
-                # Текущее время в таймзоне пользователя
+                deadline_dt = scheduled_dt + timedelta(hours=24)
                 local_now = datetime.now(user_tz)
                 
-                if local_now > deadline_dt:
-                    logger.warning(f"Пользователь {user.id} пропустил дедлайн 20 часов для даты {log.checkin_date}")
+                if local_now >= deadline_dt:
+                    logger.info(f"Пользователь {user.id} не отвечал >24ч за {log.checkin_date}: авто-зачет 'clean'")
                     
-                    # Проверяем, сколько пользователь был активен
-                    was_active_enough = False
-                    if user.activity_start and user.activity_last:
-                        active_duration = user.activity_last - user.activity_start
-                        if active_duration >= timedelta(minutes=10):
-                            was_active_enough = True
-                    
-                    # Обновляем статус
-                    log.status = "missed"
+                    # Удаляем зависшее сообщение чек-ина из чата
+                    if log.message_id:
+                        try:
+                            await bot.delete_message(chat_id=user.id, message_id=log.message_id)
+                        except Exception:
+                            pass
+                        if user.last_checkin_message_id == log.message_id:
+                            user.last_checkin_message_id = None
+
+                    # Засчитываем день как чистый (сдержался по умолчанию)
+                    log.status = "clean"
                     log.timestamp = datetime.now()
-                    log.excuse_reason = "Срок доп. попытки (20 часов) истек"
+                    log.excuse_reason = "Авто-отметка (>24ч без ответа)"
                     
-                    # Сбрасываем текущую активность
                     user.activity_start = None
                     user.activity_last = None
-                    partner_username = user.partner_username
-                    await session.commit()
+                    user.consecutive_missed_checkins = (user.consecutive_missed_checkins or 0) + 1
                     
-                    user_text = (
-                        "🚨 <b>Срок дополнительной попытки вышел!</b>\n\n"
-                        "Вы не отметились в течение 20 часов после назначенного времени."
-                    )
-                    try:
-                        await bot.send_message(
-                            chat_id=user.id,
-                            text=user_text
-                        )
-                    except Exception as e:
-                        logger.error(f"Не удалось отправить уведомление пользователю {user.id}: {e}")
+                    if user.consecutive_missed_checkins >= 7:
+                        user.is_active = False
+                        await session.commit()
+                        logger.warning(f"Пользователь {user.id} не отвечал 7 дней подряд: бот остановлен (is_active=False)")
+                        
+                        pause_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(
+                                text="▶️ Вернуться и продолжить",
+                                callback_data="resume_bot_from_pause"
+                            )
+                        ]])
+                        try:
+                            await bot.send_message(
+                                chat_id=user.id,
+                                text=(
+                                    "⏸️ <b>Бот поставлен на паузу</b>\n\n"
+                                    "Ты не отвечал на ежедневные отчёты 7 дней подряд. "
+                                    "Чтобы не беспокоить тебя впустую, я остановил все напоминания и рассылки.\n\n"
+                                    "Когда будешь готов вернуться — нажми кнопку ниже или введи /start."
+                                ),
+                                reply_markup=pause_kb
+                            )
+                        except Exception as e:
+                            logger.error(f"Не удалось отправить уведомление об авто-паузе пользователю {user.id}: {e}")
+                    else:
+                        await session.commit()
             except Exception as e:
-                logger.error(f"Ошибка проверки дедлайна для записи {log.id}: {e}")
+                logger.error(f"Ошибка авто-зачета/паузы для записи {log.id}: {e}")
 
 from aiogram.types import FSInputFile
 from services.bible_service import bible_service

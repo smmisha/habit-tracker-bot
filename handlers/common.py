@@ -39,11 +39,22 @@ async def cmd_cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Действие отменено.", reply_markup=inline_kb)
 
+def get_resume_honesty_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура честной проверки при возвращении после авто-паузы"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="☀️ Стрик сохранился (продолжаем)", callback_data="resume_clean")],
+            [InlineKeyboardButton(text="😔 Был срыв (начать заново)", callback_data="resume_relapse")]
+        ]
+    )
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username
     first_name = message.from_user.first_name or ""
+    was_paused = False
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -63,13 +74,15 @@ async def cmd_start(message: Message):
                 f"Привет, <b>{first_name}</b>! 👋\n\n"
                 "Этот бот разработан, чтобы помочь тебе в пути отказа от вредных привычек (PMO). "
                 "Здесь ты сможешь вести автоматический счетчик чистых дней и проходить ежедневный чек-ин.\n\n"
-                "🚨 <b>ВАЖНО:</b> Бот автоматически отправит предупреждение твоему напарнику от твоего имени "
-                "через бизнес-аккаунт Telegram, если ты пропустишь обязательное время отчета или зафиксируешь срыв.\n\n"
-                "⚙️ Для корректной работы перейди в <b>Настройки</b> и укажи ID или юзернейм напарника!"
+                "⚙️ Для корректной работы проверь <b>Настройки</b> (/settings)."
             )
         else:
             db_user.username = username
             db_user.first_name = first_name
+            if not db_user.is_active:
+                was_paused = True
+            else:
+                db_user.consecutive_missed_checkins = 0
             await session.commit()
             welcome_text = (
                 f"Рад видеть тебя снова, <b>{first_name}</b>! Счетчик продолжает идти.\n\n"
@@ -84,6 +97,15 @@ async def cmd_start(message: Message):
         )
     except Exception as e:
         logger.error(f"Не удалось установить кнопку меню: {e}")
+
+    if was_paused:
+        await message.answer(
+            f"👋 <b>С возвращением, {first_name}!</b>\n\n"
+            "Бот стоял на паузе после долгого перерыва в ответах.\n"
+            "Подскажи честно перед Иеговой: за время моего отсутствия стрик чистоты сохранился или был срыв?",
+            reply_markup=get_resume_honesty_keyboard()
+        )
+        return
         
     # Убираем старое reply-меню
     await message.answer("🔄 Загружаю интерфейс...", reply_markup=ReplyKeyboardRemove())
@@ -99,6 +121,62 @@ async def cmd_start(message: Message):
         ]
     )
     await message.answer(welcome_text, reply_markup=inline_kb)
+
+
+@router.callback_query(F.data == "resume_bot_from_pause")
+async def process_resume_bot_from_pause(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "👋 <b>С возвращением!</b>\n\n"
+        "Бот был на паузе после 7 дней без ответа.\n"
+        "Подскажи честно перед Иеговой: за это время стрик чистоты сохранился или был срыв?",
+        reply_markup=get_resume_honesty_keyboard()
+    )
+
+
+@router.callback_query(F.data == "resume_clean")
+async def process_resume_clean(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    async with db_helper.session_factory() as session:
+        user = await session.get(User, user_id)
+        if user:
+            user.is_active = True
+            user.consecutive_missed_checkins = 0
+            user.last_checkin_message_id = None
+            await session.commit()
+
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="🚀 Открыть Mini App", url=settings.mini_app_link)
+        ]]
+    )
+    await callback.message.edit_text(
+        "☀️ <b>Отлично! Работа бота возобновлена, стрик продолжается.</b>\n\n"
+        "Рад твоему возвращению! Продолжаем путь чистоты.",
+        reply_markup=inline_kb
+    )
+    await callback.answer("Бот возобновлен!")
+
+
+@router.callback_query(F.data == "resume_relapse")
+async def process_resume_relapse(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    async with db_helper.session_factory() as session:
+        user = await session.get(User, user_id)
+        if user:
+            user.is_active = True
+            user.consecutive_missed_checkins = 0
+            user.last_checkin_message_id = None
+            await session.commit()
+
+    from keyboards.inline import get_trigger_keyboard
+    await callback.message.edit_text(
+        "⚠️ <b>Перезапуск после паузы</b>\n\n"
+        "Спасибо за честность перед Иеговой и перед собой. "
+        "<b>Что послужило главным триггером срыва?</b> Выбери вариант ниже:",
+        reply_markup=get_trigger_keyboard()
+    )
+    await callback.answer()
 
 @router.message(Command("covenant"))
 async def cmd_covenant(message: Message):

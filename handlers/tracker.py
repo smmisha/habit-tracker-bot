@@ -117,6 +117,9 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         user.streak_start = now
         user.total_relapses += 1
         user.awarded_milestones = ""
+        user.consecutive_missed_checkins = 0
+        user.last_checkin_message_id = None
+        user.is_active = True
         
         # 2. Логирование срыва в традиционный лог (для совместимости)
         log = RelapseLog(

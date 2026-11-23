@@ -367,7 +367,11 @@ function renderCalendar(days) {
         let tooltipText = `${formattedDate}: `;
         if (day.status === 'clean') {
             if (day.excuse_reason) {
-                tooltipText += `Чисто, опоздание (${day.excuse_reason}) ⏰`;
+                if (day.excuse_reason.includes('Авто-отметка')) {
+                    tooltipText += 'Чисто (авто-зачёт >24ч) ✨';
+                } else {
+                    tooltipText += `Чисто, опоздание (${day.excuse_reason}) ⏰`;
+                }
             } else {
                 tooltipText += 'Чистый день! 💪';
             }

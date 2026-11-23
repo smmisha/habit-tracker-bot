@@ -524,5 +524,188 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertEqual(len(logs), 1)
             self.assertEqual(logs[0].status, "pending")
 
+    async def test_auto_clean_after_24h_deletes_message_and_increments_missed(self):
+        from services.scheduler import check_missed_deadlines
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.is_active = True
+            user.consecutive_missed_checkins = 0
+            user.last_checkin_message_id = 777
+            session.add(CheckInLog(
+                user_id=self.user_id,
+                checkin_date=date.today() - timedelta(days=2),
+                status="pending",
+                message_id=777
+            ))
+            await session.commit()
+
+        with patch("main.bot.delete_message", new_callable=AsyncMock) as mock_del, \
+             patch("main.bot.send_message", new_callable=AsyncMock) as mock_send:
+            await check_missed_deadlines()
+            mock_del.assert_awaited_once_with(chat_id=self.user_id, message_id=777)
+            mock_send.assert_not_called()
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.consecutive_missed_checkins, 1)
+            self.assertTrue(user.is_active)
+            self.assertIsNone(user.last_checkin_message_id)
+            log = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == self.user_id))).scalar_one()
+            self.assertEqual(log.status, "clean")
+            self.assertEqual(log.excuse_reason, "Авто-отметка (>24ч без ответа)")
+
+    async def test_auto_pause_after_7_consecutive_missed_days(self):
+        from services.scheduler import check_missed_deadlines
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.is_active = True
+            user.consecutive_missed_checkins = 6
+            session.add(CheckInLog(
+                user_id=self.user_id,
+                checkin_date=date.today() - timedelta(days=2),
+                status="pending",
+                message_id=888
+            ))
+            await session.commit()
+
+        with patch("main.bot.delete_message", new_callable=AsyncMock), \
+             patch("main.bot.send_message", new_callable=AsyncMock) as mock_send, \
+             patch("services.userbot_client.userbot.send_message_to_partner", new_callable=AsyncMock) as mock_partner:
+            await check_missed_deadlines()
+            mock_partner.assert_not_called()
+            mock_send.assert_awaited_once()
+            args, kwargs = mock_send.call_args
+            self.assertEqual(kwargs.get("chat_id"), self.user_id)
+            self.assertIn("паузу", kwargs.get("text", ""))
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.consecutive_missed_checkins, 7)
+            self.assertFalse(user.is_active)
+
+    async def test_apply_nov_2026_fresh_start_reset_is_idempotent(self):
+        from database.models import SystemMigration
+        target_id = 5037862619
+        async with self.session_factory() as session:
+            session.add(User(
+                id=target_id,
+                username="misha",
+                first_name="Michael",
+                timezone="Europe/Kyiv",
+                partner_username="8215716011",
+                total_relapses=33,
+                forgot_count=3,
+                consecutive_missed_checkins=5,
+                awarded_milestones="1,3,7,14,30",
+                is_active=False
+            ))
+            session.add(RelapseLog(user_id=target_id, trigger_reason="Old trigger"))
+            session.add(SlipEvent(user_id=target_id, notified_partner=True))
+            session.add(CheckInLog(user_id=target_id, checkin_date=date(2026, 11, 17), status="missed"))
+            session.add(JournalEntry(user_id=target_id, entry_date=date(2026, 11, 1), content="Old journal"))
+            await session.commit()
+
+        applied1 = await db_helper.apply_nov_2026_fresh_start_reset(target_user_id=target_id)
+        self.assertTrue(applied1)
+
+        async with self.session_factory() as session:
+            user = await session.get(User, target_id)
+            self.assertTrue(user.is_active)
+            self.assertEqual(user.total_relapses, 1)
+            self.assertEqual(user.forgot_count, 0)
+            self.assertEqual(user.consecutive_missed_checkins, 0)
+            self.assertEqual(user.awarded_milestones, "1,3")
+            self.assertEqual(user.streak_start, datetime(2026, 11, 19, 20, 0, 0))
+            self.assertEqual(user.partner_username, "8215716011")
+
+            relapses = (await session.execute(select(RelapseLog).where(RelapseLog.user_id == target_id))).scalars().all()
+            slips = (await session.execute(select(SlipEvent).where(SlipEvent.user_id == target_id))).scalars().all()
+            checkins = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == target_id).order_by(CheckInLog.checkin_date))).scalars().all()
+            journals = (await session.execute(select(JournalEntry).where(JournalEntry.user_id == target_id))).scalars().all()
+
+            self.assertEqual(len(relapses), 1)
+            self.assertEqual(relapses[0].timestamp, datetime(2026, 11, 19, 20, 0, 0))
+            self.assertEqual(len(slips), 1)
+            self.assertTrue(slips[0].notified_partner)
+            self.assertEqual([(c.checkin_date, c.status) for c in checkins], [
+                (date(2026, 11, 19), "relapsed"),
+                (date(2026, 11, 20), "clean"),
+                (date(2026, 11, 21), "clean"),
+                (date(2026, 11, 22), "clean"),
+            ])
+            self.assertEqual(len(journals), 0)
+
+            # Second run must be idempotent no-op
+            session.add(JournalEntry(user_id=target_id, entry_date=date(2026, 11, 23), content="New note after reset"))
+            await session.commit()
+
+        applied2 = await db_helper.apply_nov_2026_fresh_start_reset(target_user_id=target_id)
+        self.assertFalse(applied2)
+
+        async with self.session_factory() as session:
+            journals_after = (await session.execute(select(JournalEntry).where(JournalEntry.user_id == target_id))).scalars().all()
+            self.assertEqual(len(journals_after), 1)
+
+    async def test_checkin_clean_anytime_resets_missed_counter(self):
+        from handlers.checkin import process_checkin_clean
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.consecutive_missed_checkins = 4
+            user.checkin_time = "03:00"
+            session.add(CheckInLog(
+                user_id=self.user_id,
+                checkin_date=date.today(),
+                status="pending"
+            ))
+            await session.commit()
+
+        mock_callback = MagicMock()
+        mock_callback.from_user.id = self.user_id
+        mock_callback.message.edit_text = AsyncMock()
+        mock_callback.message.answer = AsyncMock()
+        mock_callback.answer = AsyncMock()
+
+        with patch("services.ai_service.ai_service.generate_clean_checkin_response", new_callable=AsyncMock, return_value="Молодец!"):
+            await process_checkin_clean(mock_callback)
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.consecutive_missed_checkins, 0)
+            log = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == self.user_id))).scalar_one()
+            self.assertEqual(log.status, "clean")
+            self.assertIsNone(log.excuse_reason)
+
+    async def test_resume_from_pause_callbacks(self):
+        from handlers.common import process_resume_clean, process_resume_relapse
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.is_active = False
+            user.consecutive_missed_checkins = 7
+            await session.commit()
+
+        cb = MagicMock()
+        cb.from_user.id = self.user_id
+        cb.message.edit_text = AsyncMock()
+        cb.answer = AsyncMock()
+
+        await process_resume_clean(cb)
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertTrue(user.is_active)
+            self.assertEqual(user.consecutive_missed_checkins, 0)
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            user.is_active = False
+            user.consecutive_missed_checkins = 7
+            await session.commit()
+
+        await process_resume_relapse(cb)
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertTrue(user.is_active)
+            self.assertEqual(user.consecutive_missed_checkins, 0)
+            cb.message.edit_text.assert_awaited()
+
 if __name__ == "__main__":
     unittest.main()
