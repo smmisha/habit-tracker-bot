@@ -40,3 +40,6 @@ mister_tabletus_bot/photos/
 # Scratch/Temporary scripts
 scratch/
 mister_tabletus_bot/scratch/
+
+# Личные переписки: не публиковать
+chats_archive/

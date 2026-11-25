@@ -22,19 +22,7 @@ import hmac
 import hashlib
 import json
 from urllib.parse import urlencode
-from main import (
-    handle_ping,
-    handle_webapp,
-    no_cache_webapp_middleware,
-    handle_api_stats,
-    handle_api_save_journal,
-    handle_api_log_relapse,
-    handle_api_manage_panic,
-    handle_api_accept_covenant,
-    handle_api_spiritual_help,
-    handle_api_spiritual_reflection,
-    validate_telegram_init_data,
-)
+from main import create_web_app, validate_telegram_init_data
 
 class TestApiAndBusinessLogic(AioHTTPTestCase):
     async def setUpAsync(self):
@@ -75,22 +63,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         await super().tearDownAsync()
 
     async def get_application(self):
-        app = web.Application(middlewares=[no_cache_webapp_middleware])
-        app.add_routes([
-            web.get("/", handle_ping),
-            web.get("/dashboard", handle_webapp),
-            web.get("/api/stats", handle_api_stats),
-            web.post("/api/journal", handle_api_save_journal),
-            web.post("/api/relapse", handle_api_log_relapse),
-            web.post("/api/panic", handle_api_manage_panic),
-            web.post("/api/accept_covenant", handle_api_accept_covenant),
-            web.get("/api/spiritual_help", handle_api_spiritual_help),
-            web.post("/api/spiritual_help", handle_api_spiritual_help),
-            web.post("/api/spiritual_reflection", handle_api_spiritual_reflection),
-        ])
-        webapp_path = Path(__file__).parent.parent / "webapp"
-        app.router.add_static("/webapp", path=str(webapp_path), name="webapp")
-        return app
+        return create_web_app()
 
     async def test_ping(self):
         resp = await self.client.request("GET", "/")
@@ -98,26 +71,18 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         text = await resp.text()
         self.assertEqual(text, "OK")
 
-    async def test_stats_missing_user_id(self):
-        resp = await self.client.request("GET", "/api/stats")
-        self.assertEqual(resp.status, 400)
-        data = await resp.json()
-        self.assertIn("Missing user_id", data.get("error", ""))
-
-    async def test_stats_invalid_user_id(self):
-        resp = await self.client.request("GET", "/api/stats?user_id=-5")
-        self.assertEqual(resp.status, 400)
-        data = await resp.json()
-        self.assertIn("Invalid user_id", data.get("error", ""))
+    async def test_stats_rejects_non_positive_id(self):
+        resp = await self.client.request("GET", "/api/stats", headers=self._auth(-5))
+        self.assertEqual(resp.status, 401)
 
     async def test_stats_nonexistent_user(self):
-        resp = await self.client.request("GET", "/api/stats?user_id=111222")
+        resp = await self.client.request("GET", "/api/stats", headers=self._auth(111222))
         self.assertEqual(resp.status, 404)
         data = await resp.json()
         self.assertIn("User not found", data.get("error", ""))
 
     async def test_stats_success(self):
-        resp = await self.client.request("GET", f"/api/stats?user_id={self.user_id}")
+        resp = await self.client.request("GET", "/api/stats", headers=self._auth())
         self.assertEqual(resp.status, 200)
         data = await resp.json()
         self.assertIn("streak_str", data)
@@ -129,8 +94,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertEqual(data["settings"]["checkin_time"], "21:00")
 
     async def test_journal_empty_or_short(self):
-        resp = await self.client.request("POST", "/api/journal", json={
-            "user_id": self.user_id,
+        resp = await self.client.request("POST", "/api/journal", headers=self._auth(), json={
             "content": "abc"
         })
         self.assertEqual(resp.status, 400)
@@ -139,8 +103,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
 
     async def test_journal_too_long(self):
         long_content = "x" * 2005
-        resp = await self.client.request("POST", "/api/journal", json={
-            "user_id": self.user_id,
+        resp = await self.client.request("POST", "/api/journal", headers=self._auth(), json={
             "content": long_content
         })
         self.assertEqual(resp.status, 400)
@@ -149,8 +112,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
 
     async def test_journal_save_success(self):
         with patch("main.bot.send_message", new_callable=AsyncMock):
-            resp = await self.client.request("POST", "/api/journal", json={
-                "user_id": self.user_id,
+            resp = await self.client.request("POST", "/api/journal", headers=self._auth(), json={
                 "content": "Сегодня был прекрасный день без компромиссов."
             })
             self.assertEqual(resp.status, 200)
@@ -169,8 +131,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         """Verify /api/relapse executes reset cleanly without notifying partner"""
         with patch("main.bot.send_message", new_callable=AsyncMock) as mock_send, \
              patch("services.userbot_client.userbot.send_message_to_partner", new_callable=AsyncMock) as mock_partner:
-            resp = await self.client.request("POST", "/api/relapse", json={
-                "user_id": self.user_id,
+            resp = await self.client.request("POST", "/api/relapse", headers=self._auth(), json={
                 "trigger_reason": "Стресс на работе"
             })
             self.assertEqual(resp.status, 200)
@@ -190,15 +151,13 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertFalse(slips[0].notified_partner)
 
     async def test_panic_invalid_action(self):
-        resp = await self.client.request("POST", "/api/panic", json={
-            "user_id": self.user_id,
+        resp = await self.client.request("POST", "/api/panic", headers=self._auth(), json={
             "action": "unknown_action"
         })
         self.assertEqual(resp.status, 400)
 
     async def test_panic_initiate(self):
-        resp = await self.client.request("POST", "/api/panic", json={
-            "user_id": self.user_id,
+        resp = await self.client.request("POST", "/api/panic", headers=self._auth(), json={
             "action": "initiate"
         })
         self.assertEqual(resp.status, 200)
@@ -213,8 +172,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             initial_relapses = user_before.total_relapses
 
         with patch("main.bot.send_message", new_callable=AsyncMock):
-            resp = await self.client.request("POST", "/api/panic", json={
-                "user_id": self.user_id,
+            resp = await self.client.request("POST", "/api/panic", headers=self._auth(), json={
                 "action": "failed",
                 "trigger_reason": "Сильная тяга ночью"
             })
@@ -236,14 +194,11 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIsNotNone(router)
 
     async def test_accept_covenant_invalid_payload(self):
-        resp = await self.client.request("POST", "/api/accept_covenant", json={
-            "user_id": -1
-        })
+        resp = await self.client.request("POST", "/api/accept_covenant", headers=self._auth(), data="not json")
         self.assertEqual(resp.status, 400)
 
     async def test_accept_covenant_success(self):
-        resp = await self.client.request("POST", "/api/accept_covenant", json={
-            "user_id": 999001,
+        resp = await self.client.request("POST", "/api/accept_covenant", headers=self._auth(), json={
             "mode": "restart"
         })
         self.assertEqual(resp.status, 200)
@@ -279,8 +234,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
 
     async def test_spiritual_reflection_rejects_shallow_and_saves_sincere(self):
         # 1. Generic shallow boilerplate should be rejected softly without saving
-        resp_shallow = await self.client.request("POST", "/api/spiritual_reflection", json={
-            "user_id": self.user_id,
+        resp_shallow = await self.client.request("POST", "/api/spiritual_reflection", headers=self._auth(), json={
             "article_title": "Что говорит Библия о порнографии?",
             "reflection_text": "порно это плохо и грех",
             "round": 1
@@ -304,8 +258,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         )
         with patch("services.ai_service.ai_service._call_gemini", new_callable=AsyncMock, return_value='{"accepted": true, "feedback": "Отличный искренний вывод!"}'), \
              patch("main.bot.send_message", new_callable=AsyncMock):
-            resp_ok = await self.client.request("POST", "/api/spiritual_reflection", json={
-                "user_id": self.user_id,
+            resp_ok = await self.client.request("POST", "/api/spiritual_reflection", headers=self._auth(), json={
                 "article_title": "Что говорит Библия о порнографии?",
                 "reflection_text": sincere_text,
                 "round": 1
@@ -321,7 +274,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertIn("Притчи 4:23", entries[0].content)
 
     async def test_spiritual_help(self):
-        resp = await self.client.request("GET", "/api/spiritual_help?user_id=999001")
+        resp = await self.client.request("GET", "/api/spiritual_help", headers=self._auth())
         self.assertEqual(resp.status, 200)
         data = await resp.json()
         self.assertTrue(data.get("ok"))
@@ -336,8 +289,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertTrue("jw.org" in primary["url"] or "wol.jw.org" in primary["url"])
 
     async def test_spiritual_help_post_sexting(self):
-        resp = await self.client.request("POST", "/api/spiritual_help", json={
-            "user_id": 999001,
+        resp = await self.client.request("POST", "/api/spiritual_help", headers=self._auth(), json={
             "temptation_type": "sexting"
         })
         self.assertEqual(resp.status, 200)
@@ -350,8 +302,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertTrue("wol.jw.org/ru/wol/d/r2/lp-u/502013360" in primary["url"])
 
     async def test_spiritual_help_post_custom_notes(self):
-        resp = await self.client.request("POST", "/api/spiritual_help", json={
-            "user_id": 999001,
+        resp = await self.client.request("POST", "/api/spiritual_help", headers=self._auth(), json={
             "user_notes": "Увидел фото знакомой девушки, очень хочу переспать"
         })
         self.assertEqual(resp.status, 200)
@@ -363,8 +314,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertTrue("wol.jw.org" in primary["url"])
 
     async def test_spiritual_help_round_2(self):
-        resp = await self.client.request("POST", "/api/spiritual_help", json={
-            "user_id": 999001,
+        resp = await self.client.request("POST", "/api/spiritual_help", headers=self._auth(), json={
             "temptation_type": "masturbation",
             "round": 2
         })
@@ -377,8 +327,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertTrue("1101989353" in primary["url"])
 
     async def test_spiritual_help_multi_select(self):
-        resp = await self.client.request("POST", "/api/spiritual_help", json={
-            "user_id": 999001,
+        resp = await self.client.request("POST", "/api/spiritual_help", headers=self._auth(), json={
             "temptation_types": ["sexting", "masturbation"]
         })
         self.assertEqual(resp.status, 200)
@@ -401,8 +350,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             initial_streak_start = user_before.streak_start
             initial_relapses = user_before.total_relapses
 
-        resp = await self.client.request("POST", "/api/panic", json={
-            "user_id": self.user_id,
+        resp = await self.client.request("POST", "/api/panic", headers=self._auth(), json={
             "action": "partner_contacted"
         })
         self.assertEqual(resp.status, 200)
@@ -443,9 +391,10 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertNotIn("дн.", formatted2)
         self.assertIn("45</b> мин.", formatted2)
 
-    def _create_mock_init_data(self, user_dict, bot_token=None, tamper=False):
+    def _create_mock_init_data(self, user_dict, bot_token=None, tamper=False, auth_date=None):
         token = bot_token or settings.bot_token
-        auth_date = int(datetime.now().timestamp())
+        if auth_date is None:
+            auth_date = int(datetime.now().timestamp())
         params = {
             "auth_date": str(auth_date),
             "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
@@ -458,6 +407,11 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             calc_hash = "invalid_hash_signature_12345"
         params["hash"] = calc_hash
         return urlencode(params)
+
+    def _auth(self, user_id=None):
+        """Заголовки с корректно подписанным initData (по умолчанию тестовый пользователь)"""
+        user = {"id": self.user_id if user_id is None else user_id}
+        return {"X-Telegram-Init-Data": self._create_mock_init_data(user)}
 
     def test_validate_telegram_init_data_valid(self):
         user = {"id": 123456, "first_name": "John", "username": "johndoe"}
@@ -556,6 +510,93 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         data = await resp.json()
         self.assertTrue(data.get("ok"))
         self.assertIn("materials", data)
+
+    async def test_every_api_route_requires_signed_init_data(self):
+        """Голый user_id в query и теле не дает доступа ни к одному /api/ маршруту"""
+        routes = sorted({
+            (route.method, route.resource.canonical)
+            for route in self.app.router.routes()
+            if route.method != "HEAD" and route.resource.canonical.startswith("/api/")
+        })
+        self.assertGreaterEqual(len(routes), 9)
+        payload = {
+            "user_id": self.user_id,
+            "action": "helped",
+            "content": "Чужая запись в дневник",
+            "reflection_text": "Притчи 4:23 о том, что сердце нужно хранить с самого начала",
+        }
+        with patch("main.bot.send_message", new_callable=AsyncMock) as mock_send:
+            for method, path in routes:
+                with self.subTest(method=method, path=path):
+                    resp = await self.client.request(
+                        method, path, params={"user_id": str(self.user_id)},
+                        json=payload if method == "POST" else None,
+                    )
+                    self.assertEqual(resp.status, 401)
+            await asyncio.sleep(0)
+            mock_send.assert_not_called()
+
+        async with self.session_factory() as session:
+            user = await session.get(User, self.user_id)
+            self.assertEqual(user.total_relapses, 1)
+            entries = (await session.execute(select(JournalEntry))).scalars().all()
+            self.assertEqual(entries, [])
+
+    async def test_client_user_id_cannot_override_signed_user(self):
+        other_id = 999002
+        async with self.session_factory() as session:
+            session.add(User(id=other_id, first_name="Other", total_relapses=7))
+            await session.commit()
+
+        resp = await self.client.request(
+            "GET", "/api/stats", params={"user_id": str(other_id)}, headers=self._auth()
+        )
+        self.assertEqual(resp.status, 200)
+        self.assertEqual((await resp.json())["total_relapses"], 1)
+
+        with patch("main.bot.send_message", new_callable=AsyncMock):
+            resp = await self.client.request(
+                "POST", "/api/relapse", headers=self._auth(),
+                json={"user_id": other_id, "trigger_reason": "Подмена"},
+            )
+            self.assertEqual(resp.status, 200)
+
+        async with self.session_factory() as session:
+            self.assertEqual((await session.get(User, self.user_id)).total_relapses, 2)
+            self.assertEqual((await session.get(User, other_id)).total_relapses, 7)
+
+    async def test_init_data_expires_after_24_hours(self):
+        now = int(datetime.now().timestamp())
+        for age_hours, expected in ((23, 200), (25, 401)):
+            with self.subTest(age_hours=age_hours):
+                init_data = self._create_mock_init_data(
+                    {"id": self.user_id}, auth_date=now - age_hours * 3600
+                )
+                resp = await self.client.request(
+                    "GET", "/api/stats", headers={"X-Telegram-Init-Data": init_data}
+                )
+                self.assertEqual(resp.status, expected)
+
+    async def test_init_data_accepted_only_from_header(self):
+        init_data = self._create_mock_init_data({"id": self.user_id})
+        resp = await self.client.request("GET", "/api/stats", params={"initData": init_data})
+        self.assertEqual(resp.status, 401)
+        resp = await self.client.request("POST", "/api/journal", json={
+            "initData": init_data, "content": "Подпись в теле запроса"
+        })
+        self.assertEqual(resp.status, 401)
+
+    async def test_webapp_hides_directory_listing(self):
+        for path in ("/webapp/", "/webapp/js/"):
+            with self.subTest(path=path):
+                resp = await self.client.request("GET", path)
+                self.assertEqual(resp.status, 403)
+        resp = await self.client.request("GET", "/webapp/index.html")
+        self.assertEqual(resp.status, 200)
+
+    async def test_dashboard_redirect_drops_user_id(self):
+        resp = await self.client.request("GET", "/dashboard?user_id=999001", allow_redirects=False)
+        self.assertNotIn("user_id", resp.headers.get("Location", ""))
 
     @patch("database.db_helper.create_async_engine")
     def test_database_helper_postgres_pool_settings(self, mock_create_engine):

@@ -171,20 +171,9 @@ if (tg && tg.BackButton) {
     }
 }
 
-// Извлекаем user_id
-function getUserId() {
-    if (tg?.initDataUnsafe?.user?.id) {
-        return tg.initDataUnsafe.user.id;
-    }
-    const urlParams = new URLSearchParams(window.location.search);
-    const paramId = urlParams.get('user_id');
-    if (paramId) {
-        return paramId;
-    }
-    return '5037862619'; // Резервный ID для тестирования
-}
+// Пользователя сервер определяет только по подписанному initData (заголовок ставит apiFetch)
+const NO_ACCESS_TEXT = 'Откройте приложение заново через бота в Telegram';
 
-const userId = getUserId();
 let relapseSource = 'direct'; // 'direct' или 'panic'
 let isSosUnlocked = false;
 
@@ -280,7 +269,14 @@ function checkDefaultTab() {
 // Загрузка всей статистики и данных с бэкенда
 async function loadAllData() {
     try {
-        const response = await apiFetch(`/api/stats?user_id=${userId}`);
+        // Вне Telegram подписи нет, поэтому запрашивать личные данные незачем
+        const response = tg?.initData ? await apiFetch('/api/stats') : null;
+        if (!response || response.status === 401) {
+            document.getElementById('header-subtitle').textContent = NO_ACCESS_TEXT;
+            document.getElementById('daily-quote').textContent = 'Личные данные видны только вам и только из Telegram.';
+            showToast(NO_ACCESS_TEXT, 'error');
+            return;
+        }
         if (!response.ok) {
             throw new Error(`Ошибка: ${response.status}`);
         }
@@ -507,7 +503,7 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
         const response = await apiFetch('/api/journal', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, content: text })
+            body: JSON.stringify({ content: text })
         });
         
         const resData = await response.json();
@@ -724,7 +720,7 @@ async function initiatePanicTimer() {
         await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'initiate' })
+            body: JSON.stringify({ action: 'initiate' })
         });
     } catch (e) {
         console.error("Ошибка при инициализации тихой тревоги:", e);
@@ -746,7 +742,7 @@ async function startSosProcess() {
         const response = await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'start' })
+            body: JSON.stringify({ action: 'start' })
         });
         const resData = await response.json();
         
@@ -804,7 +800,7 @@ document.getElementById('btn-panic-helped').addEventListener('click', async () =
         const response = await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'helped' })
+            body: JSON.stringify({ action: 'helped' })
         });
         const resData = await response.json();
         if (response.ok && resData.success) {
@@ -831,7 +827,7 @@ document.getElementById('btn-panic-failed')?.addEventListener('click', async () 
         await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'failed' })
+            body: JSON.stringify({ action: 'failed' })
         });
     } catch (e) {
         console.error(e);
@@ -890,7 +886,6 @@ async function submitArticleReflection(roundNum) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                user_id: userId,
                 article_title: articleTitle,
                 reflection_text: text,
                 round: roundNum
@@ -1013,7 +1008,7 @@ document.getElementById('btn-spiritual-helped')?.addEventListener('click', async
         await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'helped' })
+            body: JSON.stringify({ action: 'helped' })
         });
     } catch (e) {
         console.error(e);
@@ -1144,7 +1139,7 @@ document.getElementById('btn-round2-helped')?.addEventListener('click', async ()
         await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'helped' })
+            body: JSON.stringify({ action: 'helped' })
         });
     } catch (e) {
         console.error(e);
@@ -1194,7 +1189,7 @@ document.getElementById('btn-confirm-partner-contacted')?.addEventListener('clic
         await apiFetch('/api/panic', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, action: 'partner_contacted' })
+            body: JSON.stringify({ action: 'partner_contacted' })
         });
     } catch (e) {
         console.error(e);
@@ -1252,7 +1247,6 @@ async function loadSpiritualSolution(tType, notes) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                user_id: userId,
                 temptation_types: tTypes,
                 temptation_type: tTypes[0] || null,
                 user_notes: notes,
@@ -1357,6 +1351,7 @@ async function loadSpiritualSolution(tType, notes) {
             updateBackButton();
             return;
         }
+        showToast(data.error || 'Ошибка при подборе духовного решения', 'error');
     } catch (e) {
         console.error('Error loading spiritual solution:', e);
         showToast('Ошибка при подборе духовного решения', 'error');
@@ -1378,7 +1373,6 @@ async function loadRound2Solution(tType, notes) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                user_id: userId,
                 temptation_types: tTypes,
                 temptation_type: tTypes[0] || null,
                 user_notes: notes,
@@ -1475,6 +1469,8 @@ async function loadRound2Solution(tType, notes) {
                     });
                 });
             }
+        } else {
+            showToast(data.error || 'Ошибка при загрузке 2-го раунда', 'error');
         }
     } catch (e) {
         console.error('Error loading round 2 solution:', e);
@@ -1516,7 +1512,7 @@ document.getElementById('btn-submit-relapse')?.addEventListener('click', async (
     
     try {
         const endpoint = '/api/relapse';
-        const bodyPayload = { user_id: userId, trigger_reason: triggerValue, source: relapseSource };
+        const bodyPayload = { trigger_reason: triggerValue, source: relapseSource };
         
         const response = await apiFetch(endpoint, {
             method: 'POST',

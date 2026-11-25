@@ -1,9 +1,10 @@
 import asyncio
+import os
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 from datetime import datetime
 
-DATABASE_URL = "postgresql+asyncpg://neondb_owner:npg_rJON3U8EulmI@ep-crimson-brook-aphhyeeg.c-7.us-east-1.aws.neon.tech/neondb?ssl=require"
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 async def main():
     engine = create_async_engine(DATABASE_URL)

@@ -148,9 +148,15 @@ async def handle_business_message(message: Message):
 import hmac
 import hashlib
 import json
+import time
 from urllib.parse import parse_qsl
 from datetime import datetime, date, timedelta
 from database.models import User, CheckInLog, RelapseLog
+
+# Сколько живет подпись Telegram с момента открытия Mini App
+INIT_DATA_MAX_AGE_SECONDS = 24 * 60 * 60
+
+AUTH_ERROR_TEXT = "Нет доступа. Закройте приложение и откройте его заново из чата с ботом."
 
 def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     """
@@ -158,9 +164,10 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
     1. Ключ = HMAC-SHA256("WebAppData", bot_token)
     2. Хеш = HMAC-SHA256(ключ, отсортированные пары "ключ=значение")
     3. Сравнение с hash из initData (безопасное по времени через hmac.compare_digest)
-    
+    4. Подпись не старше INIT_DATA_MAX_AGE_SECONDS (поле auth_date)
+
     Возвращает словарь с распарсенными данными пользователя (dict) при успехе,
-    либо None при невалидной подписи или ошибке.
+    либо None при невалидной или просроченной подписи и при ошибке.
     """
     if not init_data or not bot_token:
         return None
@@ -178,7 +185,10 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
         
         if not hmac.compare_digest(calculated_hash, received_hash):
             return None
-            
+
+        if time.time() - int(parsed_data.get("auth_date", 0)) > INIT_DATA_MAX_AGE_SECONDS:
+            return None
+
         user_raw = parsed_data.get("user")
         if user_raw:
             try:
@@ -191,58 +201,24 @@ def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
         logger.warning(f"Ошибка при валидации initData Telegram: {e}")
         return None
 
-def extract_authenticated_user_id(request: web.Request, payload: dict | None = None) -> tuple[int | None, web.Response | None]:
+def extract_authenticated_user_id(request: web.Request) -> tuple[int | None, web.Response | None]:
     """
-    Извлекает и верифицирует user_id:
-    1. Если передан initData (в заголовке X-Telegram-Init-Data, query или теле запроса),
-       проверяет цифровую подпись Telegram HMAC-SHA256.
-       Если подпись недействительна -> возвращает (None, 401 Response).
-       Если действительна -> извлекает user_id.
-    2. Если initData отсутствует -> использует user_id из query или payload (fallback для тестов/URL).
-    
-    Возвращает кортеж: (user_id: int | None, error_response: web.Response | None).
+    Определяет пользователя только по подписанному Telegram initData
+    из заголовка X-Telegram-Init-Data. user_id из query и тела запроса игнорируется.
+
+    Возвращает (user_id, None) при успехе или (None, 401 Response).
     """
-    init_data_str = (
-        request.headers.get("X-Telegram-Init-Data")
-        or request.query.get("initData")
-        or request.query.get("init_data")
+    user_info = validate_telegram_init_data(
+        request.headers.get("X-Telegram-Init-Data"), settings.bot_token
     )
-    if not init_data_str and payload and isinstance(payload, dict):
-        init_data_str = payload.get("initData") or payload.get("init_data")
-
-    if init_data_str:
-        user_info = validate_telegram_init_data(init_data_str, settings.bot_token)
-        if not user_info:
-            return None, web.json_response({"error": "Invalid Telegram initData signature"}, status=401)
-        
-        user_id = user_info.get("id") if isinstance(user_info, dict) else None
-        if not user_id:
-            return None, web.json_response({"error": "Invalid user in initData"}, status=400)
-        try:
-            user_id = int(user_id)
-            if user_id <= 0:
-                return None, web.json_response({"error": "Invalid user_id"}, status=400)
-            return user_id, None
-        except (ValueError, TypeError):
-            return None, web.json_response({"error": "Invalid user_id in initData"}, status=400)
-
-    # Fallback на user_id
-    raw_user_id = None
-    if payload and isinstance(payload, dict) and "user_id" in payload:
-        raw_user_id = payload.get("user_id")
-    if raw_user_id is None:
-        raw_user_id = request.query.get("user_id")
-
-    if raw_user_id is None or raw_user_id == "":
-        return None, None
-
     try:
-        user_id = int(raw_user_id)
-        if user_id <= 0:
-            return None, web.json_response({"error": "Invalid user_id"}, status=400)
-        return user_id, None
-    except (ValueError, TypeError):
-        return None, web.json_response({"error": "Invalid user_id"}, status=400)
+        user_id = int(user_info.get("id"))
+    except (AttributeError, ValueError, TypeError):
+        user_id = 0
+
+    if user_id <= 0:
+        return None, web.json_response({"error": AUTH_ERROR_TEXT}, status=401)
+    return user_id, None
 
 def _apply_no_cache_headers(headers):
     headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -268,19 +244,13 @@ async def handle_ping(request):
 
 async def handle_webapp(request):
     """Служба отдачи HTML-страницы дашборда с перенаправлением на статический путь"""
-    user_id = request.query.get('user_id', '')
-    target_url = "/webapp/index.html?v=20261125-3"
-    if user_id:
-        target_url += f"&user_id={user_id}"
-    raise web.HTTPFound(target_url)
+    raise web.HTTPFound("/webapp/index.html?v=20261125-3")
 
 async def handle_api_stats(request):
     """API получения статистики пользователя для WebApp"""
     user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
-    if user_id is None:
-        return web.json_response({"error": "Missing user_id"}, status=400)
 
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -426,11 +396,9 @@ async def handle_api_save_journal(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
 
-    user_id, err_resp = extract_authenticated_user_id(request, data)
+    user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
-    if user_id is None:
-        return web.json_response({"error": "Invalid request payload"}, status=400)
         
     content = str(data.get("content", "")).strip()
     if not content or len(content) < 5:
@@ -499,11 +467,9 @@ async def handle_api_log_relapse(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
 
-    user_id, err_resp = extract_authenticated_user_id(request, data)
+    user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
-    if user_id is None:
-        return web.json_response({"error": "Invalid request payload"}, status=400)
 
     trigger_reason = str(data.get("trigger_reason", "Срыв зафиксирован через Mini App")).strip()[:500]
         
@@ -553,11 +519,9 @@ async def handle_api_manage_panic(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
 
-    user_id, err_resp = extract_authenticated_user_id(request, data)
+    user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
-    if user_id is None:
-        return web.json_response({"error": "Invalid request payload"}, status=400)
         
     from database.models import User, RelapseLog, JournalEntry
     from services.ai_service import ai_service
@@ -663,11 +627,9 @@ async def handle_api_accept_covenant(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
         
-    user_id, err_resp = extract_authenticated_user_id(request, data)
+    user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
-    if user_id is None:
-        return web.json_response({"error": "Invalid request payload"}, status=400)
         
     # Получаем контекст состояний для пользователя
     state_ctx = dp.fsm.resolve_context(bot, user_id, user_id)
@@ -718,7 +680,7 @@ async def handle_api_spiritual_help(request):
         except Exception:
             pass
             
-    user_id, err_resp = extract_authenticated_user_id(request, body)
+    user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
             
@@ -775,11 +737,9 @@ async def handle_api_spiritual_reflection(request):
     except (ValueError, TypeError, KeyError):
         return web.json_response({"error": "Invalid request payload"}, status=400)
 
-    user_id, err_resp = extract_authenticated_user_id(request, data)
+    user_id, err_resp = extract_authenticated_user_id(request)
     if err_resp:
         return err_resp
-    if user_id is None:
-        return web.json_response({"error": "Invalid request payload"}, status=400)
 
     reflection_text = str(data.get("reflection_text", "")).strip()
     article_title = str(data.get("article_title", "Духовная публикация")).strip()[:200] or "Духовная публикация"
@@ -860,7 +820,8 @@ async def handle_api_spiritual_reflection(request):
         "feedback": feedback_msg
     })
 
-async def start_web_server():
+def create_web_app() -> web.Application:
+    """Собирает маршруты API и статику WebApp (тесты используют это же приложение)"""
     app = web.Application(middlewares=[no_cache_webapp_middleware])
     app.add_routes([
         web.get("/", handle_ping),
@@ -880,8 +841,11 @@ async def start_web_server():
     # Раздача статики стилей и скриптов WebApp
     webapp_path = os.path.join(os.path.dirname(__file__), "webapp")
     # Раздаем файлы в корне webapp (style.css, index.html) и вложенные папки js/
-    app.router.add_static('/webapp', path=webapp_path, name='webapp', show_index=True)
-    
+    app.router.add_static('/webapp', path=webapp_path, name='webapp', show_index=False)
+    return app
+
+async def start_web_server():
+    app = create_web_app()
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv("PORT", 8080))
