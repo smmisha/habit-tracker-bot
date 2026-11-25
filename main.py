@@ -147,6 +147,7 @@ async def handle_business_message(message: Message):
 
 import hmac
 import hashlib
+import html
 import json
 import time
 from urllib.parse import parse_qsl
@@ -244,7 +245,7 @@ async def handle_ping(request):
 
 async def handle_webapp(request):
     """Служба отдачи HTML-страницы дашборда с перенаправлением на статический путь"""
-    raise web.HTTPFound("/webapp/index.html?v=20261125-3")
+    raise web.HTTPFound("/webapp/index.html?v=20261125-5")
 
 async def handle_api_stats(request):
     """API получения статистики пользователя для WebApp"""
@@ -373,8 +374,7 @@ async def handle_api_stats(request):
         settings_data = {
             "partner_display": partner_display,
             "checkin_time": user.checkin_time,
-            "timezone": user.timezone,
-            "notify_partner_achievements": user.notify_partner_achievements
+            "timezone": user.timezone
         }
         
         from services.ai_service import ai_service
@@ -449,7 +449,8 @@ async def handle_api_save_journal(request):
                 # Отправляем предупреждение самому пользователю в чат
                 user_warning = (
                     f"⚠️ <b>Обнаружен компромисс и «торги с разумом»!</b>\n\n"
-                    f"ИИ-помощник заметил в вашей записи опасные мысли: <i>«{analysis.get('reason')}»</i>.\n\n"
+                    f"ИИ-помощник заметил в вашей записи опасные мысли: "
+                    f"<i>«{html.escape(str(analysis.get('reason', '')))}»</i>.\n\n"
                     f"Пожалуйста, помните: компромиссы (вроде «посмотрел одним глазком» или поиск самооправданий) — "
                     f"это первый шаг к реальному срыву. Не поддавайтесь уловкам мозга!"
                 )
@@ -608,7 +609,7 @@ async def handle_api_manage_panic(request):
                         "🤝 <b>Ты проявил зрелость и настоящую верность!</b>\n\n"
                         "Ты не остался один на один с искушением, а обратился за поддержкой к напарнику. "
                         "Твой стрик чистоты продолжается и находится под защитой!\n\n"
-                        "<i>«Двоим лучше, чем одному... Ведь если один упадет, другой поднимет своего товарища»</i> (Экклезиаст 4:9, 10)."
+                        "<i>«Ведь если один упадёт, другой поможет ему встать»</i> (Экклезиаст 4:10)."
                     )
                 )
             except Exception as e:
@@ -648,7 +649,8 @@ async def handle_api_accept_covenant(request):
             chat_id=user_id,
             text=(
                 "🕊️ <b>Соглашение совести возобновлено!</b>\n\n"
-                "<i>«Ведь праведник может упасть и семь раз, но всё равно поднимется»</i> (Притчи 24:16).\n\n"
+                "<i>«Скрывающий свои грехи не будет успешен, А к тому, кто признаётся в них "
+                "и перестаёт грешить, будет проявлено милосердие»</i> (Притчи 28:13).\n\n"
                 "Иегова видит твое искреннее сердце и ценит решимость бороться за духовную чистоту. "
                 "Прошлые ошибки отданы в молитве, взгляд устремлен вперед. Твой новый стрик чистоты начался прямо сейчас! Вперед! 💪"
             )
@@ -765,7 +767,6 @@ async def handle_api_spiritual_reflection(request):
 
     from database.models import JournalEntry, User
     from datetime import date
-    import html
 
     today_date = date.today()
     formatted_block = f"📖 Вывод из статьи «{article_title}»:\n{reflection_text}"

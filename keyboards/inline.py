@@ -10,18 +10,12 @@ def get_relapse_confirm_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def get_settings_keyboard(notify_achievements: bool) -> InlineKeyboardMarkup:
+def get_settings_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура настроек"""
     keyboard = [
         [
             InlineKeyboardButton(text="⏰ Время отчета", callback_data="cfg_time"),
             InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="cfg_tz")
-        ],
-        [
-            InlineKeyboardButton(
-                text="🏆 Награды: ВКЛ ✅" if notify_achievements else "🏆 Награды: ВЫКЛ ❌",
-                callback_data="cfg_toggle_achievements"
-            )
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -49,26 +43,6 @@ def get_checkin_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def get_excuses_keyboard(forgot_left: int) -> InlineKeyboardMarkup:
-    """Выбор причины опоздания на чек-ин"""
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text=f"Забыл ({forgot_left} поп.) 🤷‍♂️" if forgot_left > 0 else "Забыл (лимит исчерпан) ❌", 
-                callback_data="excuse_forgot"
-            )
-        ],
-        [
-            InlineKeyboardButton(text="Болел 🤒", callback_data="excuse_sick"),
-            InlineKeyboardButton(text="Не было интернета 📵", callback_data="excuse_internet")
-        ],
-        [
-            InlineKeyboardButton(text="Был занят / Работа 💼", callback_data="excuse_busy"),
-            InlineKeyboardButton(text="Другое 📝", callback_data="excuse_other")
-        ]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
 def get_trigger_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура выбора триггеров срыва"""
     keyboard = [
@@ -87,3 +61,23 @@ def get_trigger_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+def get_day_report_keyboard(day: str) -> InlineKeyboardMarkup:
+    """Отметка дня без ответа (day в формате ГГГГ-ММ-ДД)"""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="☀️ Чисто", callback_data=f"day:clean:{day}"),
+            InlineKeyboardButton(text="😔 Срыв", callback_data=f"day:relapse:{day}")
+        ],
+        [InlineKeyboardButton(text="⏭ Позже", callback_data="day:later")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_day_trigger_keyboard(day: str, reasons: dict[str, str]) -> InlineKeyboardMarkup:
+    """Причина срыва за прошедший день"""
+    buttons = [
+        InlineKeyboardButton(text=text, callback_data=f"day:why:{day}:{code}")
+        for code, text in reasons.items()
+    ]
+    keyboard = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data=f"day:ask:{day}")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

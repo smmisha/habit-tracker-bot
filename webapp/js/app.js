@@ -55,13 +55,7 @@ async function apiFetch(url, options = {}) {
 function updateBackButton() {
     if (!tg || !tg.BackButton) return;
 
-    const isModalOpen = document.getElementById('cognitive-lock-modal')?.classList.contains('active');
     const activeTab = document.querySelector('.tab-content.active')?.id;
-
-    if (isModalOpen) {
-        tg.BackButton.show();
-        return;
-    }
 
     if (activeTab === 'tab-dashboard') {
         tg.BackButton.hide();
@@ -73,25 +67,16 @@ function updateBackButton() {
 function handleNativeBack() {
     hapticImpact('light');
 
-    // 1. Если открыто модальное окно когнитивного замка
-    const modal = document.getElementById('cognitive-lock-modal');
-    if (modal && modal.classList.contains('active')) {
-        closeCognitiveLock();
-        switchTab('dashboard');
-        updateBackButton();
-        return;
-    }
-
     const activeTab = document.querySelector('.tab-content.active')?.id;
 
-    // 2. Если открыта вкладка «Дневник» -> возврат на дашборд
+    // 1. Если открыта вкладка «Дневник» -> возврат на дашборд
     if (activeTab === 'tab-journal') {
         switchTab('dashboard');
         updateBackButton();
         return;
     }
 
-    // 3. Если открыта вкладка «SOS» -> плавный возврат по глубине шагов
+    // 2. Если открыта вкладка «SOS» -> плавный возврат по глубине шагов
     if (activeTab === 'tab-sos') {
         // Форма фиксации срыва
         const relapseForm = document.getElementById('relapse-form');
@@ -113,10 +98,6 @@ function handleNativeBack() {
         // Раунд 2: Углубленное чтение -> возврат в Раунд 1
         const stepRound2 = document.getElementById('spiritual-step-round2');
         if (stepRound2 && !stepRound2.classList.contains('hidden')) {
-            if (round2TimerInterval) {
-                clearInterval(round2TimerInterval);
-                round2TimerInterval = null;
-            }
             stepRound2.classList.add('hidden');
             document.getElementById('spiritual-step-study')?.classList.remove('hidden');
             updateBackButton();
@@ -175,7 +156,6 @@ if (tg && tg.BackButton) {
 const NO_ACCESS_TEXT = 'Откройте приложение заново через бота в Telegram';
 
 let relapseSource = 'direct'; // 'direct' или 'panic'
-let isSosUnlocked = false;
 
 // Уведомления (Toast)
 function showToast(message, type = 'success') {
@@ -227,10 +207,7 @@ function switchTab(tabId) {
         headerTitle.textContent = 'ДНЕВНИК';
     } else if (tabId === 'sos') {
         headerTitle.textContent = 'HELP / SOS';
-        if (!isSosUnlocked) {
-            initiatePanicTimer();
-            openCognitiveLock();
-        }
+        notifySosOpened();
     }
 
     updateBackButton();
@@ -371,11 +348,7 @@ function renderCalendar(days) {
         let tooltipText = `${formattedDate}: `;
         if (day.status === 'clean') {
             if (day.excuse_reason) {
-                if (day.excuse_reason.includes('Авто-отметка')) {
-                    tooltipText += 'Чисто (авто-зачёт >24ч) ✨';
-                } else {
-                    tooltipText += `Чисто, опоздание (${day.excuse_reason}) ⏰`;
-                }
+                tooltipText += `Чисто (${day.excuse_reason}) ⏰`;
             } else {
                 tooltipText += 'Чистый день! 💪';
             }
@@ -529,193 +502,12 @@ document.getElementById('btn-save-journal').addEventListener('click', async () =
 
 // --- SOS И СРЫВ ЛОГИКА ---
 
-// --- COGNITIVE LOCK LOGIC ---
-let currentPuzzleAnswer = null;
-
-// Функция генерации случайного математического примера или логической последовательности
-function generatePuzzle() {
-    const puzzleText = document.getElementById('puzzle-text');
-    const puzzleType = Math.floor(Math.random() * 3); // 0: математика, 1: последовательность, 2: логическая загадка
-    
-    // Сброс стилей к дефолтным (для формул)
-    puzzleText.style.fontSize = "20px";
-    puzzleText.style.fontWeight = "700";
-    puzzleText.style.lineHeight = "1.2";
-    puzzleText.style.textAlign = "center";
-    
-    if (puzzleType === 0) {
-        const operations = ['+', '-'];
-        const op1 = operations[Math.floor(Math.random() * operations.length)];
-        
-        let num1, num2, num3, text, ans;
-        if (Math.random() > 0.5) {
-            // Умножение + сложение/вычитание
-            num1 = Math.floor(Math.random() * 8) + 6; // 6-13
-            num2 = Math.floor(Math.random() * 6) + 3; // 3-8
-            num3 = Math.floor(Math.random() * 20) + 5; // 5-24
-            
-            if (op1 === '+') {
-                text = `${num1} * ${num2} + ${num3}`;
-                ans = num1 * num2 + num3;
-            } else {
-                const prod = num1 * num2;
-                if (prod > num3) {
-                    text = `${num1} * ${num2} - ${num3}`;
-                    ans = prod - num3;
-                } else {
-                    text = `${num3} + ${num1} * ${num2}`;
-                    ans = num3 + prod;
-                }
-            }
-        } else {
-            // Деление + сложение/вычитание
-            const divisors = [2, 3, 4, 5];
-            const div = divisors[Math.floor(Math.random() * divisors.length)];
-            const quotient = Math.floor(Math.random() * 12) + 5; // 5-16
-            num1 = quotient * div;
-            num2 = div;
-            num3 = Math.floor(Math.random() * 20) + 5;
-            
-            if (op1 === '+') {
-                text = `${num1} / ${num2} + ${num3}`;
-                ans = quotient + num3;
-            } else {
-                if (quotient > num3) {
-                    text = `${num1} / ${num2} - ${num3}`;
-                    ans = quotient - num3;
-                } else {
-                    text = `${num3} - ${num1} / ${num2}`;
-                    ans = num3 - quotient;
-                }
-            }
-        }
-        
-        currentPuzzleAnswer = ans;
-        return text;
-    } else if (puzzleType === 1) {
-        // Логические последовательности
-        const patterns = [
-            { seq: [2, 4, 8, 16], next: 32, label: '2, 4, 8, 16, ...' },
-            { seq: [1, 4, 9, 16], next: 25, label: '1, 4, 9, 16, ...' },
-            { seq: [3, 6, 12, 24], next: 48, label: '3, 6, 12, 24, ...' },
-            { seq: [1, 2, 4, 7, 11], next: 16, label: '1, 2, 4, 7, 11, ...' },
-            { seq: [2, 5, 10, 17], next: 26, label: '2, 5, 10, 17, ...' },
-            { seq: [5, 10, 15, 20], next: 25, label: '5, 10, 15, 20, ...' },
-            { seq: [10, 9, 7, 4], next: 0, label: '10, 9, 7, 4, ...' },
-            { seq: [1, 3, 7, 15], next: 31, label: '1, 3, 7, 15, ...' }
-        ];
-        const selected = patterns[Math.floor(Math.random() * patterns.length)];
-        currentPuzzleAnswer = selected.next;
-        return `Продолжите ряд: ${selected.label}`;
-    } else {
-        // Логические текстовые загадки
-        puzzleText.style.fontSize = "14px";
-        puzzleText.style.fontWeight = "500";
-        puzzleText.style.lineHeight = "1.4";
-        puzzleText.style.textAlign = "left";
-        
-        const riddles = [
-            { q: "У отца пять дочерей, у каждой дочери есть один брат. Сколько всего детей в семье?", a: 6 },
-            { q: "В комнате 4 угла. В каждом углу сидит кошка. Напротив каждой кошки сидит по 3 кошки. Сколько всего кошек в комнате?", a: 4 },
-            { q: "Отец старше сына в 3 раза. Вместе им 40 лет. Сколько лет сыну?", a: 10 },
-            { q: "Кирпич весит 1 кг и еще полкирпича. Сколько весит один кирпич в кг?", a: 2 },
-            { q: "В корзине 3 яблока. Как разделить их между тремя детьми так, чтобы одно яблоко осталось в корзине? (Введите количество яблок, которое получит последний ребенок вместе с корзиной)", a: 1 },
-            { q: "На березе росло 50 яблок. Подул ветер, и 10 яблок упало. Сколько яблок осталось на березе?", a: 0 },
-            { q: "Электропоезд идет на восток со скоростью 80 км/ч. Ветер дует на запад со скоростью 10 м/с. В какую сторону идет дым? (Если дыма нет, введите 0)", a: 0 },
-            { q: "Горело 7 свечей. 3 свечи потушили. Сколько свечей осталось?", a: 3 },
-            { q: "Улитка ползет на дерево высотой 10 метров. Днем она поднимается на 3 метра, а ночью спускается на 2 метра. За сколько дней она доползет до вершины?", a: 8 },
-            { q: "В коробке лежат 10 красных и 10 синих носков. Какое минимальное количество носков нужно достать в темноте, чтобы получить хотя бы одну пару одного цвета?", a: 3 },
-            { q: "Яйцо варится 5 минут. За сколько минут сварятся 5 яиц в одной кастрюле?", a: 5 },
-            { q: "На руке 5 пальцев. На двух руках 10 пальцев. Сколько пальцев на 10 руках?", a: 50 },
-            { q: "Шли 2 отца и 2 сына, нашли 3 апельсина. Стали делить — всем досталось по одному. Как такое возможно? Сколько человек было всего?", a: 3 },
-            { q: "Ананас стоит 100 рублей и еще половину своей стоимости. Сколько рублей стоит ананас?", a: 200 },
-            { q: "У трех маляров был брат Андрей, но у Андрея не было братьев. Сколько братьев было у Андрея? (Если нет, введите 0)", a: 0 }
-        ];
-        const selected = riddles[Math.floor(Math.random() * riddles.length)];
-        currentPuzzleAnswer = selected.a;
-        return selected.q;
-    }
-}
-
-// Открытие модального окна когнитивного замка
-function openCognitiveLock() {
-    const modal = document.getElementById('cognitive-lock-modal');
-    const puzzleText = document.getElementById('puzzle-text');
-    const input = document.getElementById('puzzle-answer');
-    
-    input.value = '';
-    puzzleText.textContent = generatePuzzle();
-    modal.classList.add('active');
-    
-    setTimeout(() => input.focus(), 100);
-    updateBackButton();
-}
-
-// Закрытие модального окна
-function closeCognitiveLock() {
-    const modal = document.getElementById('cognitive-lock-modal');
-    modal.classList.remove('active');
-    updateBackButton();
-}
-
-// Слушатель кнопки SOS (показывает когнитивный замок вместо прямого старта)
 document.getElementById('btn-start-sos').addEventListener('click', () => {
-    openCognitiveLock();
+    startSosProcess();
 });
 
-// Слушатель кнопки закрытия / отмены в модальном окне
-document.getElementById('btn-close-puzzle').addEventListener('click', () => {
-    closeCognitiveLock();
-    // Возвращаем на дашборд, так как доступ к SOS закрыт без прохождения замка
-    switchTab('dashboard');
-});
-
-// Слушатель отправки ответа в модальном окне
-document.getElementById('btn-submit-puzzle').addEventListener('click', () => {
-    validatePuzzleAnswer();
-});
-
-// Также проверяем ответ при нажатии Enter в поле ввода
-document.getElementById('puzzle-answer').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        validatePuzzleAnswer();
-    }
-});
-
-function validatePuzzleAnswer() {
-    const input = document.getElementById('puzzle-answer');
-    const modalContent = document.querySelector('#cognitive-lock-modal .modal-card');
-    const userAnswer = parseInt(input.value.trim(), 10);
-    
-    if (isNaN(userAnswer)) {
-        hapticNotification('error');
-        showToast('Пожалуйста, введите числовой ответ', 'error');
-        return;
-    }
-    
-    if (userAnswer === currentPuzzleAnswer) {
-        hapticNotification('success');
-        showToast('Когнитивный замок успешно пройден! Мозг переключен.', 'success');
-        isSosUnlocked = true; // Снимаем защиту
-        closeCognitiveLock();
-        startSosProcess(); // Запускаем загрузку шагов SOS
-    } else {
-        hapticNotification('error');
-        showToast('Неверно! Попробуйте решить новую задачу.', 'error');
-        input.value = '';
-        
-        // Эффект тряски при ошибке
-        modalContent.classList.add('shake');
-        setTimeout(() => modalContent.classList.remove('shake'), 400);
-        
-        // Новая задача
-        document.getElementById('puzzle-text').textContent = generatePuzzle();
-        input.focus();
-    }
-}
-
-// Отправка запроса на инициализацию таймера "тихой тревоги"
-async function initiatePanicTimer() {
+// Отметка активности при открытии раздела SOS
+async function notifySosOpened() {
     try {
         await apiFetch('/api/panic', {
             method: 'POST',
@@ -723,7 +515,7 @@ async function initiatePanicTimer() {
             body: JSON.stringify({ action: 'initiate' })
         });
     } catch (e) {
-        console.error("Ошибка при инициализации тихой тревоги:", e);
+        console.error('Ошибка отметки открытия SOS:', e);
     }
 }
 
@@ -847,8 +639,6 @@ document.getElementById('btn-panic-failed')?.addEventListener('click', async () 
 let selectedTemptationTypes = [];
 let currentSpiritualNotes = '';
 let cachedPartnerUsername = null;
-let round2TimerInterval = null;
-let round2SecondsRemaining = 20 * 60;
 let currentPrimaryArticleTitle = 'Духовная публикация';
 let currentRound2ArticleTitle = 'Углубленный материал';
 let round1ReflectionSaved = false;
@@ -959,14 +749,14 @@ document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn =
     });
 });
 
-// Кнопка запроса духовного решения от ИИ
+// Кнопка подбора духовного решения
 document.getElementById('btn-find-spiritual-solution')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-find-spiritual-solution');
     currentSpiritualNotes = document.getElementById('spiritual-user-notes')?.value || '';
     
     btn.disabled = true;
     btn.querySelector('.spinner')?.classList.remove('hidden');
-    btn.querySelector('.btn-text').textContent = 'ИИ анализирует и подбирает материалы...';
+    btn.querySelector('.btn-text').textContent = 'Подбираем материалы...';
     
     await loadSpiritualSolution(selectedTemptationTypes, currentSpiritualNotes);
     
@@ -977,10 +767,6 @@ document.getElementById('btn-find-spiritual-solution')?.addEventListener('click'
 
 // Кнопка смены темы / возврата к выбору
 document.getElementById('btn-spiritual-change-topic')?.addEventListener('click', () => {
-    if (round2TimerInterval) {
-        clearInterval(round2TimerInterval);
-        round2TimerInterval = null;
-    }
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.add('hidden');
@@ -1021,7 +807,7 @@ document.getElementById('btn-spiritual-helped')?.addEventListener('click', async
     switchTab('dashboard');
 });
 
-// Раунд 1: Кнопка перехода к Раунд 2 («Не помогло — Раунд 2 (погружение от 20 минут)»)
+// Раунд 1: Кнопка перехода к Раунду 2
 document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', async () => {
     document.getElementById('spiritual-step-study')?.classList.add('hidden');
     document.getElementById('spiritual-step-round2')?.classList.remove('hidden');
@@ -1029,91 +815,6 @@ document.getElementById('btn-spiritual-to-round2')?.addEventListener('click', as
     showToast('Загружаем углубленный материал Раунда 2...', 'info');
     await loadRound2Solution(selectedTemptationTypes, currentSpiritualNotes);
 });
-
-// Функции управления таймером Раунда 2
-function startRound2Timer() {
-    if (round2TimerInterval) {
-        clearInterval(round2TimerInterval);
-        round2TimerInterval = null;
-    }
-    
-    round2SecondsRemaining = 20 * 60; // 20 минут
-    updateRound2TimerDisplay();
-    
-    const btnHelped = document.getElementById('btn-round2-helped');
-    const btnPartner = document.getElementById('btn-round2-to-partner');
-    const timerStatus = document.getElementById('round2-timer-status');
-    const badge = document.getElementById('round2-timer-badge');
-    
-    if (btnHelped) {
-        btnHelped.disabled = true;
-        btnHelped.style.opacity = '0.4';
-    }
-    if (btnPartner) {
-        btnPartner.disabled = true;
-        btnPartner.style.opacity = '0.4';
-    }
-    if (badge) {
-        badge.style.background = 'rgba(253, 203, 110, 0.25)';
-        badge.style.borderColor = '#fdcb6e';
-        badge.style.color = '#ffeaa7';
-    }
-    if (timerStatus) {
-        timerStatus.innerHTML = `⏳ Погрузитесь в чтение и молитву. Кнопки станут активны через <b id="round2-timer-remaining">20:00</b>`;
-        timerStatus.style.color = '#fdcb6e';
-    }
-    
-    round2TimerInterval = setInterval(() => {
-        round2SecondsRemaining--;
-        if (round2SecondsRemaining <= 0) {
-            clearInterval(round2TimerInterval);
-            round2TimerInterval = null;
-            round2SecondsRemaining = 0;
-            updateRound2TimerDisplay();
-            
-            // Разблокируем кнопки
-            if (btnHelped) {
-                btnHelped.disabled = false;
-                btnHelped.style.opacity = '1';
-                btnHelped.style.boxShadow = '0 0 15px rgba(0, 184, 148, 0.4)';
-            }
-            if (btnPartner) {
-                btnPartner.disabled = false;
-                btnPartner.style.opacity = '1';
-                btnPartner.style.boxShadow = '0 0 15px rgba(116, 185, 255, 0.3)';
-            }
-            if (timerStatus) {
-                timerStatus.innerHTML = `✅ <b>20 минут размышления завершены!</b> Оцените результат изучения:`;
-                timerStatus.style.color = '#55efc4';
-            }
-            if (badge) {
-                badge.style.background = 'rgba(0, 184, 148, 0.25)';
-                badge.style.borderColor = '#00b894';
-                badge.style.color = '#55efc4';
-                badge.textContent = '00:00 ✓';
-            }
-            showToast('20 минут размышления завершены. Выберите результат:', 'success');
-            hapticNotification('success');
-        } else {
-            updateRound2TimerDisplay();
-        }
-    }, 1000);
-}
-
-function updateRound2TimerDisplay() {
-    const minutes = Math.floor(round2SecondsRemaining / 60);
-    const seconds = round2SecondsRemaining % 60;
-    const timeStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    
-    const badge = document.getElementById('round2-timer-badge');
-    const remainingSpan = document.getElementById('round2-timer-remaining');
-    if (badge && round2SecondsRemaining > 0) {
-        badge.textContent = timeStr;
-    }
-    if (remainingSpan) {
-        remainingSpan.textContent = timeStr;
-    }
-}
 
 // Раунд 2: Кнопка «Помогло! Тяга отступила»
 document.getElementById('btn-round2-helped')?.addEventListener('click', async () => {
@@ -1131,10 +832,6 @@ document.getElementById('btn-round2-helped')?.addEventListener('click', async ()
         }
     }
 
-    if (round2TimerInterval) {
-        clearInterval(round2TimerInterval);
-        round2TimerInterval = null;
-    }
     try {
         await apiFetch('/api/panic', {
             method: 'POST',
@@ -1154,10 +851,6 @@ document.getElementById('btn-round2-helped')?.addEventListener('click', async ()
 
 // Раунд 2: Кнопка перехода к Раунду 3 («Не помогло — Раунд 3: Написать напарнику лично»)
 document.getElementById('btn-round2-to-partner')?.addEventListener('click', () => {
-    if (round2TimerInterval) {
-        clearInterval(round2TimerInterval);
-        round2TimerInterval = null;
-    }
     document.getElementById('spiritual-step-round2')?.classList.add('hidden');
     document.getElementById('spiritual-step-partner')?.classList.remove('hidden');
     updateBackButton();
@@ -1363,9 +1056,6 @@ async function loadRound2Solution(tType, notes) {
     const actionBox = document.getElementById('round2-action-box');
     const actionText = document.getElementById('round2-action-text');
     const cardContainer = document.getElementById('round2-card-container');
-    
-    // Запускаем 20-минутный таймер Раунда 2
-    startRound2Timer();
     
     try {
         const tTypes = Array.isArray(tType) ? tType : (tType ? [tType] : []);

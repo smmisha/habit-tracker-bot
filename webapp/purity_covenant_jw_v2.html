@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261125-3">
+  <link rel="stylesheet" href="style.css?v=20261125-5">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -328,7 +328,7 @@
   <div class="section">
     <p class="section-label">Моя борьба и главная цель</p>
     <p class="body-text">Я борюсь за то, чтобы в моей жизни не было того, что Слово Бога называет сексуальной безнравственностью (<em>porneia</em>), нечистотой (<em>akatharsia</em>) и бесстыдным поведением (<em>aselgeia</em>): всё это оскверняет тело и совесть христианина (Галатам 5:19).</p>
-    <p class="body-text">Мой <strong>основной посыл</strong> — не просто освободиться от мастурбации. Это тоже важно, но главное для меня — <strong>полностью и навсегда избавиться от порнографии и вообще от искушений в интернете</strong>.</p>
+    <p class="body-text">Мой <strong>основной посыл</strong> — не просто освободиться от мастурбации. Это тоже важно, но главное для меня — <strong>полностью и навсегда избавиться от порнографии и вообще от искушений в интернете</strong>. Порнография — корень этой борьбы: не победив её, мастурбацию не победить.</p>
     <p class="body-text">Поэтому я отвергаю:</p>
 
     <ul class="sins-list">
@@ -359,8 +359,28 @@
       <li><span><strong>Не срыв.</strong> В ленте (TikTok, соцсети и тому подобное) мне случайно попалось эротическое или возбуждающее видео или изображение, и я сразу, не засматриваясь, перелистнул его, закрыл, нажал «Не интересно» или заблокировал источник. Это <strong>не считается срывом</strong>: я этого не искал и отверг искушение. Счётчик сохраняется.</span></li>
       <li><span><strong>Срыв.</strong> Материал попался случайно, но я <strong>продолжил смотреть</strong>.</span></li>
       <li><span><strong>Срыв.</strong> Любой <strong>намеренный поиск</strong> или просмотр запретного, сколько бы секунд я ни смотрел и что бы ни удалил потом.</span></li>
+      <li><span><strong>Срыв.</strong> <strong>Мастурбация</strong>, даже без порнографии, а также <strong>секстинг</strong> и киберсекс.</span></li>
     </ul>
     <p class="body-text">При срыве счётчик чистых дней обнуляется.</p>
+  </div>
+
+  <hr class="divider">
+
+  <div class="section">
+    <p class="section-label">Чтобы не дойти до искушения</p>
+    <p class="body-text">Победа начинается раньше самого искушения. Я заранее закрываю ему дорогу и не обдумываю, как исполнить грешные желания (Римлянам 13:14):</p>
+    <ul class="sins-list">
+      <li>Ночью телефон лежит не у кровати</li>
+      <li>На телефоне и в браузере включён фильтр взрослого содержимого</li>
+      <li>Всё, что подсовывает возбуждающее, я скрываю, блокирую или удаляю и не листаю ленту в одиночестве поздно вечером</li>
+      <li>Я знаю свои триггеры (скука, стресс и усталость, одиночество, искушения в интернете) и заранее решаю, чем займусь вместо телефона</li>
+      <li>Когда становится тяжело, пишу или звоню тому, кому доверяю</li>
+    </ul>
+
+    <div class="scripture-block">
+      <p class="verse">«Благоразумные видят опасность и спешат укрыться, А неопытные идут вперёд и страдают из-за этого»</p>
+      <p class="ref">Притчи 22:3 — Перевод нового мира</p>
+    </div>
   </div>
 
   <hr class="divider">
@@ -486,7 +506,10 @@
   const btnSkipRestart = document.getElementById('btn-skip-restart');
 
   function closePage() {
-    if (tg && typeof tg.close === 'function') {
+    // Открыто из приложения: возвращаемся на дашборд, а не закрываем всё приложение
+    if (urlParams.get('from') === 'app' && window.history.length > 1) {
+      window.history.back();
+    } else if (tg && typeof tg.close === 'function') {
       tg.close();
     } else if (window.history.length > 1) {
       window.history.back();

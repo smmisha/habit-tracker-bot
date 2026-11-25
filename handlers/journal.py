@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import html
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -29,7 +30,7 @@ async def cmd_journal_menu(message: Message, state: FSMContext):
     if last_entry:
         date_str = last_entry.entry_date.strftime("%d.%m.%Y")
         preview = last_entry.content[:100] + "..." if len(last_entry.content) > 100 else last_entry.content
-        text = f"📖 <b>Ваша последняя запись от {date_str}:</b>\n\n«{preview}»"
+        text = f"📖 <b>Ваша последняя запись от {date_str}:</b>\n\n«{html.escape(preview)}»"
     else:
         text = "📖 У вас пока нет записей в дневнике. Запишите свой первый день!"
         

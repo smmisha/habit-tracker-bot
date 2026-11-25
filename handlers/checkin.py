@@ -7,10 +7,10 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, and_
 from database.db_helper import db_helper
 from database.models import User, CheckInLog, RelapseLog
-from keyboards.inline import get_excuses_keyboard
+from keyboards.inline import get_day_report_keyboard, get_day_trigger_keyboard
 from services.userbot_client import userbot
 from services.ai_service import ai_service
-from utils.states import Form
+from services.day_report import build_report_summary, get_unmarked_days, mark_day
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -42,8 +42,10 @@ def is_on_time(user_local_time: datetime, scheduled_time_str: str) -> bool:
         return False
 
 @router.callback_query(F.data == "checkin_clean")
-async def process_checkin_clean(callback: CallbackQuery):
+async def process_checkin_clean(callback: CallbackQuery, state: FSMContext = None):
     user_id = callback.from_user.id
+    if state:
+        await state.clear()
     
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -124,6 +126,11 @@ async def process_checkin_clean(callback: CallbackQuery):
         except Exception:
             pass
 
+    try:
+        await send_unmarked_days_prompt(callback.message, user_id)
+    except Exception as e:
+        logger.error(f"Не удалось предложить отметить пропущенные дни {user_id}: {e}")
+
 @router.callback_query(F.data == "checkin_relapsed")
 async def process_checkin_relapsed(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -145,84 +152,85 @@ async def process_checkin_relapsed(callback: CallbackQuery):
         reply_markup=get_trigger_keyboard()
     )
 
-# --- ОБРАБОТКА ПРИЧИН ОПОЗДАНИЯ ---
-async def save_excuse(user_id: int, excuse_text: str, callback: CallbackQuery = None, message: Message = None):
-    """Вспомогательная функция сохранения причины опоздания"""
-    async with db_helper.session_factory() as session:
-        # Ищем незакрытый чек-ин
-        checkin_result = await session.execute(
-            select(CheckInLog)
-            .where(and_(CheckInLog.user_id == user_id, CheckInLog.status == "pending"))
-        )
-        active_checkin = checkin_result.scalars().first()
-        
-        if active_checkin:
-            active_checkin.status = "clean"
-            active_checkin.timestamp = datetime.now()
-            active_checkin.excuse_reason = excuse_text
-        user_obj = await session.get(User, user_id)
-        if user_obj:
-            user_obj.consecutive_missed_checkins = 0
-            user_obj.last_checkin_message_id = None
-            user_obj.is_active = True
-        await session.commit()
-            
-        text = f"✅ Причина пропуска сохранена: <b>«{excuse_text}»</b>. Стрик продолжается! 💪"
-        if callback:
-            await callback.message.edit_text(text)
-        elif message:
-            await message.answer(text)
+# --- ДНИ БЕЗ ОТМЕТКИ ---
+DAY_REASONS = {
+    "bored": "Скука / Безделье",
+    "stress": "Стресс / Усталость",
+    "lonely": "Одиночество / Грусть",
+    "web": "Искушение в интернете",
+    "other": "Другая причина",
+}
+WEEKDAYS = ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
 
-@router.callback_query(F.data.startswith("excuse_"))
-async def process_excuse_selection(callback: CallbackQuery, state: FSMContext):
+def _day_label(day: date) -> str:
+    return f"{day.strftime('%d.%m')}, {WEEKDAYS[day.weekday()]}"
+
+def _day_question(days: list[date]) -> str:
+    return (
+        "📝 <b>Дни без отметки</b>\n"
+        f"Осталось отметить: {len(days)}\n\n"
+        f"Как прошел день <b>{_day_label(days[0])}</b>?"
+    )
+
+async def send_unmarked_days_prompt(message: Message, user_id: int) -> bool:
+    """Предлагает отметить прошедшие дни без ответа, начиная с самого раннего"""
+    days = await get_unmarked_days(user_id)
+    if not days:
+        return False
+    await message.answer(_day_question(days), reply_markup=get_day_report_keyboard(days[0].isoformat()))
+    return True
+
+async def _show_next_day(callback: CallbackQuery, note: str):
+    """Следующий неотмеченный день, а когда они закончились, отчет"""
     user_id = callback.from_user.id
-    action = callback.data
-    
-    if action in ("excuse_forgot", "excuse_forgot_limit"):
-        # Считаем попытки «Забыл»
-        async with db_helper.session_factory() as session:
-            result = await session.execute(select(User).where(User.id == user_id))
-            user = result.scalar_one_or_none()
-            
-            if user:
-                user.forgot_count += 1
-                current_forgot = user.forgot_count
-                partner_username = user.partner_username
-                business_connection_id = user.business_connection_id
-                await session.commit()
-                
-        if current_forgot > 3:
-            # Превышен лимит!
-            await save_excuse(user_id, "Забыл (Лимит превышен)", callback=callback)
-            await callback.message.answer(
-                "🚨 <b>Лимит причин «Забыл» превышен!</b>"
-            )
-        else:
-            left = 3 - current_forgot
-            await save_excuse(user_id, f"Забыл ({current_forgot}/3)", callback=callback)
-            await callback.message.answer(f"⚠️ <b>Обратите внимание:</b> у вас осталось <b>{left}</b> попыток выбора причины «Забыл».")
-            
-    elif action == "excuse_sick":
-        await save_excuse(user_id, "Болел", callback=callback)
-        
-    elif action == "excuse_internet":
-        await save_excuse(user_id, "Не было интернета", callback=callback)
-        
-    elif action == "excuse_busy":
-        await save_excuse(user_id, "Был занят / Работа", callback=callback)
-        
-    elif action == "excuse_other":
-        await callback.message.edit_text("📝 Пожалуйста, напишите кратко причину пропуска графика в ответном сообщении:")
-        await state.set_state(Form.waiting_for_other_excuse)
-        
-    await callback.answer()
+    days = await get_unmarked_days(user_id)
+    if days:
+        await callback.message.edit_text(
+            f"{note}\n\n{_day_question(days)}",
+            reply_markup=get_day_report_keyboard(days[0].isoformat())
+        )
+    else:
+        summary = await build_report_summary(user_id)
+        await callback.message.edit_text(f"{note}\n\n✅ <b>Дней без отметки не осталось.</b>\n\n{summary}")
 
-@router.message(Form.waiting_for_other_excuse)
-async def process_other_excuse_input(message: Message, state: FSMContext):
-    excuse_text = message.text.strip()
-    if len(excuse_text) < 3:
-        await message.answer("❌ Слишком короткий ответ. Опишите причину подробнее:")
+@router.callback_query(F.data.startswith("day:"))
+async def process_day_report(callback: CallbackQuery):
+    await callback.answer()
+    parts = callback.data.split(":")
+    action = parts[1]
+
+    if action == "later":
+        await callback.message.edit_text(
+            "⏭ Хорошо. Эти дни пока останутся без отметки, вернуться к ним можно через /start."
+        )
         return
-        
-    await save_excuse(message.from_user.id, f"Другое: {excuse_text}", message=message)
-    await state.clear()
+
+    try:
+        day = date.fromisoformat(parts[2])
+    except (IndexError, ValueError):
+        return
+
+    if day not in await get_unmarked_days(callback.from_user.id):
+        await _show_next_day(callback, "Этот день уже отмечен или недоступен.")
+        return
+
+    if action == "relapse":
+        await callback.message.edit_text(
+            f"Что послужило главным триггером срыва <b>{_day_label(day)}</b>?",
+            reply_markup=get_day_trigger_keyboard(day.isoformat(), DAY_REASONS)
+        )
+    elif action == "ask":
+        await callback.message.edit_text(
+            _day_question([day]), reply_markup=get_day_report_keyboard(day.isoformat())
+        )
+    elif action == "clean":
+        marked = await mark_day(callback.from_user.id, day, relapsed=False)
+        note = f"☀️ {_day_label(day)}: чисто." if marked else "Этот день уже отмечен."
+        await _show_next_day(callback, note)
+    elif action == "why" and len(parts) == 4 and parts[3] in DAY_REASONS:
+        marked = await mark_day(callback.from_user.id, day, relapsed=True, reason=DAY_REASONS[parts[3]])
+        note = (
+            f"😔 {_day_label(day)}: записан срыв.\n"
+            "🕊️ По соглашению о нем нужно в течение недели самому рассказать старейшине."
+        ) if marked else "Этот день уже отмечен."
+        await _show_next_day(callback, note)

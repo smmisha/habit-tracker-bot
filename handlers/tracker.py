@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 import logging
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select, and_
@@ -11,6 +12,7 @@ from keyboards.inline import get_relapse_confirm_keyboard, get_reset_type_keyboa
 from config.config import settings
 from services.userbot_client import userbot
 from services.ai_service import ai_service
+from handlers.checkin import send_unmarked_days_prompt
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -33,7 +35,8 @@ def format_timedelta(td) -> str:
     return " ".join(parts)
 
 @router.message(Command("streak"))
-async def cmd_my_streak(message: Message):
+async def cmd_my_streak(message: Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     async with db_helper.session_factory() as session:
         result = await session.execute(select(User).where(User.id == user_id))
@@ -86,7 +89,6 @@ async def cmd_relapse(message: Message):
     )
 
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.context import FSMContext
 from utils.states import Form
 
 @router.callback_query(F.data == "relapse_confirm")
@@ -204,7 +206,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             [
                 InlineKeyboardButton(
                     text="📜 Открыть Соглашение совести (по желанию)",
-                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart&v=20261125-3")
+                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart&v=20261125-5")
                 )
             ]
         ]
@@ -235,6 +237,8 @@ async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):
     
     user_id = callback.from_user.id
     action = callback.data
+    # Выбор другой кнопки отменяет ожидание причины текстом
+    await state.clear()
     
     if action == "relapse_trigger_cancel":
         await callback.message.edit_text("💚 <b>Отмена сброса.</b>\n\nТвой стрик в полной безопасности! Рад, что это была ложная тревога. Продолжай держаться! 💪")
@@ -253,13 +257,21 @@ async def process_relapse_trigger(callback: CallbackQuery, state: FSMContext):
     }
     trigger = reasons.get(action, "Общая причина")
     await execute_relapse_reset(user_id, trigger, callback=callback)
+    await send_unmarked_days_prompt(callback.message, user_id)
 
-@router.message(Form.waiting_for_relapse_trigger_other)
+# Команды проходят к своим обработчикам, а не записываются как причина срыва
+@router.message(Form.waiting_for_relapse_trigger_other, F.text, ~F.text.startswith("/"))
 async def process_relapse_trigger_other_text(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    text = message.text.strip()
+    # Поле причины в базе ограничено 500 символами
+    text = message.text.strip()[:400]
     await state.clear()
     await execute_relapse_reset(user_id, f"Другое: {text}", message=message)
+    await send_unmarked_days_prompt(message, user_id)
+
+@router.message(Form.waiting_for_relapse_trigger_other, ~F.text)
+async def process_relapse_trigger_non_text(message: Message):
+    await message.answer("📝 Напиши причину текстом или отправь /cancel.")
 
 @router.callback_query(F.data == "relapse_cancel")
 async def process_relapse_cancel(callback: CallbackQuery):

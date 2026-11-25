@@ -21,7 +21,7 @@ class User(Base):
     # Метрики и счетчики
     streak_start: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     total_relapses: Mapped[int] = mapped_column(default=0)
-    forgot_count: Mapped[int] = mapped_column(default=0)  # Лимит равен 3
+    forgot_count: Mapped[int] = mapped_column(default=0)  # Не используется, колонка остается в базе
     
     # Время ежедневной проверки
     checkin_time: Mapped[str] = mapped_column(String(5), default="21:00")  # Формат HH:MM
@@ -34,7 +34,7 @@ class User(Base):
     # Выданные награды (через запятую, например "1,3,7")
     awarded_milestones: Mapped[str] = mapped_column(String(200), default="")
     
-    # Уведомлять ли напарника о достижениях (медалях)
+    # Не используется, колонка остается в базе
     notify_partner_achievements: Mapped[bool] = mapped_column(default=True)
     
     # ID бизнес-подключения для автоматизации чатов
@@ -47,7 +47,7 @@ class User(Base):
     last_checkin_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     consecutive_missed_checkins: Mapped[int] = mapped_column(default=0)
 
-    # ИИ-помощник: учет заданных вопросов
+    # Не используется, колонки остаются в базе
     ai_questions_used_today: Mapped[int] = mapped_column(default=0)
     last_ai_query_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
@@ -76,11 +76,11 @@ class CheckInLog(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
     checkin_date: Mapped[date] = mapped_column(Date, default=date.today)
     
-    # Статусы: "pending" (ожидает), "clean" (чист), "relapsed" (срыв), "missed" (пропуск)
+    # Статусы: "pending" (ожидает), "clean" (чист), "relapsed" (срыв), "missed" (без отметки)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
-    # Причина пропуска / пометка авто-зачета (>24ч)
+    # Пометка к отметке (например, что день отмечен позже)
     excuse_reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 

@@ -1,3 +1,4 @@
+import html
 from datetime import datetime, time, timedelta
 import pytz
 import logging
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.timezone("Europe/Kyiv"))
 
 async def check_and_send_checkins():
-    """Каждую минуту проверяет авто-зачет просрочек и отправляет активным пользователям вечерний чек-ин"""
+    """Каждую минуту закрывает просроченные чек-ины и отправляет активным пользователям вечерний чек-ин"""
     await check_missed_deadlines()
 
     from main import bot
@@ -82,7 +83,8 @@ async def check_and_send_checkins():
 async def check_missed_deadlines():
     """
     Обрабатывает чек-ины, на которые не было ответа более 24 часов:
-    - Закрывает день как 'clean' (сдержался по умолчанию) без лишних уведомлений.
+    - Оставляет день без отметки ('missed'): молчание не считается чистым днем.
+      Позже бот предложит отметить такие дни.
     - Удаляет зависшее сообщение с кнопками, чтобы не захламлять чат.
     - На 7-й день тишины подряд переводит бота в режим паузы (is_active = False).
     """
@@ -116,7 +118,7 @@ async def check_missed_deadlines():
                 local_now = datetime.now(user_tz)
                 
                 if local_now >= deadline_dt:
-                    logger.info(f"Пользователь {user.id} не отвечал >24ч за {log.checkin_date}: авто-зачет 'clean'")
+                    logger.info(f"Пользователь {user.id} не отвечал >24ч за {log.checkin_date}: день без отметки")
                     
                     # Удаляем зависшее сообщение чек-ина из чата
                     if log.message_id:
@@ -127,10 +129,9 @@ async def check_missed_deadlines():
                         if user.last_checkin_message_id == log.message_id:
                             user.last_checkin_message_id = None
 
-                    # Засчитываем день как чистый (сдержался по умолчанию)
-                    log.status = "clean"
+                    log.status = "missed"
                     log.timestamp = datetime.now()
-                    log.excuse_reason = "Авто-отметка (>24ч без ответа)"
+                    log.excuse_reason = None
                     
                     user.activity_start = None
                     user.activity_last = None
@@ -154,7 +155,8 @@ async def check_missed_deadlines():
                                     "⏸️ <b>Бот поставлен на паузу</b>\n\n"
                                     "Ты не отвечал на ежедневные отчёты 7 дней подряд. "
                                     "Чтобы не беспокоить тебя впустую, я остановил все напоминания и рассылки.\n\n"
-                                    "Когда будешь готов вернуться — нажми кнопку ниже или введи /start."
+                                    "Когда будешь готов вернуться — нажми кнопку ниже или введи /start. "
+                                    "Тогда сможешь отметить пропущенные дни."
                                 ),
                                 reply_markup=pause_kb
                             )
@@ -163,7 +165,7 @@ async def check_missed_deadlines():
                     else:
                         await session.commit()
             except Exception as e:
-                logger.error(f"Ошибка авто-зачета/паузы для записи {log.id}: {e}")
+                logger.error(f"Ошибка закрытия чек-ина/паузы для записи {log.id}: {e}")
 
 from aiogram.types import FSInputFile
 from services.bible_service import bible_service
@@ -214,8 +216,7 @@ async def check_milestone_achievements():
                             f"Поздравляем! Ты сохраняешь чистоту уже <b>{m}</b> дней подряд!\n"
                             f"Твоя награда: <b>{badge_name}</b>\n"
                             f"──────────────────────────\n"
-                            f"🎁 <b>Идея для награды от ИИ:</b> {reward_suggestion}\n\n"
-                            f"📈 Твой ежедневный лимит вопросов к ИИ-помощнику увеличился на +1!\n"
+                            f"🎁 <b>Идея для награды от ИИ:</b> {html.escape(reward_suggestion)}\n"
                             f"──────────────────────────\n"
                             f"💪 <i>Ты делаешь невероятный прогресс. Продолжай в том же духе!</i>"
                         )
@@ -248,8 +249,8 @@ async def send_daily_bible_verses():
     message_text = (
         "📖 <b>ЕЖЕДНЕВНОЕ ИССЛЕДОВАНИЕ ПИСАНИЙ</b>\n"
         "──────────────────────────\n"
-        f"<b>{verse['citation']}</b>\n\n"
-        f"<i>«{verse['text']}»</i>\n"
+        f"<b>{html.escape(verse['citation'])}</b>\n\n"
+        f"<i>«{html.escape(verse['text'])}»</i>\n"
         "──────────────────────────\n"
         "👋 <i>Пусть эти слова поддержат тебя и дадут сил на сегодня! Хорошего дня!</i>"
     )
@@ -301,7 +302,8 @@ async def send_weekly_reports():
                     .where(
                         and_(
                             CheckInLog.user_id == user.id,
-                            CheckInLog.timestamp >= one_week_ago
+                            # по дате дня, а не по времени отметки: пропуски отмечают позже
+                            CheckInLog.checkin_date > one_week_ago.date()
                         )
                     )
                 )
@@ -310,8 +312,7 @@ async def send_weekly_reports():
                 clean_count = sum(1 for log in logs if log.status == "clean")
                 relapse_count = sum(1 for log in logs if log.status == "relapsed")
                 
-                # Подсчет причин 'Забыл'
-                forgot_count = sum(1 for log in logs if log.excuse_reason and "Забыл" in log.excuse_reason)
+                missed_count = sum(1 for log in logs if log.status == "missed")
                 
                 # Собираем заметки дневника за последние 7 дней
                 from database.models import JournalEntry
@@ -336,10 +337,12 @@ async def send_weekly_reports():
                     "──────────────────────────\n"
                     f"☀️ Чистых дней: <b>{clean_count} из 7</b>\n"
                     f"⚠️ Срывов зафиксировано: <b>{relapse_count}</b>\n"
-                    f"🔄 Использовано лимитов «Забыл»: <b>{forgot_count} из 3</b>\n"
+                    f"❔ Без отметки: <b>{missed_count}</b>\n"
                     "──────────────────────────\n"
                     "<i>Держитесь чистоты и оставайтесь сильными! 💪</i>"
                 )
+                if missed_count:
+                    user_report += "\n<i>Отметить пропущенные дни можно через /start.</i>"
                 try:
                     await bot.send_message(chat_id=user.id, text=user_report)
                     
@@ -347,7 +350,7 @@ async def send_weekly_reports():
                     analysis_msg = (
                         "🧠 <b>ПСИХОЛОГИЧЕСКИЙ АНАЛИЗ НЕДЕЛИ</b>\n"
                         "──────────────────────────\n"
-                        f"{ai_journal_analysis}"
+                        f"{html.escape(ai_journal_analysis)}"
                     )
                     await bot.send_message(chat_id=user.id, text=analysis_msg)
                 except Exception as e:

@@ -220,6 +220,9 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIn("основной посыл", covenant_html.lower())
         self.assertIn("порнографии", covenant_html.lower())
         self.assertIn("что именно я запомнил", covenant_html.lower())
+        self.assertIn("даже без порнографии", covenant_html)
+        self.assertIn("Чтобы не дойти до искушения", covenant_html)
+        self.assertNotIn("Притчи 24:16", covenant_html)
 
     async def test_webapp_no_cache_headers_and_dashboard_redirect(self):
         resp = await self.client.request("GET", "/dashboard", allow_redirects=False)
@@ -339,10 +342,11 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIn("Мастурбация", data.get("temptation_title"))
         materials = data.get("materials")
         self.assertIsNotNone(materials)
-        self.assertEqual(len(materials), 2)
+        self.assertEqual(len(materials), 3)
         urls = [m["url"] for m in materials]
         self.assertTrue(any("502013360" in u for u in urls))
-        self.assertTrue(any("1102008082" in u for u in urls))
+        self.assertTrue(any("1102008087" in u for u in urls))
+        self.assertTrue(any("2019447" in u for u in urls))
 
     async def test_panic_partner_contacted_preserves_streak(self):
         async with self.session_factory() as session:
@@ -646,7 +650,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertEqual(len(logs), 1)
             self.assertEqual(logs[0].status, "pending")
 
-    async def test_auto_clean_after_24h_deletes_message_and_increments_missed(self):
+    async def test_unanswered_day_becomes_missed_after_24h(self):
         from services.scheduler import check_missed_deadlines
         async with self.session_factory() as session:
             user = await session.get(User, self.user_id)
@@ -673,8 +677,8 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertTrue(user.is_active)
             self.assertIsNone(user.last_checkin_message_id)
             log = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == self.user_id))).scalar_one()
-            self.assertEqual(log.status, "clean")
-            self.assertEqual(log.excuse_reason, "Авто-отметка (>24ч без ответа)")
+            self.assertEqual(log.status, "missed")
+            self.assertIsNone(log.excuse_reason)
 
     async def test_auto_pause_after_7_consecutive_missed_days(self):
         from services.scheduler import check_missed_deadlines
@@ -798,7 +802,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertIsNone(log.excuse_reason)
 
     async def test_resume_from_pause_callbacks(self):
-        from handlers.common import process_resume_clean, process_resume_relapse
+        from handlers.common import process_resume_from_pause
         async with self.session_factory() as session:
             user = await session.get(User, self.user_id)
             user.is_active = False
@@ -810,19 +814,8 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         cb.message.edit_text = AsyncMock()
         cb.answer = AsyncMock()
 
-        await process_resume_clean(cb)
-        async with self.session_factory() as session:
-            user = await session.get(User, self.user_id)
-            self.assertTrue(user.is_active)
-            self.assertEqual(user.consecutive_missed_checkins, 0)
-
-        async with self.session_factory() as session:
-            user = await session.get(User, self.user_id)
-            user.is_active = False
-            user.consecutive_missed_checkins = 7
-            await session.commit()
-
-        await process_resume_relapse(cb)
+        cb.message.answer = AsyncMock()
+        await process_resume_from_pause(cb)
         async with self.session_factory() as session:
             user = await session.get(User, self.user_id)
             self.assertTrue(user.is_active)
