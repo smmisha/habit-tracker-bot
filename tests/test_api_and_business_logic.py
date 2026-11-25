@@ -30,6 +30,7 @@ from main import (
     handle_api_manage_panic,
     handle_api_accept_covenant,
     handle_api_spiritual_help,
+    handle_api_spiritual_reflection,
     validate_telegram_init_data,
 )
 
@@ -82,6 +83,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             web.post("/api/accept_covenant", handle_api_accept_covenant),
             web.get("/api/spiritual_help", handle_api_spiritual_help),
             web.post("/api/spiritual_help", handle_api_spiritual_help),
+            web.post("/api/spiritual_reflection", handle_api_spiritual_reflection),
         ])
         return app
 
@@ -159,8 +161,9 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertIn("прекрасный день", entries[0].content)
 
     async def test_relapse_api_no_crash(self):
-        """Verify /api/relapse does NOT crash with start_confession_flow ImportError and executes reset"""
-        with patch("main.bot.send_message", new_callable=AsyncMock) as mock_send:
+        """Verify /api/relapse executes reset cleanly without notifying partner"""
+        with patch("main.bot.send_message", new_callable=AsyncMock) as mock_send, \
+             patch("services.userbot_client.userbot.send_message_to_partner", new_callable=AsyncMock) as mock_partner:
             resp = await self.client.request("POST", "/api/relapse", json={
                 "user_id": self.user_id,
                 "trigger_reason": "Стресс на работе"
@@ -169,14 +172,17 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             data = await resp.json()
             self.assertTrue(data.get("success"))
             self.assertFalse(data.get("confession_pending"))
+            mock_partner.assert_not_called()
+            mock_send.assert_awaited()
 
         async with self.session_factory() as session:
             user = await session.get(User, self.user_id)
             self.assertEqual(user.total_relapses, 2)
             
-            # Check slip event created
+            # Check slip event created without automatic partner alert
             slips = (await session.execute(select(SlipEvent).where(SlipEvent.user_id == self.user_id))).scalars().all()
             self.assertEqual(len(slips), 1)
+            self.assertFalse(slips[0].notified_partner)
 
     async def test_panic_invalid_action(self):
         resp = await self.client.request("POST", "/api/panic", json={
@@ -238,6 +244,65 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertEqual(resp.status, 200)
         data = await resp.json()
         self.assertTrue(data.get("success"))
+
+    def test_purity_covenant_conscience_rules_and_no_timer_lock(self):
+        covenant_html = (Path(__file__).parent.parent / "webapp" / "purity_covenant_jw_v2.html").read_text(encoding="utf-8")
+        # No timer lock or old partner ID / 3-relapse loophole
+        self.assertNotIn("timeRemaining = 180", covenant_html)
+        self.assertNotIn("693 656 777", covenant_html)
+        self.assertNotIn("три раза подряд", covenant_html)
+        # Key conscience rules present
+        self.assertIn("Колоссянам 3:5", covenant_html)
+        self.assertIn("не считается срывом", covenant_html)
+        self.assertIn("продолжил смотреть", covenant_html)
+        self.assertIn("в течение недели", covenant_html)
+        self.assertIn("не обязательно", covenant_html)
+        self.assertIn("основной посыл", covenant_html.lower())
+        self.assertIn("порнографии", covenant_html.lower())
+        self.assertIn("что именно я запомнил", covenant_html.lower())
+
+    async def test_spiritual_reflection_rejects_shallow_and_saves_sincere(self):
+        # 1. Generic shallow boilerplate should be rejected softly without saving
+        resp_shallow = await self.client.request("POST", "/api/spiritual_reflection", json={
+            "user_id": self.user_id,
+            "article_title": "Что говорит Библия о порнографии?",
+            "reflection_text": "порно это плохо и грех",
+            "round": 1
+        })
+        self.assertEqual(resp_shallow.status, 200)
+        shallow_data = await resp_shallow.json()
+        self.assertFalse(shallow_data.get("accepted"))
+
+        # 2. Sincere takeaway with verses should save into JournalEntry and append cleanly
+        async with self.session_factory() as session:
+            session.add(JournalEntry(
+                user_id=self.user_id,
+                entry_date=date.today(),
+                content="Утренняя заметка перед работой."
+            ))
+            await session.commit()
+
+        sincere_text = (
+            "Запомнился Притчи 4:23 про то, как важно хранить сердце с самого начала. "
+            "Из статьи понял, что нельзя торговаться со взглядом в первые секунды."
+        )
+        with patch("services.ai_service.ai_service._call_gemini", new_callable=AsyncMock, return_value='{"accepted": true, "feedback": "Отличный искренний вывод!"}'), \
+             patch("main.bot.send_message", new_callable=AsyncMock):
+            resp_ok = await self.client.request("POST", "/api/spiritual_reflection", json={
+                "user_id": self.user_id,
+                "article_title": "Что говорит Библия о порнографии?",
+                "reflection_text": sincere_text,
+                "round": 1
+            })
+            self.assertEqual(resp_ok.status, 200)
+            ok_data = await resp_ok.json()
+            self.assertTrue(ok_data.get("accepted"))
+
+        async with self.session_factory() as session:
+            entries = (await session.execute(select(JournalEntry).where(JournalEntry.user_id == self.user_id))).scalars().all()
+            self.assertEqual(len(entries), 1)
+            self.assertIn("Утренняя заметка", entries[0].content)
+            self.assertIn("Притчи 4:23", entries[0].content)
 
     async def test_spiritual_help(self):
         resp = await self.client.request("GET", "/api/spiritual_help?user_id=999001")
@@ -743,6 +808,51 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             log = (await session.execute(select(CheckInLog).where(CheckInLog.user_id == self.user_id))).scalar_one()
             self.assertEqual(log.checkin_date, date(2026, 11, 23))
             self.assertEqual(log.message_id, 555)
+
+    async def test_apply_nov_2026_24_relapse_record_is_idempotent(self):
+        target_id = 5037862619
+        async with self.session_factory() as session:
+            session.add(User(
+                id=target_id,
+                username="misha",
+                first_name="Michael",
+                timezone="Europe/Kyiv",
+                streak_start=datetime(2026, 11, 19, 20, 0, 0),
+                total_relapses=1,
+                is_active=True
+            ))
+            session.add(RelapseLog(
+                user_id=target_id,
+                timestamp=datetime(2026, 11, 19, 20, 0, 0),
+                trigger_reason="Срыв (четверг, 19.11.2026)"
+            ))
+            session.add(CheckInLog(
+                user_id=target_id,
+                checkin_date=date(2026, 11, 24),
+                status="clean",
+                excuse_reason="Авто-отметка (>24ч без ответа)"
+            ))
+            await session.commit()
+
+        applied1 = await db_helper.apply_nov_2026_24_relapse_record(target_user_id=target_id)
+        self.assertTrue(applied1)
+
+        async with self.session_factory() as session:
+            user = await session.get(User, target_id)
+            self.assertEqual(user.total_relapses, 2)
+            self.assertEqual(user.streak_start, datetime(2026, 11, 24, 21, 0, 0))
+            relapses = (await session.execute(select(RelapseLog).where(RelapseLog.user_id == target_id).order_by(RelapseLog.timestamp))).scalars().all()
+            self.assertEqual(len(relapses), 2)
+            self.assertEqual(relapses[-1].trigger_reason, "Искушение в интернете")
+            ch = (await session.execute(select(CheckInLog).where(and_(CheckInLog.user_id == target_id, CheckInLog.checkin_date == date(2026, 11, 24))))).scalar_one()
+            self.assertEqual(ch.status, "relapsed")
+            self.assertIsNone(ch.excuse_reason)
+            slips = (await session.execute(select(SlipEvent).where(SlipEvent.user_id == target_id))).scalars().all()
+            self.assertEqual(len(slips), 1)
+            self.assertFalse(slips[0].notified_partner)
+
+        applied2 = await db_helper.apply_nov_2026_24_relapse_record(target_user_id=target_id)
+        self.assertFalse(applied2)
 
 if __name__ == "__main__":
     unittest.main()

@@ -139,6 +139,75 @@ class DatabaseHelper:
 
             await session.commit()
             return True
+
+    async def apply_nov_2026_24_relapse_record(self, target_user_id: int = 5037862619) -> bool:
+        """
+        Одноразовая идемпотентная фиксация срыва за 24.11.2026 (искушение в интернете):
+        добавляет запись в relapse_logs и slip_events, отмечает 24.11 в календаре как relapsed
+        и сдвигает streak_start (если более позднего срыва еще не было), без уведомления напарнику.
+        """
+        from datetime import datetime, date, timedelta
+        from sqlalchemy import select, and_
+        from database.models import User, RelapseLog, SlipEvent, CheckInLog, SystemMigration
+        import logging
+        logger = logging.getLogger(__name__)
+
+        migration_id = "record_2026_11_24_internet_relapse"
+        async with self.session_factory() as session:
+            existing = await session.get(SystemMigration, migration_id)
+            if existing:
+                return False
+
+            session.add(SystemMigration(id=migration_id))
+
+            user = await session.get(User, target_user_id)
+            if user:
+                relapse_dt = datetime(2026, 11, 24, 21, 0, 0)
+                relapse_date = date(2026, 11, 24)
+
+                session.add(RelapseLog(
+                    user_id=target_user_id,
+                    timestamp=relapse_dt,
+                    trigger_reason="Искушение в интернете"
+                ))
+                session.add(SlipEvent(
+                    user_id=target_user_id,
+                    occurred_at=datetime(2026, 11, 24, 19, 0, 0),
+                    notified_partner=False
+                ))
+
+                ch_res = await session.execute(
+                    select(CheckInLog).where(
+                        and_(CheckInLog.user_id == target_user_id, CheckInLog.checkin_date == relapse_date)
+                    )
+                )
+                ch_row = ch_res.scalars().first()
+                if ch_row:
+                    ch_row.status = "relapsed"
+                    ch_row.timestamp = relapse_dt
+                    ch_row.excuse_reason = None
+                else:
+                    session.add(CheckInLog(
+                        user_id=target_user_id,
+                        checkin_date=relapse_date,
+                        status="relapsed",
+                        timestamp=relapse_dt
+                    ))
+
+                await session.flush()
+                logs_res = await session.execute(
+                    select(RelapseLog).where(RelapseLog.user_id == target_user_id)
+                )
+                user.total_relapses = len(logs_res.scalars().all())
+                if not user.streak_start or user.streak_start < relapse_dt:
+                    user.streak_start = relapse_dt
+                    user.awarded_milestones = "1" if datetime.now() >= relapse_dt + timedelta(days=1) else ""
+                user.consecutive_missed_checkins = 0
+                user.is_active = True
+                logger.info(f"Зафиксирован срыв 24.11.2026 (Искушение в интернете) для пользователя {target_user_id}")
+
+            await session.commit()
+            return True
             
     async def dispose(self):
         """Закрытие соединений"""

@@ -166,11 +166,11 @@
                                 Отметьте искушения (можно выбрать несколько):
                             </label>
                             <div class="temptation-chips" id="temptation-chips-container">
-                                <button type="button" class="chip-btn" data-type="masturbation">✊ Мастурбация</button>
-                                <button type="button" class="chip-btn" data-type="porn">🔞 Порнография</button>
+                                <button type="button" class="chip-btn span-2" data-type="porn">🔞 Порнография / Искушение в интернете</button>
                                 <button type="button" class="chip-btn" data-type="sexting">💬 Секстинг / Чат</button>
                                 <button type="button" class="chip-btn" data-type="premarital_sex">💔 Секс с девушкой</button>
-                                <button type="button" class="chip-btn span-2" data-type="general">🧠 Навязчивые / нечистые мысли</button>
+                                <button type="button" class="chip-btn" data-type="masturbation">✊ Мастурбация</button>
+                                <button type="button" class="chip-btn" data-type="general">🧠 Нечистые мысли</button>
                             </div>
                         </div>
 
@@ -227,6 +227,22 @@
                             <!-- Заполняется динамически -->
                         </div>
 
+                        <!-- Осмысление после чтения статьи (Раунд 1) -->
+                        <div id="spiritual-reflection-box" class="spiritual-reflection-box glass">
+                            <div class="reflection-header">
+                                <span>📝 Что ты запомнил из статьи и какие стихи?</span>
+                            </div>
+                            <p class="reflection-hint">
+                                Напиши искренне и подробно для себя: какие мысли и библейские стихи запомнились и что ты извлёк из публикации (не просто «порно — это плохо и грех»).
+                            </p>
+                            <textarea id="spiritual-reflection-input" rows="3" class="spiritual-textarea" placeholder="Например: из стиха ... запомнилось ..., статья помогла увидеть что ..."></textarea>
+                            <div id="spiritual-reflection-feedback" class="reflection-feedback hidden"></div>
+                            <button type="button" class="btn btn-secondary" id="btn-save-spiritual-reflection" style="margin-top: 8px; height: 42px; font-size: 13px;">
+                                <span class="btn-text">💾 Сохранить вывод и стихи</span>
+                                <span class="spinner hidden"></span>
+                            </button>
+                        </div>
+
                         <!-- Флоу действий Раунда 1 -->
                         <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
                             <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
@@ -279,6 +295,22 @@
                             📚 Углубленный материал для победы:
                         </p>
                         <div id="round2-card-container" style="margin-bottom: 16px;"></div>
+
+                        <!-- Осмысление после чтения статьи (Раунд 2) -->
+                        <div id="round2-reflection-box" class="spiritual-reflection-box glass">
+                            <div class="reflection-header">
+                                <span>📝 Что ты запомнил из статьи и какие стихи?</span>
+                            </div>
+                            <p class="reflection-hint">
+                                Запиши искренне после чтения: что из этой статьи задело сердце, какие стихи вспомнились и какой вывод ты берёшь для себя.
+                            </p>
+                            <textarea id="round2-reflection-input" rows="3" class="spiritual-textarea" placeholder="Опиши главную мысль, стихи и личный вывод..."></textarea>
+                            <div id="round2-reflection-feedback" class="reflection-feedback hidden"></div>
+                            <button type="button" class="btn btn-secondary" id="btn-save-round2-reflection" style="margin-top: 8px; height: 42px; font-size: 13px;">
+                                <span class="btn-text">💾 Сохранить вывод и стихи</span>
+                                <span class="spinner hidden"></span>
+                            </button>
+                        </div>
 
                         <!-- Блок завершения Раунда 2 (с активным 20-мин таймером) -->
                         <div class="spiritual-confirmation-box glass" style="border-radius: 12px; padding: 14px; margin-bottom: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">

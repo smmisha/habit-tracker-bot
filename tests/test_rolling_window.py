@@ -44,10 +44,11 @@ class TestRelapseNotification(unittest.IsolatedAsyncioTestCase):
         await self.session.close()
         await self.engine.dispose()
 
-    async def test_every_relapse_notifies_partner_immediately(self):
+    async def test_relapse_does_not_notify_partner_automatically(self):
         """
-        Rule: A notification must be sent to the partner on EVERY relapse.
-        No grace periods, no waiting for 3 relapses.
+        Rule: Automated partner notifications are disabled on relapse.
+        Relapse resets streak and logs SlipEvent with notified_partner=False,
+        leaving personal communication with an elder to the user's conscience.
         """
         from handlers.tracker import execute_relapse_reset
         from database.db_helper import db_helper
@@ -55,24 +56,31 @@ class TestRelapseNotification(unittest.IsolatedAsyncioTestCase):
         # Patch db_helper session_factory to use our in-memory DB
         with patch.object(db_helper, "session_factory", self.session_factory), \
              patch("services.userbot_client.userbot.send_message_to_partner", new_callable=AsyncMock) as mock_partner_send, \
-             patch("main.bot.send_message", new_callable=AsyncMock):
+             patch("main.bot.send_message", new_callable=AsyncMock) as mock_bot_send:
              
             mock_partner_send.return_value = True
             
             # 1st relapse
             res1 = await execute_relapse_reset(self.user_id, "Trigger 1")
-            self.assertTrue(res1["partner_notified"], "Partner must be notified on the first relapse")
-            self.assertEqual(mock_partner_send.call_count, 1)
-            self.assertIn("отправлено уведомление о срыве", res1["confirm_text"])
+            self.assertFalse(res1["partner_notified"], "Partner must NOT be auto-notified on relapse")
+            self.assertEqual(res1["recent_count"], 0)
+            mock_partner_send.assert_not_called()
+            self.assertIn("в течение недели", res1["confirm_text"])
+            self.assertNotIn("отправлено уведомление о срыве", res1["confirm_text"])
             
             # 2nd relapse
             res2 = await execute_relapse_reset(self.user_id, "Trigger 2")
-            self.assertTrue(res2["partner_notified"], "Partner must be notified on the second relapse as well")
-            self.assertEqual(mock_partner_send.call_count, 2)
-            self.assertIn("отправлено уведомление о срыве", res2["confirm_text"])
+            self.assertFalse(res2["partner_notified"], "Partner must NOT be auto-notified on subsequent relapses either")
+            mock_partner_send.assert_not_called()
+            mock_bot_send.assert_awaited()
+
+        async with self.session_factory() as session:
+            slips = (await session.execute(select(SlipEvent).where(SlipEvent.user_id == self.user_id))).scalars().all()
+            self.assertEqual(len(slips), 2)
+            self.assertTrue(all(not s.notified_partner for s in slips))
 
     async def test_relapse_without_partner_does_not_crash(self):
-        """If user has no partner configured, reset succeeds without sending alert"""
+        """If user has no partner configured, reset succeeds cleanly without alerts"""
         from handlers.tracker import execute_relapse_reset
         from database.db_helper import db_helper
         
@@ -89,7 +97,7 @@ class TestRelapseNotification(unittest.IsolatedAsyncioTestCase):
             res = await execute_relapse_reset(self.user_id, "Trigger")
             self.assertFalse(res["partner_notified"])
             mock_partner_send.assert_not_called()
-            self.assertIn("Напарник не указан", res["confirm_text"])
+            self.assertIn("Счетчик сброшен", res["confirm_text"])
 
 if __name__ == "__main__":
     unittest.main()

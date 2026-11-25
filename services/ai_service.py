@@ -692,7 +692,7 @@ class GeminiAIService:
             f"{multi_instruction}"
             "Напиши глубокое, теплое и сочувствующее наставление (3-4 предложения):\n"
             "1. Обратись к нему как любящий брат/наставник, покажи понимание его борьбы и заверь в сострадании Иеговы прямо сейчас (Евр. 4:15).\n"
-            "2. Напомни читать и молиться спокойно, без спешки и таймеров, пока истина не наполнит разум и сердце.\n"
+            "2. Напомни читать статью спокойно, без спешки и таймеров, а после чтения искренне записать для себя: что запомнилось, какие стихи задели и какой вывод извлечен (не просто формальное «порно — это грех»).\n"
             "3. Дай 1 конкретное безотлагательное действие прямо сейчас.\n\n"
             "Отвечай без сухого формализма, искренне и с любовью.\n"
             "Верни ответ строго в формате JSON без markdown: {\"thought\": \"...\", \"action\": \"...\"}"
@@ -720,6 +720,72 @@ class GeminiAIService:
             "round": round,
             "primary_material": primary_material,
             "materials": materials
+        }
+
+    async def evaluate_article_reflection(self, article_title: str, reflection_text: str) -> dict:
+        """
+        Проверяет искренность и содержательность вывода после чтения статьи.
+        Отсеивает чисто формальные отписки вроде 'порно это плохо и грех' без конкретной мысли или стиха.
+        При недоступности Gemini мягко принимает содержательный текст (>= 20 символов).
+        """
+        import json
+        import re
+
+        clean_text = (reflection_text or "").strip()
+        if len(clean_text) < 20:
+            return {
+                "accepted": False,
+                "feedback": "Напиши чуть подробнее и искреннее: какую именно мысль из статьи ты запомнил, какие стихи задели и что берёшь для себя."
+            }
+
+        normalized = re.sub(r"[^\w\sа-яА-ЯёЁ]", "", clean_text.lower()).strip()
+        normalized_words = normalized.split()
+        generic_phrases = (
+            "порно это плохо",
+            "порно плохо",
+            "порно это грех",
+            "порно грех",
+            "смотреть порно грех",
+            "нельзя смотреть порно",
+            "я прочитал",
+            "прочитал статью",
+            "хорошая статья",
+            "понятно",
+            "согласен",
+        )
+        has_scripture_hint = bool(re.search(r"\d+\s*:\s*\d+|стих|псал|матф|коринф|притч|иаков|иоан|галат|рим|быт|иегова", normalized))
+        if len(normalized_words) <= 9 and any(phrase in normalized for phrase in generic_phrases) and not has_scripture_hint:
+            return {
+                "accepted": False,
+                "feedback": "Не пиши просто общую фразу вроде «порно — это плохо и грех». Напиши подробнее и от сердца: какая именно мысль, пример или стих из публикации тебе запомнились?"
+            }
+
+        if self.api_key and self.api_key.strip() not in ("", "your_gemini_api_key_here"):
+            prompt = (
+                f"Пользователь прочитал духовную статью «{article_title}» во время искушения и написал свой вывод:\n"
+                f"\"{clean_text}\"\n\n"
+                "Оцени, является ли это хотя бы минимально содержательным, личным выводом (что запомнил, какой стих или мысль извлёк для себя), "
+                "или это чистая формальная отписка ради галочки вроде 'порно это плохо и грех' / 'хорошая статья'.\n"
+                "Не будь чрезмерно строгим к стилю, ошибкам или длине, если видно искреннюю личную мысль или упоминание стиха/идеи из статьи.\n"
+                "Верни строго JSON без markdown:\n"
+                "{\"accepted\": true/false, \"feedback\": \"Короткий теплый отклик на русском (1-2 предложения): если accepted=true — похвали за конкретную мысль и закрепи стих/урок; если accepted=false — мягко попроси написать подробнее, что именно запомнилось и какие стихи.\"}"
+            )
+            try:
+                res = await self._call_gemini(prompt, "")
+                if res:
+                    res_clean = res.strip().replace("```json", "").replace("```", "").strip()
+                    parsed = json.loads(res_clean)
+                    if isinstance(parsed, dict) and "accepted" in parsed:
+                        return {
+                            "accepted": bool(parsed["accepted"]),
+                            "feedback": str(parsed.get("feedback") or "").strip() or "Вывод сохранён. Спасибо за искренность!"
+                        }
+            except Exception as e:
+                logger.error(f"Error in evaluate_article_reflection: {e}")
+
+        return {
+            "accepted": True,
+            "feedback": "Спасибо за искренний разбор и внимание к Слову. Вывод сохранён в твой дневник!"
         }
 
 ai_service = GeminiAIService()

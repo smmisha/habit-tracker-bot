@@ -853,6 +853,99 @@ let currentSpiritualNotes = '';
 let cachedPartnerUsername = null;
 let round2TimerInterval = null;
 let round2SecondsRemaining = 20 * 60;
+let currentPrimaryArticleTitle = 'Духовная публикация';
+let currentRound2ArticleTitle = 'Углубленный материал';
+let round1ReflectionSaved = false;
+let round2ReflectionSaved = false;
+let round1PromptedReflection = false;
+let round2PromptedReflection = false;
+
+async function submitArticleReflection(roundNum) {
+    const isRound2 = roundNum === 2;
+    const input = document.getElementById(isRound2 ? 'round2-reflection-input' : 'spiritual-reflection-input');
+    const feedbackEl = document.getElementById(isRound2 ? 'round2-reflection-feedback' : 'spiritual-reflection-feedback');
+    const btn = document.getElementById(isRound2 ? 'btn-save-round2-reflection' : 'btn-save-spiritual-reflection');
+    if (!input || !btn) return true;
+
+    const text = input.value.trim();
+    const articleTitle = isRound2 ? currentRound2ArticleTitle : currentPrimaryArticleTitle;
+
+    if (text.length < 15) {
+        hapticNotification('error');
+        if (feedbackEl) {
+            feedbackEl.textContent = 'Напиши чуть подробнее: что именно из статьи запомнилось, какие примерно стихи задели и какой вывод ты берёшь для себя.';
+            feedbackEl.className = 'reflection-feedback is-warning';
+        }
+        input.focus();
+        return false;
+    }
+
+    btn.disabled = true;
+    btn.querySelector('.spinner')?.classList.remove('hidden');
+    const btnTextEl = btn.querySelector('.btn-text');
+    if (btnTextEl) btnTextEl.textContent = 'Сохранение разбора...';
+
+    try {
+        const resp = await apiFetch('/api/spiritual_reflection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                article_title: articleTitle,
+                reflection_text: text,
+                round: roundNum
+            })
+        });
+        const resData = await resp.json();
+
+        if (!resp.ok) {
+            hapticNotification('error');
+            showToast(resData.error || 'Ошибка сохранения разбора статьи', 'error');
+            return false;
+        }
+
+        if (!resData.accepted) {
+            hapticNotification('error');
+            if (feedbackEl) {
+                feedbackEl.textContent = resData.feedback || 'Распиши мысль немного подробнее и искреннее.';
+                feedbackEl.className = 'reflection-feedback is-warning';
+            }
+            input.focus();
+            return false;
+        }
+
+        hapticNotification('success');
+        if (feedbackEl) {
+            feedbackEl.textContent = resData.feedback || 'Вывод сохранён в дневник.';
+            feedbackEl.className = 'reflection-feedback is-success';
+        }
+        if (isRound2) {
+            round2ReflectionSaved = true;
+        } else {
+            round1ReflectionSaved = true;
+        }
+        showToast('Разбор статьи сохранён в дневник', 'success');
+        await loadAllData();
+        return true;
+    } catch (e) {
+        console.error('Reflection submit error:', e);
+        hapticNotification('error');
+        showToast('Ошибка сети при сохранении вывода', 'error');
+        return false;
+    } finally {
+        btn.disabled = false;
+        btn.querySelector('.spinner')?.classList.add('hidden');
+        if (btnTextEl) btnTextEl.textContent = '💾 Сохранить вывод и стихи';
+    }
+}
+
+document.getElementById('btn-save-spiritual-reflection')?.addEventListener('click', () => {
+    submitArticleReflection(1);
+});
+
+document.getElementById('btn-save-round2-reflection')?.addEventListener('click', () => {
+    submitArticleReflection(2);
+});
 
 // Обработка чипов искушений (мультивыбор)
 document.querySelectorAll('#temptation-chips-container .chip-btn').forEach(btn => {
@@ -902,6 +995,20 @@ document.getElementById('btn-spiritual-change-topic')?.addEventListener('click',
 
 // Раунд 1: Кнопка «Помогло! Тяга отступила»
 document.getElementById('btn-spiritual-helped')?.addEventListener('click', async () => {
+    const reflInput = document.getElementById('spiritual-reflection-input');
+    const reflText = (reflInput?.value || '').trim();
+    if (!round1ReflectionSaved) {
+        if (reflText.length > 0) {
+            const ok = await submitArticleReflection(1);
+            if (!ok) return;
+        } else if (!round1PromptedReflection) {
+            round1PromptedReflection = true;
+            reflInput?.focus();
+            showToast('После прочтения запиши, что запомнил и какие стихи (или нажми ещё раз)', 'info');
+            return;
+        }
+    }
+
     try {
         await apiFetch('/api/panic', {
             method: 'POST',
@@ -1015,6 +1122,20 @@ function updateRound2TimerDisplay() {
 
 // Раунд 2: Кнопка «Помогло! Тяга отступила»
 document.getElementById('btn-round2-helped')?.addEventListener('click', async () => {
+    const reflInput = document.getElementById('round2-reflection-input');
+    const reflText = (reflInput?.value || '').trim();
+    if (!round2ReflectionSaved) {
+        if (reflText.length > 0) {
+            const ok = await submitArticleReflection(2);
+            if (!ok) return;
+        } else if (!round2PromptedReflection) {
+            round2PromptedReflection = true;
+            reflInput?.focus();
+            showToast('Напиши коротко после чтения, что запомнилось и какие стихи (или нажми ещё раз)', 'info');
+            return;
+        }
+    }
+
     if (round2TimerInterval) {
         clearInterval(round2TimerInterval);
         round2TimerInterval = null;
@@ -1163,6 +1284,16 @@ async function loadSpiritualSolution(tType, notes) {
                 description: "Нравственная чистота и близкие отношения с Богом.",
                 url: "https://wol.jw.org/ru/wol/d/r2/lp-u/1102021240"
             };
+            currentPrimaryArticleTitle = primary.title || 'Духовная публикация';
+            round1ReflectionSaved = false;
+            round1PromptedReflection = false;
+            const refl1Input = document.getElementById('spiritual-reflection-input');
+            const refl1Feedback = document.getElementById('spiritual-reflection-feedback');
+            if (refl1Input) refl1Input.value = '';
+            if (refl1Feedback) {
+                refl1Feedback.textContent = '';
+                refl1Feedback.className = 'reflection-feedback hidden';
+            }
             
             if (primaryContainer) {
                 let html = `
@@ -1276,6 +1407,16 @@ async function loadRound2Solution(tType, notes) {
                 description: "Нравственная чистота и близкие отношения с Богом.",
                 url: "https://wol.jw.org/ru/wol/d/r2/lp-u/1102021240"
             };
+            currentRound2ArticleTitle = secondary.title || 'Углубленный материал';
+            round2ReflectionSaved = false;
+            round2PromptedReflection = false;
+            const refl2Input = document.getElementById('round2-reflection-input');
+            const refl2Feedback = document.getElementById('round2-reflection-feedback');
+            if (refl2Input) refl2Input.value = '';
+            if (refl2Feedback) {
+                refl2Feedback.textContent = '';
+                refl2Feedback.className = 'reflection-feedback hidden';
+            }
             
             if (cardContainer) {
                 let html = `

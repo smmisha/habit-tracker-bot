@@ -44,7 +44,7 @@
     .covenant-wrap {
       max-width: 660px;
       margin: 0 auto;
-      padding: 2rem 1rem calc(170px + env(safe-area-inset-bottom, 0px)) 1rem;
+      padding: 2rem 1rem calc(185px + env(safe-area-inset-bottom, 0px)) 1rem;
       font-family: var(--font-serif);
       color: var(--color-text-primary);
     }
@@ -266,6 +266,31 @@
       cursor: not-allowed;
       box-shadow: none;
     }
+    .conscience-note {
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      color: var(--color-text-secondary);
+      text-align: center;
+      margin: 0;
+      line-height: 1.4;
+    }
+    .btn-skip-covenant {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--color-text-secondary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .btn-skip-covenant:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--color-text-primary);
+    }
   </style>
 </head>
 <body>
@@ -279,13 +304,13 @@
 
   <!-- Информационные плашки режимов (Манифест / Перезагрузка после срыва) -->
   <div id="manifest-banner" style="display: none; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; background: rgba(162, 155, 254, 0.1); border: 1px solid rgba(162, 155, 254, 0.35); text-align: center; font-family: var(--font-sans);">
-    <div style="font-size: 15px; font-weight: 600; color: #a29bfe; margin-bottom: 4px;">🕊️ Ваш постоянный духовный манифест</div>
-    <div style="font-size: 13px; color: #dfe6e9; line-height: 1.4;">Этот документ доступен вам в любое время для спокойного чтения и сверки ориентиров совести перед Иеговой.</div>
+    <div style="font-size: 15px; font-weight: 600; color: #a29bfe; margin-bottom: 4px;">🕊️ Ваш постоянный ориентир совести</div>
+    <div style="font-size: 13px; color: #dfe6e9; line-height: 1.4;">Этот документ доступен в любое время для спокойного чтения и сверки ориентиров перед Иеговой — без таймеров и обязаловки.</div>
   </div>
 
   <div id="restart-banner" style="display: none; border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; background: rgba(253, 203, 110, 0.15); border: 1px solid rgba(253, 203, 110, 0.45); text-align: center; font-family: var(--font-sans);">
-    <div style="font-size: 15px; font-weight: 700; color: #ffeaa7; margin-bottom: 4px;">🕊️ Точка перезагрузки и покаяния</div>
-    <div style="font-size: 13px; color: #ffeaa7; line-height: 1.4;">Остановитесь и выдохните. Посвятите эти 3 минуты глубокому размышлению и молитве перед новым стартом чистой жизни.</div>
+    <div style="font-size: 15px; font-weight: 700; color: #ffeaa7; margin-bottom: 4px;">🕊️ Точка покаяния и искреннего обновления</div>
+    <div style="font-size: 13px; color: #ffeaa7; line-height: 1.4;">Остановитесь и выдохните. Прочтение желательно, но не обязательно — никаких таймеров и принуждения, всё на вашей совести перед Иеговой.</div>
   </div>
 
   <div class="section">
@@ -296,11 +321,11 @@
   <hr class="divider">
 
   <div class="section">
-    <p class="section-label">Исповедание борьбы</p>
-    <p class="body-text">Я признаю, что нахожусь в борьбе с грехами, которые Слово Бога называет <em>porneia</em> (разврат), <em>akatharsia</em> (нечистота) и <em>aselgeia</em> (непристойное поведение) — грехами, оскверняющими тело и совесть христианина. В частности, я борюсь со следующими практиками:</p>
+    <p class="section-label">Исповедание борьбы и основной посыл</p>
+    <p class="body-text">Я признаю, что нахожусь в борьбе с грехами, которые Слово Бога называет <em>porneia</em> (разврат), <em>akatharsia</em> (нечистота) и <em>aselgeia</em> (непристойное поведение) — грехами, оскверняющими тело и совесть христианина. При этом мой <strong>основной посыл</strong> — не просто избавиться от мастурбации (хотя это важно, но не в такой степени), а <strong>полностью и навсегда избавиться от порнографии и искушений в интернете вообще</strong>. В частности, я отвергаю:</p>
  
     <ul class="sins-list">
-      <li>Просмотр порнографических материалов</li>
+      <li>Просмотр порнографических материалов и поиск искушений в интернете (главная борьба)</li>
       <li>Киберсекс и сексуальные переписки (секстинг)</li>
       <li>Сексуальные разговоры по телефону или в мессенджерах</li>
       <li>Мастурбация</li>
@@ -314,16 +339,18 @@
  
     <div class="scripture-block">
       <p class="verse">«Поэтому умертвите ваши земные члены в отношении блуда, нечистоты, похоти, пагубных желаний и жадности, которая есть идолопоклонство»</p>
+      <p class="ref">Колоссянам 3:5 — Священное Писание. Перевод «Новый мир»</p>
+    </div>
   </div>
   
   <hr class="divider">
   
   <div class="section">
     <p class="section-label">Моё обязательство перед Иеговой</p>
-    <p class="body-text">Я понимаю, что система подотчётности — не человеческое изобретение для успокоения совести, но практическое воплощение принципа: «Исповедуйтесь друг другу в грехах и молитесь друг за друга» (Иакова 5:16). Напарник-контролёр — духовный брат, старейшина, которого Иегова позволяет мне использовать на пути восстановления духовной чистоты. Его роль — не судить меня, а укреплять и удерживать на узком пути (Галатам 6:1).</p>
-    <p class="body-text"><strong>Где проходит граница победы и границы срыва.</strong> Я признаю разницу между искушением, которое коснулось моего разума, и искушением, которому я позволил овладеть моими действиями. Если помысел приходит без моего приглашения и я, распознав его, отвергаю его в сердце, не переходя к поиску и просмотру — это не падение, а победа, дарованная мне через силу, которая приходит от Бога (1 Коринфянам 10:13). Стрик в этом случае сохраняется, потому что борьба велась и была выиграна. Но если я умышленно начинаю искать запретное — и пусть даже вижу его лишь мельком, лишь мгновениями, прежде чем закрыть вкладку, — я уже перешёл из области мысли в область действия. Это срыв, и стрик обнуляется, независимо от того, как быстро я одумался и что я удалил из истории браузера. Внешняя скорость раскаяния не отменяет факта, что нога уже ступила на запретную территорию.</p>
-    <p class="body-text"><strong>О единичном срыве и о серии срывов.</strong> Если я оступился один раз, я имею право тихо сбросить счётчик, удалить всё, что стало для меня ловушкой, встать и без промедления продолжить борьбу — не потому что мне нечего сказать напарнику, а потому что не каждая осечка требует немедленного разбирательства, если я сам, своей волей и с помощью Иеговы, вернул контроль. Но если срывы начинают повторяться — три раза подряд или в короткий, сжатый промежуток времени — это уже не осечка среди победы, а сигнал того, что я теряю почву под ногами. В этом случае молчание превращается в самообман, и я обязан открыто, без утайки, признаться своему напарнику, чтобы выйти из этой петли не в одиночку, а с его поддержкой и, если потребуется, с духовной помощью собрания.</p>
-    <p class="body-text">Я обязуюсь: не скрывать серийных срывов от контролёра, сообщать о них честно и без промедления. Я обязуюсь не смягчать формулировки, не давать неполных отчётов и позволять напарнику задавать трудные вопросы, не уклоняясь от ответов. И я помню: ценность этого пути — не в безупречной цифре на экране, а в том, сколько раз я поднимался после падения и продолжал искренне бороться за долгое, устойчивое воздержание (см. Притчи 24:16, где праведный, даже упав, снова встаёт — в отличие от нечестивого, который остаётся лежать).</p>
+    <p class="body-text">Я понимаю, что духовная открытость — не формальная отчётность «для галочки» и не автоматическая отправка сообщений из бота, а искреннее следование принципу: «Исповедуйтесь друг другу в грехах и молитесь друг за друга» (Иакова 5:16). Моя ответственность перед старейшиной лежит на моей совести перед Иеговой: не для осуждения, а чтобы укрепляться и не оставаться в тени (Галатам 6:1).</p>
+    <p class="body-text"><strong>Где проходит граница победы и срыва.</strong> Я чётко различаю случайное столкновение со злом и умышленный грех. Если я листал ленту (например, TikTok или соцсети) и мне случайно попалось видео или изображение эротического или любого возбуждающего характера, но я <strong>сразу без засматривания</strong> его перелистнул, закрыл, нажал «Не интересно» или заблокировал источник — это <strong>не считается срывом</strong>, так как я не искал этого и отверг искушение. Стрик в этом случае сохраняется (1 Коринфянам 10:13). Но если такой материал попался случайно и я <strong>продолжил смотреть</strong> — это срыв. Тем более срывом является любой <strong>намеренный поиск</strong> или просмотр запретного — независимо от того, сколько секунд я смотрел и что удалил потом. В обоих случаях стрик обнуляется.</p>
+    <p class="body-text"><strong>Что делать при ощущении искушения.</strong> Когда появляется ощущение искушения или тяга к запретному в интернете, я не остаюсь один на один с импульсом: я сразу открываю библейские статьи (например, через раздел поддержки в приложении или jw.org) и читаю их спокойно, чтобы наполнить ум правдой Бога. <strong>После прочтения</strong> я записываю для себя, что именно я запомнил, какие примерно библейские стихи затронули меня и какой вывод я извлёк — не формальной отпиской вроде «порно — это плохо и грех», а подробно и искренне о том, что открыла мне эта публикация.</p>
+    <p class="body-text"><strong>О каждом срыве — без деления на «тихий» и «серию».</strong> Любой срыв — даже единичный — остаётся срывом. В моей борьбе нет смысла делить падения на «тихие, которые можно скрыть» и «серию из трёх раз», потому что перед Богом важна искренность сердца, а не статистика или галочки. После любого срыва я честно сбрасываю счётчик, убираю то, что стало ловушкой, и <strong>на своей совести обязуюсь самостоятельно обратиться к старейшине в течение недели</strong>, чтобы лично и открыто сказать ему об этом — без смягчения формулировок и не уходя в тень. И я помню: ценность этого пути — не в безупречной цифре на экране, а в искреннем желании снова вставать и идти к чистоте (Притчи 24:16).</p>
   </div>
 
   <hr class="divider">
@@ -332,29 +359,26 @@
     <p class="section-label">Относительно искренности отчёта</p>
 
     <div class="warning-block">
-      <p><strong>Я осознаю следующее.</strong> Любая попытка соврать в ежедневном отчёте, размыть границу между единичным и серийным срывом в свою пользу или пойти на компромисс со своей совестью — это не просто обман человека, но прямая ложь перед Иеговой. Бог видит моё сердце и знает правду, даже если я пытаюсь замаскировать её удобной формулировкой.</p>
+      <p><strong>Я осознаю следующее.</strong> Любая попытка соврать в ежедневном отчёте, оправдать засматривание «случайностью» или пойти на сделку со своей совестью — это не обман приложения, а нечестность перед Иеговой. Бог видит моё сердце и знает правду, даже если внешне всё выглядит благополучно.</p>
     </div>
 
-    <p class="body-text">Поэтому, проходя этот ежедневный чек-ин, я торжественно заявляю перед Иеговой:</p>
+    <p class="body-text">Поэтому, оценивая свой день перед Иеговой, я подтверждаю:</p>
     <ul class="sins-list">
-      <li>Я буду предельно честен при выборе кнопки «Чист» или «Сорвался», опираясь на границу, которую я сам признал: мысль, отвергнутая без действия, — не срыв; умышленный поиск с любым, даже кратким просмотром — срыв</li>
-      <li>Я не стану вести торгов со своей совестью, растягивая рамки «единичного срыва», чтобы избежать разговора с напарником, когда на самом деле передо мной уже серия</li>
-      <li>Я не скрою факт умышленного поиска или просмотра запретного, каким бы кратким он ни был, если он произошёл трижды подряд или в течение короткого времени</li>
-      <li>Мой отчёт отражает реальное духовное состояние, без приукрашивания и без самобичевания</li>
+      <li>Случайно попавшийся возбуждающий ролик или кадр, от которого я без засматривания сразу отвернулся (перелистнул, скрыл, заблокировал), — не срыв; продолжение просмотра или умышленный поиск — срыв</li>
+      <li>Я не делю срывы на «мелкие» и «серьёзные» и не оправдываю даже один срыв молчанием</li>
+      <li>После любого срыва я обязуюсь сам, на своей совести, в течение недели обратиться к старейшине и честно об этом рассказать, а не полагаться на внешний контроль ради галочки</li>
+      <li>Мой отчёт отражает реальное состояние перед Богом, без приукрашивания и разрушительного самобичевания (1 Иоанна 1:7)</li>
     </ul>
-    <p class="body-text">Если в течение дня у меня был единичный срыв — я вправе тихо подняться и идти дальше, зная, что Иегова видел мою внутреннюю борьбу. Но если я чувствую, что теряю почву — я обязуюсь честно признать это своему напарнику, зная, что восстановление начинается не со стыда, а с правды, произнесённой в свете (1 Иоанна 1:7).</p>
   </div>
 
   <hr class="divider">
   
   <div class="section">
-    <p class="section-label">Напарник-контролёр</p>
+    <p class="section-label">Личная открытость и духовная помощь</p>
  
     <div class="partner-block">
       <div class="partner-text">
-        Я подтверждаю свою подотчётность перед моим постоянным напарником-контролёром:
-        <span class="partner-id">Старейшина Андрей (ID: 693 656 777)</span>
-        — для строгой, честной и регулярной духовной отчётности. Я признаю его право задавать мне прямые вопросы о моей чистоте, оказывать духовную помощь и молиться за меня.
+        Моя открытость держится не на автоматических уведомлениях из бота, а на личной совести перед Иеговой. Если происходит срыв, я самостоятельно и добровольно в течение недели обращаюсь к старейшине, чтобы честно рассказать о случившемся, принять библейскую помощь и вместе помолиться о восстановлении.
       </div>
     </div>
   </div>
@@ -363,12 +387,12 @@
 
   <div class="section">
     <p class="section-label">Заключение</p>
-    <p class="body-text">Я произношу это соглашение перед именем Иеговы (Псалом 83:3), зная, что он — «Испытующий сердца и внутренности» (Псалом 7:9). Моя цель — не совершенство на бумаге, но подлинная чистота сердца, которая делает меня достойным стоять перед ним в молитве и в служении.</p>
-    <p class="body-text">Пусть этот договор напоминает мне: путь к исцелению — через свет, а не через тьму.</p>
+    <p class="body-text">Я произношу это соглашение перед именем Иеговы (Псалом 83:3), зная, что он — «Испытующий сердца и внутренности» (Псалом 7:9). Моя цель — не формальная отчётность и не идеальная полоса на бумаге, а подлинная чистота сердца, которая позволяет чисто стоять перед ним в молитве и служении.</p>
+    <p class="body-text">Пусть этот ориентир напоминает мне: путь к исцелению — через искренность и свет, а не через тьму.</p>
   </div>
 
   <div class="seal-row">
-    <p class="seal-text">Подтверждается нажатием кнопки «Принять» в боте.<br>Дата и время фиксируются автоматически.</p>
+    <p class="seal-text">Прочтение этого документа желательно, но не обязательно — никаких ограничений по времени.<br>Всё остаётся на твоей совести перед Иеговой.</p>
   </div>
 </div>
 
@@ -379,17 +403,20 @@
   </button>
 </div>
 
-<!-- Блок с подтверждением соглашения (только для режима перезагрузки после срыва) -->
+<!-- Блок подтверждения (только для режима перезагрузки после срыва, без таймера и принуждения) -->
 <div class="accept-section" id="restart-action-section" style="display: none;">
-  <p class="scroll-warning" id="scroll-warning">⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Кнопка подтверждения разблокируется через: 3:00</p>
+  <p class="conscience-note">Читать желательно, но не обязательно — без ограничений по времени, всё на совести.</p>
   
-  <label class="checkbox-container disabled" id="checkbox-label">
-    <input type="checkbox" id="accept-checkbox" disabled>
-    <span class="label-text">Я прочитал и искренне принимаю условия Соглашения о духовной чистоте перед Иеговой</span>
+  <label class="checkbox-container" id="checkbox-label">
+    <input type="checkbox" id="accept-checkbox">
+    <span class="label-text">Я осознаю границу срыва, обязуюсь на своей совести сказать старейшине в течение недели и иду дальше</span>
   </label>
   
   <button class="btn-confirm disabled" id="btn-confirm" disabled>
-    🟢 Подтвердить и возобновить путь чистоты
+    🟢 Подтвердить и продолжить путь чистоты
+  </button>
+  <button class="btn-skip-covenant" type="button" id="btn-skip-restart">
+    Закрыть без подтверждения
   </button>
 </div>
 
@@ -421,115 +448,48 @@
   const manifestActionSection = document.getElementById('manifest-action-section');
   const restartActionSection = document.getElementById('restart-action-section');
   const btnCloseManifest = document.getElementById('btn-close-manifest');
+  const btnSkipRestart = document.getElementById('btn-skip-restart');
+
+  function closePage() {
+    if (tg && typeof tg.close === 'function') {
+      tg.close();
+    } else if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.close();
+    }
+  }
 
   if (btnCloseManifest) {
-    btnCloseManifest.addEventListener('click', () => {
-      if (tg && typeof tg.close === 'function') {
-        tg.close();
-      } else if (window.history.length > 1) {
-        window.history.back();
-      } else {
-        window.close();
-      }
-    });
+    btnCloseManifest.addEventListener('click', closePage);
+  }
+  if (btnSkipRestart) {
+    btnSkipRestart.addEventListener('click', closePage);
   }
 
   if (mode === 'manifest') {
-    // 1. РЕЖИМ ПОСТОЯННОГО МАНИФЕСТА (таймер 0 сек, свободное чтение)
+    // 1. РЕЖИМ ПОСТОЯННОГО ОРИЕНТИРА (без таймера, чтение по желанию)
     if (headerSubtitle) {
-      headerSubtitle.textContent = 'Постоянный манифест духовных границ и личной подотчётности';
+      headerSubtitle.textContent = 'Постоянный ориентир духовных границ — чтение по желанию, без таймеров';
     }
     if (manifestBanner) manifestBanner.style.display = 'block';
     if (restartBanner) restartBanner.style.display = 'none';
-    if (manifestActionSection) manifestActionSection.style.display = 'block';
+    if (manifestActionSection) manifestActionSection.style.display = 'flex';
     if (restartActionSection) restartActionSection.style.display = 'none';
   } else {
-    // 2. РЕЖИМ ТОЧКИ ПЕРЕЗАГРУЗКИ ПОСЛЕ СРЫВА (таймер 3 минуты, подтверждение)
+    // 2. РЕЖИМ ТОЧКИ ПЕРЕЗАГРУЗКИ ПОСЛЕ СРЫВА (без таймеров и принуждения, на совести)
     if (headerSubtitle) {
-      headerSubtitle.textContent = 'Точка покаяния, переосмысления и нового старта после срыва';
+      headerSubtitle.textContent = 'Точка покаяния, искреннего переосмысления и нового старта после срыва';
     }
     if (restartBanner) restartBanner.style.display = 'block';
     if (manifestBanner) manifestBanner.style.display = 'none';
-    if (restartActionSection) restartActionSection.style.display = 'block';
+    if (restartActionSection) restartActionSection.style.display = 'flex';
     if (manifestActionSection) manifestActionSection.style.display = 'none';
 
     const checkbox = document.getElementById('accept-checkbox');
-    const checkboxLabel = document.getElementById('checkbox-label');
     const btnConfirm = document.getElementById('btn-confirm');
-    const scrollWarning = document.getElementById('scroll-warning');
 
-    let timeRemaining = 180; // 3 минуты в секундах
-    let timerExpired = false;
-    let scrolledToBottom = false;
-
-    // Функция форматирования времени
-    function formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
-
-    // Обновление текста предупреждения/таймера
-    function updateStatusMessage() {
-        if (!timerExpired) {
-            const timeStr = formatTime(timeRemaining);
-            if (scrolledToBottom) {
-                scrollWarning.innerHTML = `⏳ Текст прокручен. Пожалуйста, завершите вдумчивое размышление. Подтверждение станет доступно через: <b>${timeStr}</b>`;
-            } else {
-                scrollWarning.innerHTML = `⏳ Пожалуйста, вдумчиво прочитайте Соглашение. Подтверждение станет доступно через: <b>${timeStr}</b>`;
-            }
-            scrollWarning.style.display = 'block';
-        } else {
-            if (!scrolledToBottom) {
-                scrollWarning.innerHTML = `⚠️ Пролистайте документ до самого конца, чтобы активировать подтверждение.`;
-                scrollWarning.style.display = 'block';
-            } else {
-                scrollWarning.style.display = 'none';
-            }
-        }
-    }
-
-    // Запуск таймера чтения
-    const timerInterval = setInterval(() => {
-        timeRemaining--;
-        updateStatusMessage();
-        if (timeRemaining <= 0) {
-            clearInterval(timerInterval);
-            timerExpired = true;
-            checkActivation();
-        }
-    }, 1000);
-
-    // Функция проверки прокрутки до низа
-    function checkScroll() {
-        const scrollHeight = document.documentElement.scrollHeight;
-        const clientHeight = document.documentElement.clientHeight;
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        const distanceToBottom = scrollHeight - clientHeight - scrollTop;
-
-        if (distanceToBottom < 60 || scrollHeight <= clientHeight + 10) {
-            scrolledToBottom = true;
-            updateStatusMessage();
-            checkActivation();
-        }
-    }
-
-    // Функция активации элементов управления
-    function checkActivation() {
-        updateStatusMessage();
-        if (timerExpired && scrolledToBottom) {
-            checkboxLabel.classList.remove('disabled');
-            checkbox.removeAttribute('disabled');
-            scrollWarning.style.display = 'none';
-            window.removeEventListener('scroll', checkScroll);
-        }
-    }
-
-    // Слушаем прокрутку
-    window.addEventListener('scroll', checkScroll);
-    setTimeout(checkScroll, 300);
-
-    // Слушаем изменение чекбокса
+    // Никакого таймера и принудительной прокрутки — всё открыто сразу по совести
     checkbox.addEventListener('change', function() {
         if (this.checked) {
             btnConfirm.classList.remove('disabled');
@@ -565,20 +525,20 @@
                 if (tg && typeof tg.close === 'function') {
                     tg.close();
                 } else {
-                    alert("Соглашение успешно возобновлено! Вы можете закрыть окно и вернуться в бот.");
+                    alert("Соглашение обновлено! Вы можете закрыть окно и вернуться в бот.");
                 }
             } else {
                 alert("Ошибка при сохранении: " + (data.error || "Неизвестная ошибка"));
                 btnConfirm.classList.remove('disabled');
                 btnConfirm.removeAttribute('disabled');
-                btnConfirm.innerHTML = '🟢 Подтвердить и возобновить путь чистоты';
+                btnConfirm.innerHTML = '🟢 Подтвердить и продолжить путь чистоты';
             }
         })
         .catch(err => {
             alert("Ошибка подключения к серверу: " + err);
             btnConfirm.classList.remove('disabled');
             btnConfirm.removeAttribute('disabled');
-            btnConfirm.innerHTML = '🟢 Подтвердить и возобновить путь чистоты';
+            btnConfirm.innerHTML = '🟢 Подтвердить и продолжить путь чистоты';
         });
     });
   }

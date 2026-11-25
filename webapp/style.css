@@ -979,4 +979,47 @@ textarea:focus, .form-input:focus, .form-select:focus {
     color: #55efc4;
 }
 
+/* Блок осмысления после чтения статьи */
+.spiritual-reflection-box {
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(96, 239, 255, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.reflection-header {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--accent-blue);
+}
+
+.reflection-hint {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.reflection-feedback {
+    font-size: 12.5px;
+    line-height: 1.45;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+.reflection-feedback.is-warning {
+    background: rgba(255, 214, 10, 0.12);
+    border: 1px solid rgba(255, 214, 10, 0.35);
+    color: #ffeaa7;
+}
+
+.reflection-feedback.is-success {
+    background: rgba(0, 255, 135, 0.12);
+    border: 1px solid rgba(0, 255, 135, 0.3);
+    color: var(--accent-green);
+}
+
 

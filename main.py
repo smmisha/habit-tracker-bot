@@ -56,6 +56,9 @@ async def on_startup():
     logger.info("Проверка одноразового сброса истории (19.11.2026)...")
     await db_helper.apply_nov_2026_fresh_start_reset()
 
+    logger.info("Проверка фиксации срыва за 24.11.2026 (Искушение в интернете)...")
+    await db_helper.apply_nov_2026_24_relapse_record()
+
     logger.info("Снятие старого webhook (если был установлен)...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
@@ -505,7 +508,7 @@ async def handle_api_log_relapse(request):
     except Exception:
         pass
 
-    # Выполняем сброс счетчика чистоты и оповещение напарника
+    # Выполняем сброс счетчика чистоты (без автоматических уведомлений напарнику)
     try:
         await execute_relapse_reset(user_id, trigger_reason, bot=bot)
     except Exception as e:
@@ -746,6 +749,98 @@ async def handle_api_spiritual_help(request):
         "sent_to_telegram": False
     })
 
+async def handle_api_spiritual_reflection(request):
+    """Сохраняет искренний вывод пользователя после чтения статьи в дневник и проверяет глубину"""
+    try:
+        data = await request.json()
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    user_id, err_resp = extract_authenticated_user_id(request, data)
+    if err_resp:
+        return err_resp
+    if user_id is None:
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    reflection_text = str(data.get("reflection_text", "")).strip()
+    article_title = str(data.get("article_title", "Духовная публикация")).strip()[:200] or "Духовная публикация"
+
+    if len(reflection_text) < 15:
+        return web.json_response({
+            "success": True,
+            "accepted": False,
+            "feedback": "Напиши чуть подробнее: что именно из статьи запомнилось, какие стихи задели и какой вывод ты берёшь для себя."
+        })
+
+    if len(reflection_text) > 1800:
+        reflection_text = reflection_text[:1800]
+
+    from services.ai_service import ai_service
+    evaluation = await ai_service.evaluate_article_reflection(article_title, reflection_text)
+    if not evaluation.get("accepted"):
+        return web.json_response({
+            "success": True,
+            "accepted": False,
+            "feedback": evaluation.get("feedback")
+        })
+
+    from database.models import JournalEntry, User
+    from datetime import date
+    import html
+
+    today_date = date.today()
+    formatted_block = f"📖 Вывод из статьи «{article_title}»:\n{reflection_text}"
+
+    async with db_helper.session_factory() as session:
+        result = await session.execute(
+            select(JournalEntry).where(
+                and_(JournalEntry.user_id == user_id, JournalEntry.entry_date == today_date)
+            )
+        )
+        entry = result.scalar_one_or_none()
+        if entry:
+            combined = f"{entry.content.rstrip()}\n\n{formatted_block}"
+            if len(combined) > 2000:
+                combined = combined[-2000:]
+            entry.content = combined
+            entry.created_at = datetime.now()
+        else:
+            session.add(JournalEntry(
+                user_id=user_id,
+                entry_date=today_date,
+                content=formatted_block[:2000]
+            ))
+
+        user_obj = await session.get(User, user_id)
+        if user_obj:
+            user_obj.consecutive_missed_checkins = 0
+
+        await session.commit()
+
+    feedback_msg = evaluation.get("feedback") or "Спасибо за искренний разбор и внимание к Слову. Вывод сохранён в твой дневник!"
+
+    async def send_reflection_ack():
+        try:
+            safe_title = html.escape(article_title)
+            safe_feedback = html.escape(feedback_msg)
+            await bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"📖 <b>Записан вывод из статьи «{safe_title}»</b>\n\n"
+                    f"{safe_feedback}"
+                )
+            )
+        except Exception as e:
+            logger.error(f"Ошибка отправки подтверждения разбора статьи {user_id}: {e}")
+
+    asyncio.create_task(send_reflection_ack())
+
+    return web.json_response({
+        "success": True,
+        "accepted": True,
+        "feedback": feedback_msg
+    })
+
 async def start_web_server():
     app = web.Application()
     app.add_routes([
@@ -755,6 +850,7 @@ async def start_web_server():
         web.get("/api/stats", handle_api_stats),
         web.get("/api/spiritual_help", handle_api_spiritual_help),
         web.post("/api/spiritual_help", handle_api_spiritual_help),
+        web.post("/api/spiritual_reflection", handle_api_spiritual_reflection),
         web.post("/api/journal", handle_api_save_journal),
         web.post("/api/relapse", handle_api_log_relapse),
         web.post("/api/initiate_relapse", handle_api_log_relapse),

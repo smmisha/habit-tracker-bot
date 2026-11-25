@@ -81,7 +81,7 @@ async def cmd_my_streak(message: Message):
 async def cmd_relapse(message: Message):
     await message.answer(
         "⚠️ <b>Вы уверены, что произошел срыв?</b>\n\n"
-        "Это действие сбросит ваш счетчик чистоты до нуля и <b>автоматически отправит сообщение</b> вашему напарнику.",
+        "Это действие сбросит ваш счетчик чистоты до нуля и запишет триггер в статистику.",
         reply_markup=get_relapse_confirm_keyboard()
     )
 
@@ -146,34 +146,12 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             active_checkin.status = "relapsed"
             active_checkin.timestamp = now
             
-        # Сохраняем в БД, чтобы новая запись попала в выборку
+        # Сохраняем в БД
         await session.commit()
         
-        # 5. Автоматическое уведомление напарника при ЛЮБОМ срыве (без поблажек и задержек)
-        partner_username = user.partner_username
-        business_connection_id = user.business_connection_id
-        
+        # 5. Автоматические уведомления напарнику отключены:
+        # отчётность перед старейшиной строится на личной совести в течение недели, без бота "для галочки".
         partner_notified = False
-        if partner_username:
-            user_tag = f"@{user.username}" if user.username else (user.first_name or f"ID {user.id}")
-            alert_text = (
-                f"⚠️ <b>Уведомление о срыве</b>\n\n"
-                f"Пользователь {user_tag} зафиксировал срыв.\n"
-                f"Счетчик чистоты сброшен."
-            )
-            try:
-                sent = await userbot.send_message_to_partner(
-                    business_connection_id=business_connection_id,
-                    partner_username=partner_username,
-                    text=alert_text,
-                    bot=bot
-                )
-                if sent:
-                    partner_notified = True
-                    slip.notified_partner = True
-                    await session.commit()
-            except Exception as e:
-                logger.error(f"Error sending relapse alert to partner: {e}")
                     
         # 6. Расчет статистики триггеров
         relapses_result = await session.execute(
@@ -206,24 +184,17 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             
     stats_text = "\n".join(stats_list) if stats_list else "Нет данных."
     
-    confirm_text = "😔 <b>Счетчик сброшен. Стрик чистоты начат заново!</b>\n\n"
-    if partner_notified:
-        partner_tag = partner_username if partner_username.isdigit() else f"@{partner_username}"
-        confirm_text += f"📬 Вашему напарнику <code>{partner_tag}</code> автоматически отправлено уведомление о срыве.\n\n"
-    elif partner_username:
-        confirm_text += "⚠️ <i>Не удалось доставить авто-уведомление напарнику. Пожалуйста, напишите ему лично.</i>\n\n"
-    else:
-        confirm_text += "ℹ️ Напарник не указан в настройках бота.\n\n"
-        
+    confirm_text = "😔 <b>Счетчик сброшен. Стрик чистоты начат заново.</b>\n\n"
     confirm_text += (
         "📊 <b>Статистика твоих триггеров срывов:</b>\n"
         f"{stats_text}"
     )
     
     confirm_text += (
-        "\n\n🕊️ <b>Точка нового старта:</b>\n"
-        "Срыв — это не поражение, а повод сделать работу над ошибками. "
-        "Перечитайте и подтвердите Соглашение совести перед Иеговой, чтобы обновить свой фокус и продолжить путь чистоты."
+        "\n\n🕊️ <b>На твоей совести:</b>\n"
+        "Срыв — это не поражение, а повод быть искренним перед Иеговой, сделать выводы и не оставлять проблему в тени. "
+        "Обязательно обратись к старейшине лично в течение недели — от души, а не ради галочки.\n\n"
+        "<i>При желании можно спокойно открыть Соглашение совести без каких-либо ограничений по времени.</i>"
     )
     
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -232,7 +203,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🕊️ Перечитать и возобновить Соглашение (3 мин)",
+                    text="📜 Открыть Соглашение совести (по желанию)",
                     web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart")
                 )
             ]
