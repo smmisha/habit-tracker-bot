@@ -204,7 +204,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             [
                 InlineKeyboardButton(
                     text="📜 Открыть Соглашение совести (по желанию)",
-                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart")
+                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart&v=20261125-3")
                 )
             ]
         ]

@@ -24,6 +24,8 @@ import json
 from urllib.parse import urlencode
 from main import (
     handle_ping,
+    handle_webapp,
+    no_cache_webapp_middleware,
     handle_api_stats,
     handle_api_save_journal,
     handle_api_log_relapse,
@@ -73,9 +75,10 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         await super().tearDownAsync()
 
     async def get_application(self):
-        app = web.Application()
+        app = web.Application(middlewares=[no_cache_webapp_middleware])
         app.add_routes([
             web.get("/", handle_ping),
+            web.get("/dashboard", handle_webapp),
             web.get("/api/stats", handle_api_stats),
             web.post("/api/journal", handle_api_save_journal),
             web.post("/api/relapse", handle_api_log_relapse),
@@ -85,6 +88,8 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             web.post("/api/spiritual_help", handle_api_spiritual_help),
             web.post("/api/spiritual_reflection", handle_api_spiritual_reflection),
         ])
+        webapp_path = Path(__file__).parent.parent / "webapp"
+        app.router.add_static("/webapp", path=str(webapp_path), name="webapp")
         return app
 
     async def test_ping(self):
@@ -260,6 +265,17 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIn("основной посыл", covenant_html.lower())
         self.assertIn("порнографии", covenant_html.lower())
         self.assertIn("что именно я запомнил", covenant_html.lower())
+
+    async def test_webapp_no_cache_headers_and_dashboard_redirect(self):
+        resp = await self.client.request("GET", "/dashboard", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("/webapp/index.html?v=", resp.headers.get("Location", ""))
+        self.assertIn("no-store", resp.headers.get("Cache-Control", ""))
+
+        cov_resp = await self.client.request("GET", "/webapp/purity_covenant_jw_v2.html?mode=restart")
+        self.assertEqual(cov_resp.status, 200)
+        self.assertIn("no-store", cov_resp.headers.get("Cache-Control", ""))
+        self.assertEqual(cov_resp.headers.get("Pragma"), "no-cache")
 
     async def test_spiritual_reflection_rejects_shallow_and_saves_sincere(self):
         # 1. Generic shallow boilerplate should be rejected softly without saving

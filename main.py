@@ -244,15 +244,34 @@ def extract_authenticated_user_id(request: web.Request, payload: dict | None = N
     except (ValueError, TypeError):
         return None, web.json_response({"error": "Invalid user_id"}, status=400)
 
+def _apply_no_cache_headers(headers):
+    headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    headers["Pragma"] = "no-cache"
+    headers["Expires"] = "0"
+
+@web.middleware
+async def no_cache_webapp_middleware(request, handler):
+    """Запрещает Telegram WebView агрессивно кэшировать HTML/CSS/JS статики"""
+    is_webapp = request.path.startswith("/webapp") or request.path == "/dashboard"
+    try:
+        response = await handler(request)
+        if is_webapp:
+            _apply_no_cache_headers(response.headers)
+        return response
+    except web.HTTPException as exc:
+        if is_webapp:
+            _apply_no_cache_headers(exc.headers)
+        raise
+
 async def handle_ping(request):
     return web.Response(text="OK")
 
 async def handle_webapp(request):
     """Служба отдачи HTML-страницы дашборда с перенаправлением на статический путь"""
     user_id = request.query.get('user_id', '')
-    target_url = "/webapp/index.html"
+    target_url = "/webapp/index.html?v=20261125-3"
     if user_id:
-        target_url += f"?user_id={user_id}"
+        target_url += f"&user_id={user_id}"
     raise web.HTTPFound(target_url)
 
 async def handle_api_stats(request):
@@ -842,7 +861,7 @@ async def handle_api_spiritual_reflection(request):
     })
 
 async def start_web_server():
-    app = web.Application()
+    app = web.Application(middlewares=[no_cache_webapp_middleware])
     app.add_routes([
         web.get("/", handle_ping),
         web.post("/maintenance", handle_ping),

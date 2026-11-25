@@ -186,7 +186,7 @@ async def cmd_covenant(message: Message):
             [
                 InlineKeyboardButton(
                     text="📜 Читать Соглашение совести (Манифест)",
-                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=manifest")
+                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=manifest&v=20261125-3")
                 )
             ]
         ]
