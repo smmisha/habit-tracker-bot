@@ -213,6 +213,135 @@ body {
     color: var(--text-primary);
 }
 
+/* Задание после срыва */
+.recovery-link {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--accent-blue);
+    overflow-wrap: anywhere;
+}
+
+.recovery-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Подзаголовок внутри секции */
+.sub-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Когда чаще срывы: полосы одного ряда */
+.timing-charts,
+.plan-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.bar-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.bar-row {
+    display: grid;
+    grid-template-columns: 118px 1fr 24px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.bar-list-short .bar-row {
+    grid-template-columns: 24px 1fr 24px;
+}
+
+.bar-track {
+    height: 10px;
+    border-left: 1px solid var(--card-border);
+}
+
+.bar-fill {
+    display: block;
+    height: 100%;
+    background: #3987e5;
+    border-radius: 0 4px 4px 0;
+}
+
+.bar-value {
+    text-align: right;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Планы и причины */
+.plan-group {
+    padding-top: 14px;
+    border-top: 1px solid var(--card-border);
+}
+
+.plan-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.plan-list:empty {
+    display: none;
+}
+
+.plan-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    border-radius: 12px;
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+
+.plan-item span {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.plan-delete {
+    flex-shrink: 0;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 8px;
+    background: none;
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.plan-delete.confirm {
+    border-color: rgba(255, 59, 48, 0.5);
+    color: #ff6961;
+}
+
+.plan-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 /* Сетка Календаря */
 .calendar-wrapper {
     width: 100%;
@@ -547,7 +676,20 @@ textarea:focus, .form-input:focus, .form-select:focus {
     border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 12px;
     padding: 14px 16px;
-    align-items: center;
+    align-items: flex-start;
+}
+
+.guideline-card .text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.guideline-source {
+    display: block;
+    margin-top: 6px;
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    opacity: 0.75;
 }
 
 .guideline-card .num {
@@ -576,6 +718,8 @@ textarea:focus, .form-input:focus, .form-select:focus {
     font-size: 12px;
     color: var(--text-secondary);
     line-height: 1.4;
+    /* Несколько планов идут отдельными строками */
+    white-space: pre-line;
 }
 
 .sos-actions {

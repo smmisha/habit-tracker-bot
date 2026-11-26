@@ -9,3 +9,5 @@ class Form(StatesGroup):
     panic_chat = State()
     waiting_for_journal_entry = State()
     waiting_for_confession = State()
+    waiting_for_recovery_summary = State()
+    waiting_for_plan = State()

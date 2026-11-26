@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <!-- Стили -->
-    <link rel="stylesheet" href="style.css?v=20261125-5">
+    <link rel="stylesheet" href="style.css?v=20261126-1">
     <!-- Telegram WebApp JS SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- Chart.js для графиков -->
@@ -25,6 +25,24 @@
 
         <!-- ВКЛАДКА 1: ДАШБОРД -->
         <div id="tab-dashboard" class="tab-content active">
+            <!-- Задание после срыва (показывается, пока есть открытое) -->
+            <section class="dashboard-section glass hidden" id="recovery-task-card">
+                <h2 class="section-title">📖 Задание после срыва</h2>
+                <a class="recovery-link" id="recovery-task-link" href="#" target="_blank" rel="noopener"></a>
+                <p class="sos-text" id="recovery-task-deadline"></p>
+                <div class="recovery-form" id="recovery-task-form">
+                    <div class="form-group">
+                        <textarea id="recovery-summary-input" rows="5" maxlength="4096" aria-label="Пересказ статьи" placeholder="О чём статья, что запомнилось и что ты берёшь для себя. Хотя бы три предложения."></textarea>
+                    </div>
+                    <div id="recovery-feedback" class="reflection-feedback is-warning hidden"></div>
+                    <button type="button" class="btn btn-primary" id="btn-save-recovery">
+                        <span class="btn-text">Сохранить пересказ</span>
+                        <span class="spinner hidden"></span>
+                    </button>
+                </div>
+                <div class="reflection-feedback is-success hidden" id="recovery-task-done">Выполнено ✅</div>
+            </section>
+
             <!-- Карточка мотивации -->
             <div class="quote-card glass glow-blue">
                 <span class="quote-icon">💬</span>
@@ -58,7 +76,7 @@
 
             <!-- Соглашение о духовной чистоте (Постоянный Манифест) -->
             <div style="margin-bottom: 15px; text-align: center;">
-                <a href="purity_covenant_jw_v2.html?mode=manifest&from=app&v=20261125-5" class="btn btn-outline" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; padding: 10px 18px; border-color: rgba(162, 155, 254, 0.4); color: #a29bfe; text-decoration: none; border-radius: 12px; width: 100%; box-sizing: border-box; background: rgba(162, 155, 254, 0.06);">
+                <a href="purity_covenant_jw_v2.html?mode=manifest&from=app&v=20261126-1" class="btn btn-outline" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; padding: 10px 18px; border-color: rgba(162, 155, 254, 0.4); color: #a29bfe; text-decoration: none; border-radius: 12px; width: 100%; box-sizing: border-box; background: rgba(162, 155, 254, 0.06);">
                     📜 <span>Моё соглашение о чистоте перед Иеговой</span>
                 </a>
             </div>
@@ -89,6 +107,19 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Время срывов -->
+            <section class="dashboard-section glass">
+                <h2 class="section-title">🕒 Когда чаще срывы</h2>
+                <p class="sos-text hidden" id="timing-empty">Пока нет срывов с известным временем.</p>
+                <div class="timing-charts hidden" id="timing-charts">
+                    <h3 class="sub-title">По времени суток</h3>
+                    <ul class="bar-list" id="timing-parts"></ul>
+                    <h3 class="sub-title">По дням недели</h3>
+                    <ul class="bar-list bar-list-short" id="timing-weekdays"></ul>
+                </div>
+                <p class="sos-text hidden" id="timing-note">Срывы, отмеченные задним числом, не учитываются: их время условное.</p>
+            </section>
         </div>
 
         <!-- ВКЛАДКА 2: ДНЕВНИК -->
@@ -103,6 +134,38 @@
                     <span class="btn-text">Сохранить запись</span>
                     <span class="spinner hidden"></span>
                 </button>
+            </section>
+
+            <!-- Планы «если…, то…» и причины: показываются в SOS и в задании после срыва -->
+            <section class="dashboard-section glass" id="plans-section">
+                <h2 class="section-title">🗺 Мои планы и причины</h2>
+                <p class="sos-text">Бот напомнит о них в SOS и в задании после срыва.</p>
+
+                <div class="plan-group" data-kind="if_then">
+                    <h3 class="sub-title">Мой план</h3>
+                    <p class="sos-text plan-empty hidden">Запиши заранее, что сделаешь, когда начнётся тяга. Например: „Если ночью тянет листать ленту, то кладу телефон на зарядку в коридоре“.</p>
+                    <ul class="plan-list"></ul>
+                    <div class="plan-form">
+                        <div class="form-group">
+                            <textarea class="plan-input" rows="2" maxlength="300" aria-label="Новый план" placeholder="Если…, то…"></textarea>
+                        </div>
+                        <button type="button" class="btn btn-secondary plan-add">Добавить план</button>
+                    </div>
+                    <p class="sos-text plan-full hidden">Уже пять записей. Удали лишнюю, чтобы добавить новую.</p>
+                </div>
+
+                <div class="plan-group" data-kind="reason">
+                    <h3 class="sub-title">Ради чего</h3>
+                    <p class="sos-text plan-empty hidden">Запиши две или три причины, почему для тебя важна свобода от порнографии. В трудную минуту бот покажет их тебе.</p>
+                    <ul class="plan-list"></ul>
+                    <div class="plan-form">
+                        <div class="form-group">
+                            <textarea class="plan-input" rows="2" maxlength="300" aria-label="Новая причина" placeholder="Мне это важно, потому что…"></textarea>
+                        </div>
+                        <button type="button" class="btn btn-secondary plan-add">Добавить причину</button>
+                    </div>
+                    <p class="sos-text plan-full hidden">Уже пять записей. Удали лишнюю, чтобы добавить новую.</p>
+                </div>
             </section>
 
             <!-- История дневника -->
@@ -123,8 +186,8 @@
                 <!-- Начальный экран SOS -->
                 <div id="sos-start-screen" class="sos-start-screen">
                     <p class="sos-text" style="margin-bottom: 15px;">
-                        Чувствуешь сильный импульс? Не сдавайся! Нажми кнопку ниже, чтобы запустить персонализированную ИИ-помощь, 
-                        которая подберет 3 шага первой помощи специально под твое текущее состояние.
+                        Чувствуешь сильный импульс? Не сдавайся! Нажми кнопку ниже,
+                        и появятся три шага, которые помогают пережить тягу.
                     </p>
                     <button class="btn btn-danger" id="btn-start-sos">
                         <span class="btn-text">🆘 Мне тяжело / Нужна помощь</span>
@@ -135,7 +198,7 @@
                 <!-- Динамический блок советов (заполняется через JS) -->
                 <div id="sos-dynamic-content" class="sos-dynamic-content hidden">
                     <p class="sos-text" style="margin-bottom: 12px; font-weight: 500; color: var(--accent-blue);">
-                        🧠 ИИ-ассистент подобрал 3 индивидуальных действия для тебя:
+                        Три шага, которые помогают пережить тягу:
                     </p>
                     <div id="sos-guidelines-list" class="sos-guidelines-list" style="display: flex; flex-direction: column; gap: 12px;">
                         <!-- Сюда вставляются карточки -->
@@ -169,8 +232,7 @@
                                 <button type="button" class="chip-btn span-2" data-type="porn">🔞 Порнография / Искушение в интернете</button>
                                 <button type="button" class="chip-btn" data-type="sexting">💬 Секстинг / Чат</button>
                                 <button type="button" class="chip-btn" data-type="premarital_sex">💔 Секс с девушкой</button>
-                                <button type="button" class="chip-btn" data-type="masturbation">✊ Мастурбация</button>
-                                <button type="button" class="chip-btn" data-type="general">🧠 Нечистые мысли</button>
+                                <button type="button" class="chip-btn span-2" data-type="general">🧠 Нечистые мысли</button>
                             </div>
                         </div>
 
@@ -401,6 +463,6 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Логика работы приложения -->
-    <script src="js/app.js?v=20261125-5"></script>
+    <script src="js/app.js?v=20261126-1"></script>
 </body>
 </html>

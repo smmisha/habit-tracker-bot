@@ -74,6 +74,31 @@ class DatabaseHelper:
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to add dynamic columns: {e}")
 
+        from sqlalchemy import text
+        is_postgres = self.engine.dialect.name == "postgresql"
+
+        # Без этой колонки не запишется ни один срыв, поэтому ошибка здесь не проглатывается
+        async with self.engine.begin() as conn:
+            if is_postgres:
+                await conn.execute(text(
+                    "ALTER TABLE relapse_logs ADD COLUMN IF NOT EXISTS is_late_mark BOOLEAN DEFAULT FALSE"
+                ))
+            else:
+                columns = await conn.execute(text("PRAGMA table_info(relapse_logs)"))
+                if "is_late_mark" not in {row[1] for row in columns.fetchall()}:
+                    await conn.execute(text("ALTER TABLE relapse_logs ADD COLUMN is_late_mark BOOLEAN DEFAULT 0"))
+
+        # Защита строк закрывает новые таблицы от публичного API Supabase.
+        # Бот подключается владельцем, поэтому ему она не мешает; повторный вызов безопасен.
+        if is_postgres:
+            for table in ("recovery_tasks", "user_plans"):
+                try:
+                    async with self.engine.begin() as conn:
+                        await conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Не удалось включить RLS для {table}: {e}")
+
     async def apply_nov_2026_fresh_start_reset(self, target_user_id: int = 5037862619) -> bool:
         """
         Одноразовый и идемпотентный сброс истории для начала с чистого листа:

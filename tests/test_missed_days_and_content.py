@@ -16,12 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from database.db_helper import db_helper
-from database.models import Base, CheckInLog, JournalEntry, RelapseLog, SlipEvent, User
+from database.models import Base, CheckInLog, JournalEntry, RecoveryTask, RelapseLog, SlipEvent, User, UserPlan
 from services import day_report
 from services.ai_service import ai_service
 from services.bible_service import LOCAL_VERSES, bible_service
 from services.scheduler import check_milestone_achievements, send_weekly_reports
-from handlers import checkin, common, journal, panic, tracker
+from handlers import checkin, common, journal, panic, recovery, tracker
 from utils.states import Form
 
 USER_ID = 999001
@@ -206,22 +206,26 @@ class TestCuratedSpiritualTexts(unittest.IsolatedAsyncioTestCase):
     async def test_study_materials_never_use_ai(self):
         with patch.object(ai_service, "api_key", "configured"), \
              patch.object(ai_service, "_call_gemini", new_callable=AsyncMock) as gemini:
-            for kind in ("sexting", "porn", "masturbation", "premarital_sex", "general"):
+            for kind in ("sexting", "porn", "premarital_sex", "general"):
                 for round_number in (1, 2):
                     data = await ai_service.generate_spiritual_study_materials(temptation_type=kind, round=round_number)
                     self.assertTrue(data["spiritual_thought"])
         gemini.assert_not_awaited()
 
-    async def test_masturbation_leads_to_article_and_porn_material(self):
-        data = await ai_service.generate_spiritual_study_materials(temptation_type="masturbation")
-        urls = [item["url"].rsplit("/", 1)[1] for item in data["materials"]]
-        self.assertEqual(urls, ["1102008087", "2019447"])
-        self.assertIn("порнография", data["spiritual_thought"].lower())
+    async def test_notes_about_masturbation_lead_to_porn(self):
+        data = await ai_service.generate_spiritual_study_materials(user_notes="Тянет к мастурбации")
+        self.assertEqual(data["temptation_types"], ["porn"])
+        self.assertEqual([item["url"].rsplit("/", 1)[1] for item in data["materials"]], ["2019447"])
 
-    async def test_porn_and_masturbation_do_not_duplicate_porn_material(self):
-        data = await ai_service.generate_spiritual_study_materials(temptation_types=["porn", "masturbation"])
-        urls = [item["url"].rsplit("/", 1)[1] for item in data["materials"]]
-        self.assertEqual(urls, ["2019447", "1102008087"])
+    async def test_empty_selection_falls_back_to_porn(self):
+        for notes in (None, "рука болит после работы"):
+            with self.subTest(notes=notes):
+                data = await ai_service.generate_spiritual_study_materials(user_notes=notes)
+                self.assertEqual((data["temptation_type"], data["temptation_types"]), ("porn", ["porn"]))
+
+    async def test_type_from_cached_old_app_is_treated_as_porn(self):
+        data = await ai_service.generate_spiritual_study_materials(temptation_types=["sexting", "masturbation", "porn"])
+        self.assertEqual(data["temptation_types"], ["sexting", "porn"])
 
     async def test_reflection_feedback_is_fixed_even_when_ai_writes_its_own(self):
         text = "Запомнилось из Притчи 4:23, что сердце надо беречь с первых секунд."
@@ -264,7 +268,7 @@ class TestRouting(DatabaseTestCase):
     def setUpClass(cls):
         # Роутер можно подключить только к одному диспетчеру, поэтому он общий на класс
         cls.dp = Dispatcher(storage=MemoryStorage())
-        for module in (common, tracker, checkin, panic, journal):
+        for module in (common, tracker, checkin, panic, journal, recovery):
             cls.dp.include_router(module.router)
 
     async def asyncSetUp(self):
@@ -348,6 +352,138 @@ class TestRouting(DatabaseTestCase):
         self.assertIn("Напоминания снова включены", reply)
         self.assertIn("Осталось отметить: 3", reply)
         self.assertTrue((await self.user()).is_active)
+
+    async def press(self, data):
+        """Нажатие кнопки под сообщением бота"""
+        user = TgUser(id=USER_ID, is_bot=False, first_name="Test")
+        message = Message(message_id=2, date=datetime.now(), chat=Chat(id=USER_ID, type="private"),
+                          from_user=user, text="Сообщение бота")
+        callback = CallbackQuery(id="1", from_user=user, chat_instance="x", data=data, message=message)
+        self.session.sent.clear()
+        await self.dp.feed_update(self.bot, Update(update_id=2, callback_query=callback))
+        return "\n".join(getattr(method, "text", None) or "" for method in self.session.sent)
+
+    async def relapse_and_start_writing(self) -> RecoveryTask:
+        await self.press("relapse_trigger_web")
+        task = (await self.rows(RecoveryTask))[0]
+        self.assertIn("Напиши пересказ одним сообщением", await self.press(f"task:write:{task.id}"))
+        self.assertEqual(await self.state.get_state(), Form.waiting_for_recovery_summary.state)
+        return task
+
+    async def test_cause_button_sends_confirmation_then_task(self):
+        reply = await self.press("relapse_trigger_web")
+        self.assertIn("выполни задание ниже", reply)
+        self.assertLess(reply.index("Счетчик сброшен"), reply.index("Задание на сутки"))
+        self.assertEqual([task.status for task in await self.rows(RecoveryTask)], ["open"])
+
+    async def test_other_reason_text_creates_task(self):
+        await self.state.set_state(Form.waiting_for_relapse_trigger_other)
+        reply = await self.send(text="не спалось")
+        self.assertIn("Задание на сутки", reply)
+        self.assertEqual(len(await self.rows(RecoveryTask)), 1)
+
+    async def test_summary_in_chat_is_checked_and_saved(self):
+        task = await self.relapse_and_start_writing()
+
+        self.assertIn("Пока коротко", await self.send(text="Статья хорошая."))
+        self.assertEqual(await self.state.get_state(), Form.waiting_for_recovery_summary.state)
+        photo = [PhotoSize(file_id="a", file_unique_id="b", width=1, height=1)]
+        self.assertIn("Напиши пересказ текстом", await self.send(photo=photo))
+
+        summary = ("Статья показывает, что ловушка начинается с одного взгляда. Запомнился совет сразу закрывать "
+                   "экран, молиться и менять занятие. Беру себе правило: телефон ночует на кухне, а вечером "
+                   "я не листаю ленту в одиночестве и звоню другу, когда тянет.")
+        reply = await self.send(text=summary)
+        self.assertIn("задание выполнено. Копия — в дневнике.", reply)
+        self.assertIn("Хочешь записать план на следующий раз?", reply)
+        self.assertEqual(await self.state.get_state(), Form.waiting_for_plan.state)
+        stored = (await self.rows(RecoveryTask))[0]
+        self.assertEqual((stored.id, stored.status, stored.summary), (task.id, "done", summary))
+        self.assertIn(summary, (await self.rows(JournalEntry))[0].content)
+        await self.press("plan:skip")
+        self.assertIn("уже закрыто", await self.press(f"task:write:{task.id}"))
+        self.assertIsNone(await self.state.get_state())
+
+    _SUMMARY = (
+        "Статья показывает, что ловушка начинается с одного взгляда. Запомнился совет сразу закрывать "
+        "экран, молиться и менять занятие. Беру себе правило: телефон ночует на кухне, а вечером "
+        "я не листаю ленту в одиночестве и звоню другу, когда тянет."
+    )
+
+    async def finish_summary(self) -> str:
+        await self.relapse_and_start_writing()
+        return await self.send(text=self._SUMMARY)
+
+    async def test_plan_after_summary_is_checked_and_saved(self):
+        await self.finish_summary()
+        photo = [PhotoSize(file_id="a", file_unique_id="b", width=1, height=1)]
+        self.assertIn("Напиши план текстом", await self.send(photo=photo))
+        self.assertIn("уложись в 300", await self.send(text="я" * 301))
+        self.assertEqual(await self.state.get_state(), Form.waiting_for_plan.state)
+
+        reply = await self.send(text="Если <ночь>, то выхожу на кухню")
+        self.assertIn("План сохранён: «Если &lt;ночь&gt;, то выхожу на кухню»", reply)
+        self.assertIsNone(await self.state.get_state())
+        stored = [(plan.kind, plan.text) for plan in await self.rows(UserPlan)]
+        self.assertEqual(stored, [("if_then", "Если <ночь>, то выхожу на кухню")])
+
+    async def test_plan_question_can_be_skipped_or_left_by_command(self):
+        await self.finish_summary()
+        self.assertIn("План можно записать позже", await self.press("plan:skip"))
+        self.assertIsNone(await self.state.get_state())
+        await self.send(text="обычное сообщение")
+
+        await self.state.set_state(Form.waiting_for_plan)
+        self.assertIn("РЕЖИМ SOS", await self.send(text="/panic"))
+        await self.send(text="обычное сообщение")
+        await self.state.set_state(Form.waiting_for_plan)
+        self.assertIn("Действие отменено", await self.send(text="/cancel"))
+        self.assertEqual(await self.rows(UserPlan), [])
+
+    async def test_old_skip_button_keeps_other_input(self):
+        await self.state.set_state(Form.waiting_for_timezone)
+        self.assertEqual(await self.press("plan:skip"), "")
+        self.assertEqual(await self.state.get_state(), Form.waiting_for_timezone.state)
+
+    async def test_no_plan_question_when_five_plans_exist(self):
+        async with self.session_factory() as session:
+            session.add_all(UserPlan(user_id=USER_ID, kind="if_then", text=f"план {i}") for i in range(5))
+            await session.commit()
+        reply = await self.finish_summary()
+        self.assertIn("задание выполнено", reply)
+        self.assertNotIn("Хочешь записать план", reply)
+        self.assertIsNone(await self.state.get_state())
+
+    async def test_task_message_includes_plans(self):
+        async with self.session_factory() as session:
+            session.add(UserPlan(user_id=USER_ID, kind="if_then", text="Если тянет, то на кухню"))
+            await session.commit()
+        self.assertIn("Если тянет, то на кухню", await self.press("relapse_trigger_web"))
+
+    async def test_commands_leave_summary_input(self):
+        task = await self.relapse_and_start_writing()
+        self.assertIn("РЕЖИМ SOS", await self.send(text="/panic"))
+        self.assertIsNone(await self.state.get_state())
+        for cancel in ("/cancel", "отмена"):
+            await self.press(f"task:write:{task.id}")
+            self.assertIn("Действие отменено", await self.send(text=cancel))
+        stored = (await self.rows(RecoveryTask))[0]
+        self.assertEqual((stored.status, stored.summary), ("open", None))
+        self.assertEqual(await self.rows(JournalEntry), [])
+
+    async def test_foreign_task_button_does_not_start_input(self):
+        async with self.session_factory() as session:
+            session.add(RecoveryTask(user_id=OTHER_ID, created_at=datetime.now(),
+                                     due_at=datetime.now() + timedelta(hours=24),
+                                     article_url="https://wol.jw.org/ru/", article_title="Чужая"))
+            await session.commit()
+        foreign = (await self.rows(RecoveryTask, OTHER_ID))[0]
+        for data in (f"task:write:{foreign.id}", "task:write:abc"):
+            with self.subTest(data=data):
+                reply = await self.press(data)
+                self.assertIn("уже закрыто", reply)
+                self.assertNotIn("Чужая", reply)
+                self.assertIsNone(await self.state.get_state())
 
     async def test_settings_have_no_dead_options(self):
         reply = await self.send(text="/settings")

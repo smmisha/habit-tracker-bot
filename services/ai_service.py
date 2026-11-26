@@ -7,6 +7,22 @@ logger = logging.getLogger(__name__)
 # Стихи приводятся только из проверенных текстов, а не из ответов ИИ
 NO_SCRIPTURE = " Не цитируй Библию и не ссылайся на библейские стихи."
 
+# Отписки вместо личного вывода о прочитанном
+GENERIC_REFLECTION_PHRASES = (
+    "порно это плохо",
+    "порно плохо",
+    "порно это грех",
+    "порно грех",
+    "смотреть порно грех",
+    "нельзя смотреть порно",
+    "я прочитал",
+    "прочитал статью",
+    "хорошая статья",
+    "понятно",
+    "согласен",
+)
+
+
 class GeminiAIService:
     def __init__(self):
         self.api_key = settings.gemini_api_key
@@ -88,7 +104,7 @@ class GeminiAIService:
             
         prompt = (
             "Напиши одну очень короткую, емкую и сильную мотивационную фразу на русском языке для поддержки "
-            "человека, который борется с зависимостью (PMO) и сохраняет чистоту. "
+            "человека, который освобождается от порнографии и сохраняет чистоту. "
             f"Текущий стрик чистоты пользователя: {streak_days} дней.\n"
             "Фраза должна быть без кавычек, длиной до 10-12 слов. "
             "Она должна быть глубокой, вдохновляющей и практичной, например: \"Каждый день чистоты — это инвестиция в твою свободу\" "
@@ -125,7 +141,7 @@ class GeminiAIService:
         entries_text = "\n".join(entries_formatted)
 
         prompt = (
-            "Ты — профессиональный, эмпатичный и проницательный психолог-коуч по преодолению зависимостей (в частности, PMO).\n"
+            "Ты — профессиональный, эмпатичный и проницательный психолог-коуч по преодолению зависимостей (в частности, от порнографии).\n"
             "Перед тобой список ежедневных заметок (дневник) пользователя за последнюю неделю:\n"
             f"{entries_text}\n"
             "Проанализируй эти записи и составь короткий, поддерживающий психологический отчет-разбор на русском языке (до 150-200 слов).\n"
@@ -140,58 +156,6 @@ class GeminiAIService:
         fallback = "Продолжайте вести дневник! ИИ проанализирует ваши записи, когда их накопится достаточно."
         return await self._call_gemini(prompt, fallback)
 
-    async def generate_dynamic_sos_steps(self, total_relapses: int, triggers: list, journal_notes: list) -> list:
-        """
-        Генерирует 3 персонализированных шага первой помощи на основе истории пользователя.
-        Возвращает список словарей [{'title': '...', 'description': '...'}, ...]
-        """
-        import json
-        
-        triggers_summary = ", ".join(triggers) if triggers else "нет зафиксированных триггеров"
-        journal_summary = "\n".join([f"- {n}" for n in journal_notes]) if journal_notes else "нет записей за неделю"
-        
-        prompt = (
-            "Ты — эмпатичный, профессиональный психотерапевт и коуч по борьбе с зависимостями.\n"
-            "Пользователь нажал кнопку экстренной помощи (SOS), так как чувствует сильную тягу.\n\n"
-            f"Статистика пользователя:\n"
-            f"- Всего срывов: {total_relapses}\n"
-            f"- Основные триггеры прошлых срывов: {triggers_summary}\n"
-            f"- Последние записи в его дневнике:\n{journal_summary}\n\n"
-            "Составь ровно 3 персонализированных, кратких, практических шага первой помощи, чтобы помочь ему справиться с тягой прямо сейчас. "
-            "Каждый шаг должен быть коротким (1-2 предложения), четким и бить точно в его уязвимые места (например, если в дневнике стресс — "
-            "дать дыхательную практику; если скука — простое физическое действие; если искушение в сети — убрать девайсы).\n\n"
-            "Ответ должен быть строго в формате JSON, содержащим список из 3 объектов, каждый из которых имеет поля 'title' и 'description'. "
-            "Не используй Markdown разметку ```json в ответе, пиши только сырой JSON." + NO_SCRIPTURE + " Пример формата:\n"
-            '[\n  {"title": "Шаг 1: ...", "description": "..."},\n  {"title": "Шаг 2: ...", "description": "..."},\n  {"title": "Шаг 3: ...", "description": "..."}\n]'
-        )
-        
-        fallback_list = [
-            {
-                "title": "Шаг 1: Искренняя молитва",
-                "description": "Обратитесь к Богу в молитве о силе и самообладании. Это поможет переключить фокус мыслей."
-            },
-            {
-                "title": "Шаг 2: Полезное чтение",
-                "description": "Откройте сегодняшний стих дня или прочтите ободряющие мысли, чтобы наполнить разум правильными образами."
-            },
-            {
-                "title": "Шаг 3: Физическое упражнение",
-                "description": "Сделайте 20 отжиманий/приседаний или умойтесь ледяной водой. Физическое действие снимет импульс."
-            }
-        ]
-        
-        try:
-            res_text = await self._call_gemini(prompt, "")
-            if res_text:
-                res_text_clean = res_text.strip().replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(res_text_clean)
-                if isinstance(parsed, list) and len(parsed) == 3:
-                    return parsed
-        except Exception as e:
-            logger.error(f"Ошибка генерации или парсинга динамических SOS-шагов: {e}")
-            
-        return fallback_list
-
     async def analyze_journal_for_compromise(self, content: str) -> dict:
         """
         Фоновый анализ дневника на предмет торгов с разумом, компромиссов (типа 'посмотрел одним глазком')
@@ -202,7 +166,7 @@ class GeminiAIService:
             return {"detected": False, "reason": ""}
             
         prompt = (
-            "Проанализируй следующую запись в дневнике человека, который борется с PMO-зависимостью:\n"
+            "Проанализируй следующую запись в дневнике человека, который освобождается от порнографии:\n"
             f"\"{content}\"\n\n"
             "Твоя задача — определить, признается ли пользователь в компромиссе с самим собой, "
             "«торгах с разумом» (rationalization) или поведении, близком к срыву (например, «посмотрел одним глазком», "
@@ -234,7 +198,7 @@ class GeminiAIService:
         и цитируют «Перевод нового мира», ИИ здесь не используется.
         Поддерживает round=1 (первое чтение) и round=2 (углубленное изучение, если тяга осталась).
         """
-        # Статьи об освобождении от порнозависимости: основа и для борьбы с мастурбацией
+        # Статьи об освобождении от порнографии: главная тема, она же подбирается по умолчанию
         porn_primary = {
             "title": "Как не угодить в ловушку Сатаны",
             "type_label": "wol.jw.org Статья",
@@ -299,35 +263,6 @@ class GeminiAIService:
                 ),
                 "secondary_action": "Посвяти время чтению этой статьи без спешки. Размышляй о том, как чистота защищает твою душу и близкую дружбу с Иеговой."
             },
-            "masturbation": {
-                "title": "Мастурбация / Плотский импульс",
-                "icon": "✊",
-                "primary": {
-                    "title": "Мастурбация. Как побороть эту привычку?",
-                    "type_label": "wol.jw.org Приложение",
-                    "icon": "📚",
-                    "description": "Практическое библейское руководство: как не опускать руки, справляться с чувством вины и побороть привычку.",
-                    "url": "https://wol.jw.org/ru/wol/d/r2/lp-u/1102008087"
-                },
-                "secondary": {
-                    "title": "Мастурбация: насколько серьезна эта привычка?",
-                    "type_label": "wol.jw.org Статья",
-                    "icon": "🛡️",
-                    "description": "Библейский разбор: как развить самообладание и не опускать руки при упорном искушении.",
-                    "url": "https://wol.jw.org/ru/wol/d/r2/lp-u/1101989353"
-                },
-                "fallback_thought": (
-                    "Корень этой борьбы — порнография: пока она питает ум, мастурбацию не победить, поэтому первым делом убери то, что ее приносит. "
-                    "Иегова ценит каждое твое усилие. Иисус «был испытан во всём, как и мы» (Евреям 4:15) и сочувствует твоим слабостям. "
-                    "Сделай вдох: ты сильнее импульса!"
-                ),
-                "fallback_action": "Закрой всё, что связано с порнографией, попроси у Иеговы святого духа и начни читать статью ниже.",
-                "secondary_thought": (
-                    "Ты ведёшь настоящую войну за свою чистоту, и каждая минута стойкости — это победа! То, что тяга ещё чувствуется — это не срыв. "
-                    "Иисус при сильной душевной боли «стал молиться ещё усерднее» (Луки 22:44). Помни: победа начинается с отказа от порнографии. Читай спокойно, без спешки."
-                ),
-                "secondary_action": "Сделай ещё одну искреннюю молитву на коленях, открой Иегове все свои чувства и удели время вдумчивому чтению статьи ниже."
-            },
             "premarital_sex": {
                 "title": "Желание секса с девушкой / Блуд",
                 "icon": "💔",
@@ -388,13 +323,14 @@ class GeminiAIService:
         }
         
         # Определение категорий (поддержка мультивыбора):
+        requested = temptation_types if temptation_types and isinstance(temptation_types, list) else [temptation_type]
         selected_keys = []
-        if temptation_types and isinstance(temptation_types, list):
-            for t in temptation_types:
-                if t in categories and t not in selected_keys:
-                    selected_keys.append(t)
-        elif temptation_type and temptation_type in categories:
-            selected_keys.append(temptation_type)
+        for t in requested:
+            # Старая версия приложения из кэша еще может прислать убранный тип
+            if t == "masturbation":
+                t = "porn"
+            if isinstance(t, str) and t in categories and t not in selected_keys:
+                selected_keys.append(t)
             
         if user_notes:
             notes_lower = user_notes.lower()
@@ -404,15 +340,16 @@ class GeminiAIService:
             if any(k in notes_lower for k in ["секстинг", "переписк", "интимн", "пошл", "нюдс", "скинуть фот", "сообщен сексуально"]):
                 if "sexting" not in selected_keys:
                     selected_keys.append("sexting")
-            if any(k in notes_lower for k in ["порно", "порнух", "эротик", "ххх", "видео 18+", "нечистые картинки"]):
+            porn_words = [
+                "порно", "порнух", "эротик", "ххх", "видео 18+", "нечистые картинки",
+                "мастурб", "рукоблуд", "онанизм", "кончить", "снять напряжение", "подроч",
+            ]
+            if any(k in notes_lower for k in porn_words):
                 if "porn" not in selected_keys:
                     selected_keys.append("porn")
-            if any(k in notes_lower for k in ["мастурб", "рукоблуд", "рука", "онанизм", "кончить", "снять напряжение", "подроч"]):
-                if "masturbation" not in selected_keys:
-                    selected_keys.append("masturbation")
                     
         if not selected_keys:
-            selected_keys = ["general"]
+            selected_keys = ["porn"]
             
         resolved_key = selected_keys[0]
         cat_data = categories[resolved_key]
@@ -429,9 +366,6 @@ class GeminiAIService:
             mat = categories[k].get("secondary" if round == 2 else "primary", categories[k]["primary"])
             if mat not in materials:
                 materials.append(mat)
-        porn_material = porn_secondary if round == 2 else porn_primary
-        if "masturbation" in selected_keys and porn_material not in materials:
-            materials.append(porn_material)
         primary_material = materials[0]
         
         # Выбираем фаллбэк мысли и действия с учетом мультивыбора
@@ -494,21 +428,8 @@ class GeminiAIService:
 
         normalized = re.sub(r"[^\w\sа-яА-ЯёЁ]", "", clean_text.lower()).strip()
         normalized_words = normalized.split()
-        generic_phrases = (
-            "порно это плохо",
-            "порно плохо",
-            "порно это грех",
-            "порно грех",
-            "смотреть порно грех",
-            "нельзя смотреть порно",
-            "я прочитал",
-            "прочитал статью",
-            "хорошая статья",
-            "понятно",
-            "согласен",
-        )
         has_scripture_hint = bool(re.search(r"\d+\s*:\s*\d+|стих|псал|матф|коринф|притч|иаков|иоан|галат|рим|быт|иегова", normalized))
-        if len(normalized_words) <= 9 and any(phrase in normalized for phrase in generic_phrases) and not has_scripture_hint:
+        if len(normalized_words) <= 9 and any(phrase in normalized for phrase in GENERIC_REFLECTION_PHRASES) and not has_scripture_hint:
             return rejected_result
 
         if self.api_key and self.api_key.strip() not in ("", "your_gemini_api_key_here"):

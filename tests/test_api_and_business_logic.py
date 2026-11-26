@@ -13,7 +13,7 @@ from aiohttp.test_utils import AioHTTPTestCase
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select, and_
 
-from database.models import Base, User, CheckInLog, RelapseLog, SlipEvent, JournalEntry
+from database.models import Base, User, CheckInLog, RelapseLog, SlipEvent, JournalEntry, RecoveryTask, UserPlan
 from database.db_helper import db_helper, DatabaseHelper
 from handlers.checkin import is_on_time
 from handlers.tracker import format_timedelta, execute_relapse_reset
@@ -150,6 +150,144 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             self.assertEqual(len(slips), 1)
             self.assertFalse(slips[0].notified_partner)
 
+    async def _recovery_tasks(self):
+        async with self.session_factory() as session:
+            return (await session.execute(select(RecoveryTask).order_by(RecoveryTask.id))).scalars().all()
+
+    async def _add_task(self, user_id=None, hours_ago=0):
+        created = datetime.now() - timedelta(hours=hours_ago)
+        async with self.session_factory() as session:
+            task = RecoveryTask(user_id=user_id or self.user_id, created_at=created,
+                                due_at=created + timedelta(hours=24),
+                                article_url="https://wol.jw.org/ru/wol/d/r2/lp-u/2019447",
+                                article_title="Как не угодить в ловушку Сатаны")
+            session.add(task)
+            await session.commit()
+            return task.id
+
+    async def _submit(self, task_id, summary, headers=None):
+        resp = await self.client.request(
+            "POST", "/api/recovery_task", headers=self._auth() if headers is None else headers,
+            json={"task_id": task_id, "summary": summary},
+        )
+        return resp.status, await resp.json()
+
+    _SUMMARY = (
+        "Статья объясняет, почему порнография разрушает покой и дружбу с Богом. Особенно запомнилось, "
+        "что решение нужно принять заранее, а не в минуту искушения. Я буду класть телефон в другой "
+        "комнате, молиться перед сном и честно говорить другу, когда мне трудно."
+    )
+
+    async def test_relapse_api_creates_task_and_shows_it_in_stats(self):
+        resp = await self.client.request("GET", "/api/stats", headers=self._auth())
+        self.assertIsNone((await resp.json())["recovery_task"])
+
+        with patch("main.bot.send_message", new_callable=AsyncMock) as send:
+            await self.client.request("POST", "/api/relapse", headers=self._auth(),
+                                      json={"trigger_reason": "Искушение в интернете"})
+        texts = [call.kwargs["text"] for call in send.await_args_list]
+        self.assertEqual(len(texts), 2)
+        self.assertIn("выполни задание ниже", texts[0])
+        self.assertIn("Задание на сутки", texts[1])
+
+        task = (await self._recovery_tasks())[0]
+        resp = await self.client.request("GET", "/api/stats", headers=self._auth())
+        data = (await resp.json())["recovery_task"]
+        self.assertEqual((data["id"], data["title"], data["url"]), (task.id, task.article_title, task.article_url))
+        self.assertEqual((data["hours_left"], data["overdue"]), (24, False))
+        self.assertIsNotNone(datetime.fromisoformat(data["due_at"]).utcoffset())
+
+    async def test_recovery_task_api_statuses(self):
+        async with self.session_factory() as session:
+            session.add(User(id=999002, first_name="Other"))
+            await session.commit()
+        foreign = await self._add_task(user_id=999002)
+        own = await self._add_task()
+
+        self.assertEqual((await self._submit(own, self._SUMMARY, headers={}))[0], 401)
+        self.assertEqual((await self._submit(foreign, self._SUMMARY))[0], 404)
+        self.assertEqual((await self._submit(own + 100, self._SUMMARY))[0], 404)
+        status, data = await self._submit(own, "Коротко.")
+        self.assertEqual(status, 400)
+        self.assertIn("Пока коротко", data["error"])
+        for bad_id, bad_summary in (("1", self._SUMMARY), (own, None), (True, self._SUMMARY)):
+            self.assertEqual((await self._submit(bad_id, bad_summary))[0], 400)
+
+        self.assertEqual(await self._submit(own, self._SUMMARY), (200, {"success": True, "late": False}))
+        self.assertEqual((await self._submit(own, self._SUMMARY))[0], 409)
+        self.assertEqual([task.status for task in await self._recovery_tasks()], ["open", "done"])
+
+    async def test_recovery_task_api_marks_late_submission(self):
+        task_id = await self._add_task(hours_ago=30)
+        resp = await self.client.request("GET", "/api/stats", headers=self._auth())
+        data = (await resp.json())["recovery_task"]
+        self.assertEqual((data["hours_left"], data["overdue"]), (0, True))
+        self.assertEqual(await self._submit(task_id, self._SUMMARY), (200, {"success": True, "late": True}))
+
+    async def _post(self, path, payload, headers=None):
+        resp = await self.client.request(
+            "POST", path, headers=self._auth() if headers is None else headers, json=payload
+        )
+        return resp.status, await resp.json()
+
+    async def test_plans_api(self):
+        self.assertEqual((await self._post("/api/plans", {"kind": "reason", "text": "Ради семьи"}, {}))[0], 401)
+        self.assertEqual((await self._post("/api/plans/delete", {"plan_id": 1}, {}))[0], 401)
+        for payload in (
+            {"kind": "other", "text": "план"}, {"kind": "reason"}, {"kind": "reason", "text": 5},
+            {"kind": ["reason"], "text": "план"}, {"kind": "reason", "text": "  "},
+            {"kind": "reason", "text": "я" * 301}, ["reason"],
+        ):
+            with self.subTest(payload=payload):
+                self.assertEqual((await self._post("/api/plans", payload))[0], 400)
+
+        for number in range(5):
+            status, data = await self._post("/api/plans", {"kind": "reason", "text": f"причина {number}"})
+            self.assertEqual(status, 200)
+        self.assertEqual([p["text"] for p in data["plans"]["reason"]], [f"причина {i}" for i in range(5)])
+        self.assertEqual((await self._post("/api/plans", {"kind": "reason", "text": "шестая"}))[0], 409)
+
+        stats = await (await self.client.request("GET", "/api/stats", headers=self._auth())).json()
+        self.assertEqual(stats["plans"], data["plans"])
+
+        first = data["plans"]["reason"][0]["id"]
+        for payload in ({}, {"plan_id": "1"}, {"plan_id": True}):
+            self.assertEqual((await self._post("/api/plans/delete", payload))[0], 400)
+        async with self.session_factory() as session:
+            session.add(User(id=999002, first_name="Other"))
+            session.add(UserPlan(id=500, user_id=999002, kind="reason", text="чужая"))
+            await session.commit()
+        self.assertEqual((await self._post("/api/plans/delete", {"plan_id": 500}))[0], 404)
+        status, data = await self._post("/api/plans/delete", {"plan_id": first})
+        self.assertEqual((status, len(data["plans"]["reason"])), (200, 4))
+        self.assertEqual((await self._post("/api/plans/delete", {"plan_id": first}))[0], 404)
+
+    async def test_sos_start_returns_cards_without_ai(self):
+        async with self.session_factory() as session:
+            session.add(RelapseLog(user_id=self.user_id, timestamp=datetime.now(),
+                                   trigger_reason="Искушение в интернете"))
+            session.add(UserPlan(user_id=self.user_id, kind="if_then", text="Если тянет, то на кухню"))
+            await session.commit()
+        with patch("services.ai_service.ai_service._call_gemini", new_callable=AsyncMock) as gemini:
+            status, data = await self._post("/api/panic", {"action": "start"})
+        gemini.assert_not_awaited()
+        self.assertEqual(status, 200)
+        cards = data["guidelines"]
+        self.assertEqual([c["title"] for c in cards], ["Убери источник", "Пережди волну", "Мой план"])
+        self.assertIn("Если тянет, то на кухню", cards[2]["description"])
+        self.assertTrue(all(c["description"] and c["source"] for c in cards))
+
+    async def test_stats_returns_relapse_timing(self):
+        async with self.session_factory() as session:
+            session.add(RelapseLog(user_id=self.user_id, timestamp=datetime.now(), trigger_reason="Другое: раз"))
+            session.add(RelapseLog(user_id=self.user_id, timestamp=datetime.now(), is_late_mark=True))
+            await session.commit()
+        data = await (await self.client.request("GET", "/api/stats", headers=self._auth())).json()
+        timing = data["relapse_timing"]
+        self.assertEqual((timing["total"], timing["late_excluded"]), (1, 1))
+        self.assertEqual((len(timing["parts"]), len(timing["weekdays"])), (4, 7))
+        self.assertEqual(data["triggers"], {"Другая причина": 1})
+
     async def test_panic_invalid_action(self):
         resp = await self.client.request("POST", "/api/panic", headers=self._auth(), json={
             "action": "unknown_action"
@@ -215,13 +353,15 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertIn("Колоссянам 3:5", covenant_html)
         self.assertIn("не считается срывом", covenant_html)
         self.assertIn("продолжил смотреть", covenant_html)
-        self.assertIn("в течение недели", covenant_html)
+        self.assertIn("в течение недели", covenant_html.lower())
         self.assertIn("не обязательно", covenant_html)
         self.assertIn("основной посыл", covenant_html.lower())
         self.assertIn("порнографии", covenant_html.lower())
         self.assertIn("что именно я запомнил", covenant_html.lower())
-        self.assertIn("даже без порнографии", covenant_html)
+        main_goal = next(line for line in covenant_html.splitlines() if "основной посыл" in line)
+        self.assertNotIn("мастурбац", main_goal.lower())
         self.assertIn("Чтобы не дойти до искушения", covenant_html)
+        self.assertIn("В течение суток", covenant_html)
         self.assertNotIn("Притчи 24:16", covenant_html)
 
     async def test_webapp_no_cache_headers_and_dashboard_redirect(self):
@@ -318,7 +458,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
 
     async def test_spiritual_help_round_2(self):
         resp = await self.client.request("POST", "/api/spiritual_help", headers=self._auth(), json={
-            "temptation_type": "masturbation",
+            "temptation_type": "porn",
             "round": 2
         })
         self.assertEqual(resp.status, 200)
@@ -327,25 +467,24 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
         self.assertEqual(data.get("round"), 2)
         primary = data.get("primary_material")
         self.assertIsNotNone(primary)
-        self.assertTrue("1101989353" in primary["url"])
+        self.assertTrue("102007444" in primary["url"])
 
     async def test_spiritual_help_multi_select(self):
         resp = await self.client.request("POST", "/api/spiritual_help", headers=self._auth(), json={
-            "temptation_types": ["sexting", "masturbation"]
+            "temptation_types": ["sexting", "porn"]
         })
         self.assertEqual(resp.status, 200)
         data = await resp.json()
         self.assertTrue(data.get("ok"))
         self.assertIn("sexting", data.get("temptation_types"))
-        self.assertIn("masturbation", data.get("temptation_types"))
+        self.assertIn("porn", data.get("temptation_types"))
         self.assertIn("Секстинг", data.get("temptation_title"))
-        self.assertIn("Мастурбация", data.get("temptation_title"))
+        self.assertIn("Порнография", data.get("temptation_title"))
         materials = data.get("materials")
         self.assertIsNotNone(materials)
-        self.assertEqual(len(materials), 3)
+        self.assertEqual(len(materials), 2)
         urls = [m["url"] for m in materials]
         self.assertTrue(any("502013360" in u for u in urls))
-        self.assertTrue(any("1102008087" in u for u in urls))
         self.assertTrue(any("2019447" in u for u in urls))
 
     async def test_panic_partner_contacted_preserves_streak(self):
@@ -522,7 +661,7 @@ class TestApiAndBusinessLogic(AioHTTPTestCase):
             for route in self.app.router.routes()
             if route.method != "HEAD" and route.resource.canonical.startswith("/api/")
         })
-        self.assertGreaterEqual(len(routes), 9)
+        self.assertGreaterEqual(len(routes), 12)
         payload = {
             "user_id": self.user_id,
             "action": "helped",

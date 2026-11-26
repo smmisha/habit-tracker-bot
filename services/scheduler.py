@@ -9,6 +9,7 @@ from database.models import User, CheckInLog
 from keyboards.inline import get_checkin_keyboard
 from services.userbot_client import userbot
 from services.ai_service import ai_service
+from services import recovery_tasks
 from config.config import settings
 
 logger = logging.getLogger(__name__)
@@ -341,6 +342,11 @@ async def send_weekly_reports():
                     "──────────────────────────\n"
                     "<i>Держитесь чистоты и оставайтесь сильными! 💪</i>"
                 )
+                task_line = await recovery_tasks.weekly_summary_line(session, user.id, one_week_ago)
+                if task_line:
+                    user_report = user_report.replace(
+                        "──────────────────────────\n<i>", f"{task_line}\n──────────────────────────\n<i>"
+                    )
                 if missed_count:
                     user_report += "\n<i>Отметить пропущенные дни можно через /start.</i>"
                 try:
@@ -358,6 +364,11 @@ async def send_weekly_reports():
             except Exception as e:
                 logger.error(f"Ошибка формирования недельного отчета для {user.id}: {e}")
 
+async def check_recovery_task_reminders():
+    """Напоминания о заданиях после срыва"""
+    from main import bot
+    await recovery_tasks.send_task_reminders(bot)
+
 async def send_silent_panic_alert(user_id: int):
     """Отключено: сообщение напарнику отправляется ТОЛЬКО в случае явной фиксации срыва"""
     pass
@@ -372,6 +383,8 @@ def setup_scheduler():
     scheduler.add_job(check_and_send_checkins, "interval", minutes=1)
     # Дедлайны 20 часов проверяются каждые 5 минут
     scheduler.add_job(check_missed_deadlines, "interval", minutes=5)
+    # Напоминания о заданиях после срыва каждые 5 минут
+    scheduler.add_job(check_recovery_task_reminders, "interval", minutes=5)
     # Проверка достижений каждый час
     scheduler.add_job(check_milestone_achievements, "interval", hours=1)
     

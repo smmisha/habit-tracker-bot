@@ -10,6 +10,7 @@ from database.models import User, CheckInLog, RelapseLog
 from keyboards.inline import get_day_report_keyboard, get_day_trigger_keyboard
 from services.userbot_client import userbot
 from services.ai_service import ai_service
+from services import recovery_tasks
 from services.day_report import build_report_summary, get_unmarked_days, mark_day
 
 logger = logging.getLogger(__name__)
@@ -180,7 +181,19 @@ async def send_unmarked_days_prompt(message: Message, user_id: int) -> bool:
     await message.answer(_day_question(days), reply_markup=get_day_report_keyboard(days[0].isoformat()))
     return True
 
-async def _show_next_day(callback: CallbackQuery, note: str):
+async def _announce_survey_task(callback: CallbackQuery, state: FSMContext | None):
+    """Задание, созданное отметками задним числом, отправляется после опроса по дням"""
+    if not state:
+        return
+    task_id = (await state.get_data()).get("survey_task_id")
+    if not task_id:
+        return
+    await state.update_data(survey_task_id=None)
+    card = await recovery_tasks.open_task_card(callback.from_user.id, task_id)
+    if card:
+        await callback.message.answer(card[0], reply_markup=card[1])
+
+async def _show_next_day(callback: CallbackQuery, note: str, state: FSMContext | None = None):
     """Следующий неотмеченный день, а когда они закончились, отчет"""
     user_id = callback.from_user.id
     days = await get_unmarked_days(user_id)
@@ -192,9 +205,10 @@ async def _show_next_day(callback: CallbackQuery, note: str):
     else:
         summary = await build_report_summary(user_id)
         await callback.message.edit_text(f"{note}\n\n✅ <b>Дней без отметки не осталось.</b>\n\n{summary}")
+        await _announce_survey_task(callback, state)
 
 @router.callback_query(F.data.startswith("day:"))
-async def process_day_report(callback: CallbackQuery):
+async def process_day_report(callback: CallbackQuery, state: FSMContext = None):
     await callback.answer()
     parts = callback.data.split(":")
     action = parts[1]
@@ -203,6 +217,7 @@ async def process_day_report(callback: CallbackQuery):
         await callback.message.edit_text(
             "⏭ Хорошо. Эти дни пока останутся без отметки, вернуться к ним можно через /start."
         )
+        await _announce_survey_task(callback, state)
         return
 
     try:
@@ -211,7 +226,7 @@ async def process_day_report(callback: CallbackQuery):
         return
 
     if day not in await get_unmarked_days(callback.from_user.id):
-        await _show_next_day(callback, "Этот день уже отмечен или недоступен.")
+        await _show_next_day(callback, "Этот день уже отмечен или недоступен.", state)
         return
 
     if action == "relapse":
@@ -226,11 +241,15 @@ async def process_day_report(callback: CallbackQuery):
     elif action == "clean":
         marked = await mark_day(callback.from_user.id, day, relapsed=False)
         note = f"☀️ {_day_label(day)}: чисто." if marked else "Этот день уже отмечен."
-        await _show_next_day(callback, note)
+        await _show_next_day(callback, note, state)
     elif action == "why" and len(parts) == 4 and parts[3] in DAY_REASONS:
+        task_before = await recovery_tasks.get_open_task_id(callback.from_user.id)
         marked = await mark_day(callback.from_user.id, day, relapsed=True, reason=DAY_REASONS[parts[3]])
+        task_after = await recovery_tasks.get_open_task_id(callback.from_user.id)
+        if state and task_after != task_before:
+            await state.update_data(survey_task_id=task_after)
         note = (
             f"😔 {_day_label(day)}: записан срыв.\n"
             "🕊️ По соглашению о нем нужно в течение недели самому рассказать старейшине."
         ) if marked else "Этот день уже отмечен."
-        await _show_next_day(callback, note)
+        await _show_next_day(callback, note, state)

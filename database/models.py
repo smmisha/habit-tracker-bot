@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import List, Optional
-from sqlalchemy import BigInteger, ForeignKey, String, DateTime, Date, func
+from sqlalchemy import BigInteger, ForeignKey, String, Text, DateTime, Date, false, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -56,6 +56,8 @@ class User(Base):
     checkins: Mapped[List["CheckInLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     journal_entries: Mapped[List["JournalEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     slip_events: Mapped[List["SlipEvent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    recovery_tasks: Mapped[List["RecoveryTask"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    plans: Mapped[List["UserPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class RelapseLog(Base):
@@ -65,6 +67,8 @@ class RelapseLog(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     trigger_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Отмечен задним числом: время условное и в статистику времени не входит
+    is_late_mark: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     user: Mapped["User"] = relationship(back_populates="relapses")
 
@@ -108,6 +112,41 @@ class SlipEvent(Base):
     notified_partner: Mapped[bool] = mapped_column(default=False)
 
     user: Mapped["User"] = relationship(back_populates="slip_events")
+
+
+class RecoveryTask(Base):
+    """Задание после срыва: статья и пересказ в течение суток"""
+    __tablename__ = "recovery_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    # Время сервера, как у datetime.now()
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    due_at: Mapped[datetime] = mapped_column(DateTime)
+    article_url: Mapped[str] = mapped_column(String(500))
+    article_title: Mapped[str] = mapped_column(String(300))
+    # Статусы: "open" (открыто), "done" (выполнено), "missed" (не выполнено, заменено новым)
+    status: Mapped[str] = mapped_column(String(10), default="open")
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 0 — не напоминали, 1 — напомнили за 12 часов, 2 — за 3 часа
+    reminders_sent: Mapped[int] = mapped_column(default=0)
+    deadline_notified: Mapped[bool] = mapped_column(default=False)
+
+    user: Mapped["User"] = relationship(back_populates="recovery_tasks")
+
+
+class UserPlan(Base):
+    """Личная запись: план «если…, то…» (if_then) или причина «Ради чего» (reason)"""
+    __tablename__ = "user_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(10))
+    text: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="plans")
 
 
 class SystemMigration(Base):

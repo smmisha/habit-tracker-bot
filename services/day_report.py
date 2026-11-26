@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 
 from database.db_helper import db_helper
 from database.models import CheckInLog, RelapseLog, SlipEvent, User
+from services import recovery_tasks
 
 # За сколько прошедших дней бот предлагает отметить пропуски
 REPORT_WINDOW_DAYS = 14
@@ -127,7 +128,9 @@ async def mark_day(user_id: int, day: date, relapsed: bool, reason: str | None =
 
         if relapsed:
             happened_at, happened_at_utc = _moment_of_day(user, day)
-            session.add(RelapseLog(user_id=user_id, timestamp=happened_at, trigger_reason=reason))
+            session.add(RelapseLog(
+                user_id=user_id, timestamp=happened_at, trigger_reason=reason, is_late_mark=True
+            ))
             session.add(SlipEvent(user_id=user_id, occurred_at=happened_at_utc, notified_partner=False))
             user.total_relapses += 1
             # Счетчик только сдвигается вперед: более поздний срыв не отменяется более ранним
@@ -136,6 +139,8 @@ async def mark_day(user_id: int, day: date, relapsed: bool, reason: str | None =
                 passed_days = (datetime.now() - happened_at).days
                 # Уже пройденные вехи помечаем выданными, чтобы не слать медали задним числом
                 user.awarded_milestones = ",".join(str(m) for m in MILESTONES if m <= passed_days)
+            # Срок задания считается от момента отметки, а не от дня срыва
+            await recovery_tasks.ensure_task(session, user_id)
 
         await session.commit()
         return True

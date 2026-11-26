@@ -33,8 +33,10 @@ from handlers.tracker import router as tracker_router
 from handlers.checkin import router as checkin_router
 from handlers.panic import router as panic_router
 from handlers.journal import router as journal_router
+from handlers.recovery import router as recovery_router
 from services.userbot_client import userbot
 from services.scheduler import setup_scheduler, scheduler
+from services import recovery_tasks, relapse_stats, sos_cards, user_plans
 
 async def set_commands(bot: Bot):
     """Настройка команд меню бота"""
@@ -245,7 +247,7 @@ async def handle_ping(request):
 
 async def handle_webapp(request):
     """Служба отдачи HTML-страницы дашборда с перенаправлением на статический путь"""
-    raise web.HTTPFound("/webapp/index.html?v=20261125-5")
+    raise web.HTTPFound("/webapp/index.html?v=20261126-1")
 
 async def handle_api_stats(request):
     """API получения статистики пользователя для WebApp"""
@@ -333,22 +335,19 @@ async def handle_api_stats(request):
             
         # 5. Группируем триггеры срывов (всего за все время)
         all_relapses_result = await session.execute(
-            select(RelapseLog.trigger_reason)
-            .where(RelapseLog.user_id == user_id)
+            select(RelapseLog).where(RelapseLog.user_id == user_id)
         )
-        reasons = all_relapses_result.scalars().all()
-        
+        all_relapses = all_relapses_result.scalars().all()
+
         triggers = {}
-        for r in reasons:
-            if not r:
+        for r in all_relapses:
+            if not r.trigger_reason:
                 continue
-            clean_reason = r
-            if r.startswith("Другое:") or r.startswith("Текстовое описание:"):
-                clean_reason = "Другая причина"
-            elif r == "Ручной сброс через меню бота":
-                clean_reason = "Без указания причины"
+            clean_reason = relapse_stats.normalize_trigger(r.trigger_reason)
             triggers[clean_reason] = triggers.get(clean_reason, 0) + 1
-            
+        timing = relapse_stats.relapse_timing(user, all_relapses)
+        plans = user_plans.plans_payload(await user_plans.get_plans(session, user_id))
+
         # 6. Получаем историю дневника и настройки
         from database.models import JournalEntry
         from sqlalchemy import desc
@@ -377,6 +376,9 @@ async def handle_api_stats(request):
             "timezone": user.timezone
         }
         
+        open_task = await recovery_tasks.get_open_task(session, user_id)
+        recovery_task = recovery_tasks.task_payload(user, open_task) if open_task else None
+
         from services.ai_service import ai_service
         ai_quote = await ai_service.generate_daily_motivational_quote(days)
             
@@ -387,6 +389,9 @@ async def handle_api_stats(request):
             "triggers": triggers,
             "settings": settings_data,
             "journal_history": journal_history,
+            "recovery_task": recovery_task,
+            "relapse_timing": timing,
+            "plans": plans,
             "quote": ai_quote
         })
 
@@ -462,6 +467,67 @@ async def handle_api_save_journal(request):
         
     return web.json_response({"success": True, "message": f"Заметка успешно {action_text}!"})
 
+async def handle_api_recovery_task(request):
+    """Пересказ статьи после срыва из Mini App"""
+    user_id, err_resp = extract_authenticated_user_id(request)
+    if err_resp:
+        return err_resp
+
+    try:
+        data = await request.json()
+        task_id, summary = data["task_id"], data["summary"]
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+    if type(task_id) is not int or not isinstance(summary, str):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    result = await recovery_tasks.submit_summary(user_id, task_id, summary)
+    if result.status != "done":
+        status = {"not_found": 404, "closed": 409}.get(result.status, 400)
+        return web.json_response({"error": recovery_tasks.SUBMIT_ERRORS[result.status]}, status=status)
+    return web.json_response({"success": True, "late": result.late})
+
+async def _plans_response(user_id: int):
+    async with db_helper.session_factory() as session:
+        plans = user_plans.plans_payload(await user_plans.get_plans(session, user_id))
+    return web.json_response({"success": True, "plans": plans})
+
+async def handle_api_add_plan(request):
+    """Новый план «если…, то…» или причина «Ради чего»"""
+    user_id, err_resp = extract_authenticated_user_id(request)
+    if err_resp:
+        return err_resp
+
+    try:
+        data = await request.json()
+        kind, text = data["kind"], data["text"]
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+    if kind not in user_plans.PLAN_KINDS or not isinstance(text, str):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    result = await user_plans.add_plan(user_id, kind, text)
+    if result != "added":
+        status = {"not_found": 404, "limit": 409}.get(result, 400)
+        return web.json_response({"error": user_plans.PLAN_ERRORS[result]}, status=status)
+    return await _plans_response(user_id)
+
+async def handle_api_delete_plan(request):
+    user_id, err_resp = extract_authenticated_user_id(request)
+    if err_resp:
+        return err_resp
+
+    try:
+        plan_id = (await request.json())["plan_id"]
+    except (ValueError, TypeError, KeyError):
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+    if type(plan_id) is not int:
+        return web.json_response({"error": "Invalid request payload"}, status=400)
+
+    if not await user_plans.delete_plan(user_id, plan_id):
+        return web.json_response({"error": user_plans.PLAN_ERRORS["not_found"]}, status=404)
+    return await _plans_response(user_id)
+
 async def handle_api_log_relapse(request):
     try:
         data = await request.json()
@@ -524,8 +590,7 @@ async def handle_api_manage_panic(request):
     if err_resp:
         return err_resp
         
-    from database.models import User, RelapseLog, JournalEntry
-    from services.ai_service import ai_service
+    from database.models import User, RelapseLog
     from services.userbot_client import userbot
     from utils.states import Form
     
@@ -547,32 +612,15 @@ async def handle_api_manage_panic(request):
             return web.json_response({"success": True})
             
         elif action == "start":
-            # 1. Загружаем историю триггеров срывов
+            # Три проверенные карточки по причинам срывов, планам и времени суток
             relapses_result = await session.execute(
-                select(RelapseLog.trigger_reason)
-                .where(RelapseLog.user_id == user_id)
-                .order_by(RelapseLog.timestamp.desc())
-                .limit(5)
+                select(RelapseLog.trigger_reason).where(RelapseLog.user_id == user_id)
             )
-            triggers = [r for r in relapses_result.scalars().all() if r]
-            
-            # 2. Загружаем заметки дневника за последнюю неделю
-            from datetime import timedelta
-            one_week_ago = datetime.now() - timedelta(days=7)
-            journal_result = await session.execute(
-                select(JournalEntry.content)
-                .where(
-                    and_(
-                        JournalEntry.user_id == user_id,
-                        JournalEntry.entry_date >= one_week_ago.date()
-                    )
-                )
-                .order_by(JournalEntry.entry_date.desc())
+            guidelines = sos_cards.build_sos_cards(
+                relapses_result.scalars().all(),
+                await user_plans.get_plans(session, user_id),
+                recovery_tasks.to_user_time(user, recovery_tasks.server_now()).hour,
             )
-            journal_notes = journal_result.scalars().all()
-            
-            # 3. Генерируем персонализированные ИИ-шаги
-            guidelines = await ai_service.generate_dynamic_sos_steps(user.total_relapses, triggers, journal_notes)
             return web.json_response({"success": True, "guidelines": guidelines})
         
     if action == "helped":
@@ -833,6 +881,9 @@ def create_web_app() -> web.Application:
         web.post("/api/spiritual_help", handle_api_spiritual_help),
         web.post("/api/spiritual_reflection", handle_api_spiritual_reflection),
         web.post("/api/journal", handle_api_save_journal),
+        web.post("/api/recovery_task", handle_api_recovery_task),
+        web.post("/api/plans", handle_api_add_plan),
+        web.post("/api/plans/delete", handle_api_delete_plan),
         web.post("/api/relapse", handle_api_log_relapse),
         web.post("/api/initiate_relapse", handle_api_log_relapse),
         web.post("/api/panic", handle_api_manage_panic),
@@ -888,6 +939,7 @@ async def main():
     dp.include_router(checkin_router)
     dp.include_router(panic_router)
     dp.include_router(journal_router)
+    dp.include_router(recovery_router)
     
     # Регистрируем события запуска и остановки
     dp.startup.register(on_startup)

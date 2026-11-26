@@ -12,6 +12,7 @@ from keyboards.inline import get_relapse_confirm_keyboard, get_reset_type_keyboa
 from config.config import settings
 from services.userbot_client import userbot
 from services.ai_service import ai_service
+from services import recovery_tasks, user_plans
 from handlers.checkin import send_unmarked_days_prompt
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,10 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             active_checkin.status = "relapsed"
             active_checkin.timestamp = now
             
+        # Задание на сутки создается в той же транзакции, что и запись срыва
+        recovery_task = await recovery_tasks.ensure_task(session, user_id, now)
+        plans = await user_plans.get_plans(session, user_id)
+
         # Сохраняем в БД
         await session.commit()
         
@@ -195,6 +200,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
     confirm_text += (
         "\n\n🕊️ <b>На твоей совести:</b>\n"
         "Срыв — это не поражение, а повод быть искренним перед Иеговой, сделать выводы и не оставлять проблему в тени. "
+        "Главное сейчас — не дать одному срыву перейти в серию: закрой источник и выполни задание ниже. "
         "Обязательно обратись к старейшине лично в течение недели — от души, а не ради галочки.\n\n"
         "<i>При желании можно спокойно открыть Соглашение совести без каких-либо ограничений по времени.</i>"
     )
@@ -206,7 +212,7 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             [
                 InlineKeyboardButton(
                     text="📜 Открыть Соглашение совести (по желанию)",
-                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart&v=20261125-5")
+                    web_app=WebAppInfo(url=f"{settings.webapp_base_url.rstrip('/')}/webapp/purity_covenant_jw_v2.html?mode=restart&v=20261126-1")
                 )
             ]
         ]
@@ -224,6 +230,20 @@ async def execute_relapse_reset(user_id: int, trigger_reason: str, callback: Cal
             await default_bot.send_message(chat_id=user_id, text=confirm_text, reply_markup=covenant_kb)
     except Exception as e:
         logger.error(f"Failed to send confirmation text to user: {e}")
+
+    # Задание отдельным сообщением сразу после подтверждения срыва
+    try:
+        card_text, card_kb = recovery_tasks.task_card(user, recovery_task, plans)
+        if callback:
+            await callback.message.answer(card_text, reply_markup=card_kb)
+        elif message:
+            await message.answer(card_text, reply_markup=card_kb)
+        else:
+            if not bot:
+                from main import bot
+            await bot.send_message(chat_id=user_id, text=card_text, reply_markup=card_kb)
+    except Exception as e:
+        logger.error(f"Не удалось отправить задание после срыва пользователю {user_id}: {e}")
 
     return {
         "partner_notified": partner_notified,

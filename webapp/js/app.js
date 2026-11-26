@@ -264,6 +264,9 @@ async function loadAllData() {
         document.getElementById('header-subtitle').textContent = `Ваш стрик чистоты: ${data.streak_str || '0 дней'}`;
         
         // 2. Рендер дашборда
+        renderRecoveryTask(data.recovery_task);
+        renderTiming(data.relapse_timing);
+        renderPlans(data.plans);
         renderStats(data);
         renderCalendar(data.calendar_days);
         renderChart(data.triggers);
@@ -282,6 +285,236 @@ async function loadAllData() {
         document.getElementById('header-subtitle').textContent = 'Ошибка подключения к серверу';
     }
 }
+
+// Задание после срыва: статья и пересказ
+let recoveryTaskId = null;
+
+function renderRecoveryTask(task) {
+    const card = document.getElementById('recovery-task-card');
+    const done = document.getElementById('recovery-task-done');
+    if (!task) {
+        // Только что выполненное задание остается на экране с отметкой «Выполнено»
+        if (done.classList.contains('hidden')) card.classList.add('hidden');
+        return;
+    }
+
+    // Набранный текст сохраняется, пока задание то же самое
+    if (recoveryTaskId !== task.id) {
+        document.getElementById('recovery-summary-input').value = '';
+        document.getElementById('recovery-feedback').classList.add('hidden');
+    }
+    recoveryTaskId = task.id;
+
+    const link = document.getElementById('recovery-task-link');
+    link.textContent = `${task.title} ↗`;
+    link.href = task.url;
+
+    const deadline = document.getElementById('recovery-task-deadline');
+    deadline.textContent = task.overdue
+        ? 'Срок вышел. Задание всё ещё можно выполнить.'
+        : `Прочитай статью и напиши пересказ: осталось ${task.hours_left} ч.`;
+
+    deadline.classList.remove('hidden');
+    done.classList.add('hidden');
+    document.getElementById('recovery-task-form').classList.remove('hidden');
+    card.classList.remove('hidden');
+}
+
+document.getElementById('recovery-task-link').addEventListener('click', (e) => {
+    if (tg && typeof tg.openLink === 'function') {
+        e.preventDefault();
+        tg.openLink(e.currentTarget.href);
+    }
+});
+
+document.getElementById('btn-save-recovery').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-recovery');
+    const input = document.getElementById('recovery-summary-input');
+    const feedback = document.getElementById('recovery-feedback');
+
+    btn.disabled = true;
+    btn.querySelector('.spinner').classList.remove('hidden');
+    btn.querySelector('.btn-text').textContent = 'Сохранение...';
+    feedback.classList.add('hidden');
+
+    try {
+        const response = await apiFetch('/api/recovery_task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: recoveryTaskId, summary: input.value.trim() })
+        });
+        const resData = await response.json();
+
+        if (response.ok && resData.success) {
+            hapticNotification('success');
+            const done = document.getElementById('recovery-task-done');
+            done.textContent = resData.late ? 'Выполнено ✅ Засчитано с опозданием.' : 'Выполнено ✅';
+            done.classList.remove('hidden');
+            document.getElementById('recovery-task-form').classList.add('hidden');
+            document.getElementById('recovery-task-deadline').classList.add('hidden');
+            input.value = '';
+            await loadAllData();
+            return;
+        }
+
+        hapticNotification('error');
+        if (response.status === 404 || response.status === 409) {
+            // Задание закрыто в другом месте: показываем актуальное состояние
+            showToast(resData.error, 'info');
+            await loadAllData();
+            return;
+        }
+        feedback.textContent = resData.error || 'Не удалось сохранить пересказ';
+        feedback.classList.remove('hidden');
+    } catch (err) {
+        console.error(err);
+        hapticNotification('error');
+        showToast('Ошибка сети при сохранении пересказа', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.querySelector('.spinner').classList.add('hidden');
+        btn.querySelector('.btn-text').textContent = 'Сохранить пересказ';
+    }
+});
+
+// Когда чаще срывы: по частям суток и дням недели
+function renderTiming(timing) {
+    if (!timing) return;
+    const hasData = timing.total > 0;
+    document.getElementById('timing-empty').classList.toggle('hidden', hasData);
+    document.getElementById('timing-charts').classList.toggle('hidden', !hasData);
+    document.getElementById('timing-note').classList.toggle('hidden', !timing.late_excluded);
+    renderBars('timing-parts', timing.parts, timing.total);
+    renderBars('timing-weekdays', timing.weekdays, timing.total);
+}
+
+function renderBars(listId, rows, total) {
+    const list = document.getElementById(listId);
+    list.innerHTML = '';
+    const max = Math.max(1, ...rows.map(row => row.count));
+
+    rows.forEach(row => {
+        const item = document.createElement('li');
+        item.className = 'bar-row';
+        item.title = `${row.label}: ${row.count} из ${total}`;
+
+        const label = document.createElement('span');
+        label.textContent = row.label;
+
+        const track = document.createElement('span');
+        track.className = 'bar-track';
+        if (row.count > 0) {
+            const fill = document.createElement('span');
+            fill.className = 'bar-fill';
+            fill.style.width = `${(row.count / max) * 100}%`;
+            track.appendChild(fill);
+        }
+
+        const value = document.createElement('span');
+        value.className = 'bar-value';
+        value.textContent = String(row.count);
+
+        item.append(label, track, value);
+        list.appendChild(item);
+    });
+}
+
+// Планы «если…, то…» и причины «Ради чего»
+const MAX_PLANS_PER_KIND = 5;
+
+function renderPlans(plans) {
+    if (!plans) return;
+    document.querySelectorAll('.plan-group').forEach(group => {
+        const items = plans[group.dataset.kind] || [];
+        const list = group.querySelector('.plan-list');
+        list.innerHTML = '';
+        items.forEach(item => list.appendChild(createPlanItem(item)));
+
+        const full = items.length >= MAX_PLANS_PER_KIND;
+        group.querySelector('.plan-empty').classList.toggle('hidden', items.length > 0);
+        group.querySelector('.plan-form').classList.toggle('hidden', full);
+        group.querySelector('.plan-full').classList.toggle('hidden', !full);
+    });
+}
+
+function createPlanItem(item) {
+    const li = document.createElement('li');
+    li.className = 'plan-item';
+
+    const text = document.createElement('span');
+    text.textContent = item.text;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'plan-delete';
+    button.textContent = '✕';
+    button.setAttribute('aria-label', 'Удалить');
+
+    // Удаление вторым нажатием, чтобы запись не пропала от случайного касания
+    button.addEventListener('click', () => {
+        hapticImpact('light');
+        if (!button.classList.contains('confirm')) {
+            button.classList.add('confirm');
+            button.textContent = 'Удалить?';
+            setTimeout(() => {
+                button.classList.remove('confirm');
+                button.textContent = '✕';
+            }, 4000);
+            return;
+        }
+        sendPlanRequest('/api/plans/delete', { plan_id: item.id }, button);
+    });
+
+    li.append(text, button);
+    return li;
+}
+
+async function sendPlanRequest(url, body, button) {
+    button.disabled = true;
+    try {
+        const response = await apiFetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const resData = await response.json();
+
+        if (response.ok && resData.success) {
+            hapticNotification('success');
+            renderPlans(resData.plans);
+            return true;
+        }
+
+        hapticNotification('error');
+        showToast(resData.error || 'Не удалось сохранить изменения', 'error');
+        // Список изменился в другом месте: показываем актуальный
+        if (response.status === 404 || response.status === 409) await loadAllData();
+    } catch (err) {
+        console.error(err);
+        hapticNotification('error');
+        showToast('Ошибка сети', 'error');
+    } finally {
+        button.disabled = false;
+    }
+    return false;
+}
+
+document.querySelectorAll('.plan-group').forEach(group => {
+    const button = group.querySelector('.plan-add');
+    const input = group.querySelector('.plan-input');
+    button.addEventListener('click', async () => {
+        const text = input.value.trim();
+        if (!text) {
+            hapticNotification('error');
+            showToast('Напиши хотя бы несколько слов.', 'error');
+            input.focus();
+            return;
+        }
+        if (await sendPlanRequest('/api/plans', { kind: group.dataset.kind, text }, button)) {
+            input.value = '';
+        }
+    });
+});
 
 // Отображение карточек статистики
 function renderStats(data) {
@@ -519,7 +752,7 @@ async function notifySosOpened() {
     }
 }
 
-// Непосредственно сам процесс запуска SOS и получения советов от ИИ
+// Запуск SOS: три шага, которые помогают пережить тягу
 async function startSosProcess() {
     const btn = document.getElementById('btn-start-sos');
     const startScreen = document.getElementById('sos-start-screen');
@@ -528,7 +761,7 @@ async function startSosProcess() {
     
     btn.disabled = true;
     btn.querySelector('.spinner').classList.remove('hidden');
-    btn.querySelector('.btn-text').textContent = 'Подключение ИИ-ассистента...';
+    btn.querySelector('.btn-text').textContent = 'Готовим шаги...';
     
     try {
         const response = await apiFetch('/api/panic', {
@@ -560,6 +793,12 @@ async function startSosProcess() {
 
                 textEl.appendChild(h3El);
                 textEl.appendChild(pEl);
+                if (step.source) {
+                    const sourceEl = document.createElement('small');
+                    sourceEl.className = 'guideline-source';
+                    sourceEl.textContent = `Источник: ${step.source}`;
+                    textEl.appendChild(sourceEl);
+                }
                 card.appendChild(numEl);
                 card.appendChild(textEl);
                 listContainer.appendChild(card);
@@ -569,7 +808,6 @@ async function startSosProcess() {
             startScreen.classList.add('hidden');
             dynamicContent.classList.remove('hidden');
             updateBackButton();
-            showToast('Индивидуальные шаги сгенерированы!');
         } else {
             showToast(resData.error || 'Ошибка при загрузке SOS-шагов', 'error');
         }
